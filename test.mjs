@@ -78,4 +78,19 @@ assert.strictEqual(byKey['90d'].pillars.input, 110, '90d = a + b (c is ~100d, ex
 assert.strictEqual(byKey['all'].pillars.input, 111, 'all = a + b + c')
 assert.strictEqual(byKey['all'].pillars.cacheRead, 444, 'all cacheRead = 400+40+4')
 
-console.log('\n✓ cascade canon (Υ 18436.98) · card deterministic · submit_paste round-trip · tokenpull dedup+windows')
+// --- 6. tokenpull_submit: pull local → POST canonical pillars per window (mock adapter + injected fetch, NO live write) ---
+const posts = []
+const subFetch = async (url, init) => { posts.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 202, json: async () => ({ status: 'received', submission_id: 'x' }) } }
+const submitted = await callTool('tokenpull_submit', { codename: 'TESTOP' }, { apiBase: 'http://test.local', fetchImpl: subFetch, adapter: mockAdapter })
+assert.strictEqual(posts.length, 4, 'submits all 4 windows')
+assert.ok(posts.every((p) => p.url.endsWith('/api/v1/ingest-paste')), 'all POST to ingest-paste')
+const allP = posts.find((p) => p.body.window_type === 'all_time')
+assert.strictEqual(allP.body.raw_paste, '111 222 333 444', 'all-window canonical pillars as 4 numbers (a+b+c)')
+assert.strictEqual(allP.body.codename, 'TESTOP', 'codename forwarded')
+assert.strictEqual(allP.body.telemetry.platform.primary, 'claude', 'platform tag rides along')
+assert.strictEqual(submitted.windows.find((w) => w.window === 'all').submission.status, 'received', 'server ack merged')
+// no codename → preview, no POST
+const preview = await callTool('tokenpull_submit', {}, { adapter: mockAdapter })
+assert.ok(preview.windows.every((w) => w.submission.status === 'not_submitted'), 'no codename → preview only')
+
+console.log('\n✓ canon Υ 18436.98 · card · submit_paste · tokenpull dedup+windows · tokenpull_submit wiring')

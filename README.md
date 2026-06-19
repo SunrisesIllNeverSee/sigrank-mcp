@@ -12,6 +12,7 @@ no transcript content.
 | `get_operator(codename)` | one operator's live profile |
 | `submit_paste(text, codename)` | **rank AND publish** in one call: local cascade + card, then POSTs the raw paste to the board's web-paste endpoint (server re-scores authoritatively). `codename` required to publish; omit for preview-only. |
 | `tokenpull(platform?)` | **in-house local reader** (no ccusage/tokscale): recursively scans `~/.claude/projects` (incl. `subagents/`), dedups by `(session_id, message_id)` keep-final, returns the 4 windows (7d/30d/90d/all) each cascaded. **Verified to match token-dashboard.** Zero paste, on-device, token-only. Claude first; adapter-shaped for Codex/others. |
+| `tokenpull_submit(codename, window?)` | **the zero-paste flow**: `tokenpull` → publish each window's canonical pillars to the board (server re-scores), tagged with `platform`. `codename` required to publish; omit for preview. |
 
 The cascade math (`cascade.mjs`) mirrors `sigrank-app/lib/ingest/bridge.ts` — Υ = (Cr·O)/I².
 Open by design; the proprietary threshold cuts / weights stay server-side.

@@ -50,7 +50,22 @@ export const TOOLS = [
       "Pull your LOCAL token usage (in-house reader — no ccusage/tokscale) from Claude Code's session logs (~/.claude/projects) and rank it across the four windows (7d/30d/90d/all-time) with the cascade — zero paste. Token-only: reads usage counts not message content; deduped by message.id to match billing. The numbers stay on your machine unless you submit them.",
     inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['claude'], description: 'source platform (default claude; codex/others coming)' } } },
   },
+  {
+    name: 'tokenpull_submit',
+    description:
+      "Pull your LOCAL usage (tokenpull) AND publish it to the board in one call — the zero-paste flow. Submits the canonical 4 pillars per window, each re-scored server-side and tagged with the source platform (so Codex/others rank on the same board). Requires a codename to publish; omit for local preview. Token-only.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        codename: { type: 'string', description: 'operator codename to publish under (omit for preview-only)' },
+        window: { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
+      },
+    },
+  },
 ]
+
+// tokenpull window key → the board's window_type enum.
+const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
 
 export async function callTool(name, args, opts = {}) {
   const apiBase = opts.apiBase || DEFAULT_API_BASE
@@ -99,12 +114,41 @@ export async function callTool(name, args, opts = {}) {
 
   if (name === 'tokenpull') {
     // Local read → 4 windows of raw pillars → cascade each. Token-only, on-device.
-    const pulled = await pullLocal({})
+    const pulled = await pullLocal({ adapter: opts.adapter })
     const windows = pulled.windows.map((w) => {
       const c = cascade(w.pillars)
       return { window: w.window, messages: w.messages, pillars: w.pillars, cascade: c, card: narrate(c, `${w.window} window`) }
     })
     return { platform: pulled.platform, generatedAt: pulled.generatedAt, files: pulled.files, totalMessages: pulled.totalMessages, windows }
+  }
+
+  if (name === 'tokenpull_submit') {
+    // Pull local usage, then publish each window's CANONICAL pillars to the board
+    // (server re-scores). The board stays platform-agnostic via the 4 pillars; the
+    // source platform rides along as a tag. Conversion already happened in the adapter.
+    const codename = String(args?.codename || '').trim()
+    const pulled = await pullLocal({ adapter: opts.adapter })
+    const targets = args?.window ? pulled.windows.filter((w) => w.window === args.window) : pulled.windows
+    const out = []
+    for (const w of targets) {
+      const c = cascade(w.pillars)
+      const card = narrate(c, `${w.window} window`)
+      if (!codename) {
+        out.push({ window: w.window, pillars: w.pillars, cascade: c, card, submission: { status: 'not_submitted', reason: 'codename_required' } })
+        continue
+      }
+      // canonical pillars → "input output cacheCreate cacheRead" (the parser's 4-bare-number form)
+      const rawPaste = `${w.pillars.input} ${w.pillars.output} ${w.pillars.cacheCreate} ${w.pillars.cacheRead}`
+      const res = await doFetch(`${apiBase}/api/v1/ingest-paste`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ codename, raw_paste: rawPaste, window_type: WINDOW_TYPE[w.window] || w.window, telemetry: { platform: { primary: pulled.platform } } }),
+      })
+      let ack
+      try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON)` } }
+      out.push({ window: w.window, pillars: w.pillars, cascade: c, card, submission: { httpStatus: res.status, ...ack } })
+    }
+    return { platform: pulled.platform, codename: codename || null, generatedAt: pulled.generatedAt, windows: out }
   }
 
   throw new Error(`Unknown tool: ${name}`)
