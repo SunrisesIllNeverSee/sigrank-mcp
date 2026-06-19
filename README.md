@@ -11,7 +11,7 @@ no transcript content.
 | `get_leaderboard()` | the live public board (signalaf.com) |
 | `get_operator(codename)` | one operator's live profile |
 | `submit_paste(text, codename)` | **rank AND publish** in one call: local cascade + card, then POSTs the raw paste to the board's web-paste endpoint (server re-scores authoritatively). `codename` required to publish; omit for preview-only. |
-| `tokenpull(platform?)` | **in-house local reader** (no ccusage/tokscale): scans `~/.claude/projects`, dedups by `message.id`, returns the 4 windows (7d/30d/90d/all) each cascaded. Zero paste, on-device, token-only. Claude first; adapter-shaped for Codex/others. |
+| `tokenpull(platform?)` | **in-house local reader** (no ccusage/tokscale): recursively scans `~/.claude/projects` (incl. `subagents/`), dedups by `(session_id, message_id)` keep-final, returns the 4 windows (7d/30d/90d/all) each cascaded. **Verified to match token-dashboard.** Zero paste, on-device, token-only. Claude first; adapter-shaped for Codex/others. |
 
 The cascade math (`cascade.mjs`) mirrors `sigrank-app/lib/ingest/bridge.ts` — Υ = (Cr·O)/I².
 Open by design; the proprietary threshold cuts / weights stay server-side.
@@ -41,10 +41,9 @@ Add to an MCP client (e.g. Claude Code `.mcp.json`):
   existing anonymous `/api/v1/ingest-paste` (web-paste path — `source='web_paste'`, no auth).
   Verified via injected fetch (no live write). ⚠️ The **first live submit writes production
   Supabase** — fire it once yourself: `SIGRANK_API_BASE=https://signalaf.com` + a real paste.
-- ✅ **tokenpull** (`tokenpull.mjs`): in-house local usage reader (Claude Code), dedup by
-  `message.id`, 4-window cascade (7d/30d/90d/all). Live: 938 files / 17,024 msgs in ~3.4s.
-  ⚠️ **input-count reconciliation pending** — tokenpull's `input` reads ~4× lower than the
-  Max dashboard (Υ ∝ 1/input² → ~16× yield swing). Pin the input definition + scope (this
-  machine vs whole account) + dedup semantics before ranking tokenpull numbers.
-- Next: Codex adapter (owner has the conversion) → tokenpull multi-system; reconcile input count;
-  richer class tiering from the server-side ruleset; optional `compare(a,b)` tool.
+- ✅ **tokenpull** (`tokenpull.mjs`): in-house local usage reader (Claude Code). Recursive scan
+  (incl. `subagents/`), dedup by `(session_id, message_id)` keep-final, 4-window cascade.
+  **Verified against token-dashboard (nateherkai): 7d input 3.44M EXACT match** (~1208 files).
+  Bug fixed: a 2-level readdir was dropping sub-agent transcripts → 4× input under-count.
+- Next: Codex adapter (owner has the conversion) → tokenpull multi-system; optional persistent
+  cache (mirror token-dashboard) so rotated-off logs aren't lost; `compare(a,b)` tool.

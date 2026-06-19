@@ -20,7 +20,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { TOOLS, callTool } from './tools.mjs'
 
 async function main() {
-  const server = new Server({ name: 'sigrank', version: '0.3.0' }, { capabilities: { tools: {} } })
+  const server = new Server({ name: 'sigrank', version: '0.3.1' }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {

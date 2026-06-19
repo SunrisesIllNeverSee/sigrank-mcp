@@ -60,16 +60,18 @@ const mockAdapter = {
   platform: 'claude',
   defaultRoot: () => '/mock',
   async *messages() {
-    yield { id: 'a', ts: '2026-06-18T00:00:00Z', input: 100, output: 200, cacheCreate: 300, cacheRead: 400, file: 'p/s1' } // within 7d
-    yield { id: 'a', ts: '2026-06-18T00:00:00Z', input: 100, output: 200, cacheCreate: 300, cacheRead: 400, file: 'p/s1' } // dup id → counted once
-    yield { id: 'b', ts: '2026-05-30T00:00:00Z', input: 10,  output: 20,  cacheCreate: 30,  cacheRead: 40,  file: 'p/s2' } // ~20d → 30d/90d/all
-    yield { id: 'c', ts: '2026-03-11T00:00:00Z', input: 1,   output: 2,   cacheCreate: 3,   cacheRead: 4,   file: 'p/s3' } // ~100d → all only
+    // (s1, a) partial → final: same session+message.id, growing output → keep FINAL (200)
+    yield { id: 'a', sid: 's1', ts: '2026-06-18T00:00:00Z', input: 100, output: 150, cacheCreate: 300, cacheRead: 400, file: 'p/s1' } // partial
+    yield { id: 'a', sid: 's1', ts: '2026-06-18T00:00:00Z', input: 100, output: 200, cacheCreate: 300, cacheRead: 400, file: 'p/s1' } // final → wins
+    yield { id: 'b', sid: 's2', ts: '2026-05-30T00:00:00Z', input: 10,  output: 20,  cacheCreate: 30,  cacheRead: 40,  file: 'p/s2' } // ~20d → 30d/90d/all
+    yield { id: 'c', sid: 's3', ts: '2026-03-11T00:00:00Z', input: 1,   output: 2,   cacheCreate: 3,   cacheRead: 4,   file: 'p/s3' } // ~100d → all only
   },
 }
 const pull = await tokenpull({ adapter: mockAdapter, now: NOW })
 const byKey = Object.fromEntries(pull.windows.map((w) => [w.window, w]))
-assert.strictEqual(pull.totalMessages, 3, 'dedup by message.id (a counted once)')
+assert.strictEqual(pull.totalMessages, 3, 'dedup by (session,message.id): a counted once')
 assert.strictEqual(byKey['7d'].pillars.input, 100, '7d = a only')
+assert.strictEqual(byKey['7d'].pillars.output, 200, 'keep-final: a output = 200 (final), not 150 (partial) or 350 (summed)')
 assert.strictEqual(byKey['7d'].messages, 1)
 assert.strictEqual(byKey['30d'].pillars.input, 110, '30d = a + b')
 assert.strictEqual(byKey['90d'].pillars.input, 110, '90d = a + b (c is ~100d, excluded)')

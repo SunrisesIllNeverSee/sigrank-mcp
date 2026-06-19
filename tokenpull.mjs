@@ -29,42 +29,52 @@ export const WINDOWS = [
   { key: 'all', days: Infinity },
 ]
 
+/** Recursively yield every *.jsonl path under dir (any depth), sorted. Must be
+ *  recursive: Claude Code stores sub-agent transcripts in `<project>/subagents/`
+ *  (and other nested logs) — a 2-level readdir silently drops them, which badly
+ *  under-counts input (sub-agent runs are input-heavy). token-dashboard's rglob. */
+async function* _walkJsonl(dir) {
+  let entries
+  try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+  for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    const full = join(dir, e.name)
+    if (e.isDirectory()) yield* _walkJsonl(full)
+    else if (e.isFile() && e.name.endsWith('.jsonl')) yield full
+  }
+}
+
 /**
  * Claude Code adapter. Yields one record per billed assistant message:
- * { id, ts, input, output, cacheCreate, cacheRead, file }. Mirrors the field
- * mapping in sigrank-agent/adapters/claude_code.py (the working reference).
+ * { id, sid, ts, input, output, cacheCreate, cacheRead, file }. Walks
+ * ~/.claude/projects RECURSIVELY (incl. subagents/) and carries sessionId so the
+ * caller can dedup by (session_id, message_id) like token-dashboard.
  */
 export const claudeAdapter = {
   platform: 'claude',
   defaultRoot: () => join(homedir(), '.claude', 'projects'),
   async *messages(root) {
-    let projects
-    try { projects = await readdir(root, { withFileTypes: true }) } catch { return }
-    for (const p of projects.filter((d) => d.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-      const dir = join(root, p.name)
-      let files
-      try { files = (await readdir(dir)).filter((f) => f.endsWith('.jsonl')).sort() } catch { continue }
-      for (const f of files) {
-        let text
-        try { text = await readFile(join(dir, f), 'utf8') } catch { continue }
-        for (const line of text.split('\n')) {
-          const s = line.trim()
-          if (!s) continue
-          let ev
-          try { ev = JSON.parse(s) } catch { continue }
-          const m = ev && ev.message
-          if (!m || typeof m !== 'object') continue
-          const u = m.usage
-          if (!u || typeof u !== 'object') continue
-          yield {
-            id: m.id || null,
-            ts: ev.timestamp || ev.ts || null,
-            input: Number(u.input_tokens) || 0,
-            output: Number(u.output_tokens) || 0,
-            cacheCreate: Number(u.cache_creation_input_tokens) || 0,
-            cacheRead: Number(u.cache_read_input_tokens) || 0,
-            file: join(p.name, f),
-          }
+    for await (const path of _walkJsonl(root)) {
+      let text
+      try { text = await readFile(path, 'utf8') } catch { continue }
+      const rel = path.startsWith(root) ? path.slice(root.length + 1) : path
+      for (const line of text.split('\n')) {
+        const s = line.trim()
+        if (!s) continue
+        let ev
+        try { ev = JSON.parse(s) } catch { continue }
+        const m = ev && ev.message
+        if (!m || typeof m !== 'object') continue
+        const u = m.usage
+        if (!u || typeof u !== 'object') continue
+        yield {
+          id: m.id || null,
+          sid: ev.sessionId || null,
+          ts: ev.timestamp || ev.ts || null,
+          input: Number(u.input_tokens) || 0,
+          output: Number(u.output_tokens) || 0,
+          cacheCreate: Number(u.cache_creation_input_tokens) || 0,
+          cacheRead: Number(u.cache_read_input_tokens) || 0,
+          file: rel,
         }
       }
     }
@@ -80,14 +90,17 @@ export async function tokenpull({ adapter = claudeAdapter, root, now } = {}) {
   const r = root || adapter.defaultRoot()
   const nowMs = now == null ? Date.now() : (typeof now === 'number' ? now : Date.parse(now))
 
-  // Dedup by message.id (first occurrence wins = billing-accurate). No-id messages
-  // each get a unique synthetic key so they still count but never collapse together.
+  // Dedup by (session_id, message_id), keeping the FINAL snapshot — matches
+  // token-dashboard: Claude Code writes 2-3 partial→final lines per response with
+  // the same message.id; only the final tally matches billing. No-id records each
+  // get a unique synthetic key so they always count.
   const seen = new Map()
   const files = new Set()
   let noId = 0
   for await (const msg of adapter.messages(r)) {
-    const key = msg.id || `__noid_${noId++}`
-    if (!seen.has(key)) { seen.set(key, msg); if (msg.file) files.add(msg.file) }
+    const key = msg.sid && msg.id ? `${msg.sid}|${msg.id}` : (msg.id || `__noid_${noId++}`)
+    seen.set(key, msg) // keep-last (final snapshot wins)
+    if (msg.file) files.add(msg.file)
   }
   const msgs = [...seen.values()]
 
