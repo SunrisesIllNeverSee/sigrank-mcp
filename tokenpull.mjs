@@ -21,11 +21,14 @@ import { homedir } from 'node:os'
 
 const DAY_MS = 86_400_000
 
-// Background tooling that runs under your account but is NOT your work — excluded so
-// pillars reflect the operator, not their tools. claude-mem's observer (a Sonnet
-// summarizer reading every session) was inflating output/Υ ~27%. Extend as needed.
-// NOTE: sub-agent transcripts (`subagents/`) are kept — those ARE your work.
-export const EXCLUDE_TOOLING = /(^|\/|-)claude-mem|observer-sessions/
+// Background tooling that runs under your account but is NOT your work — memory plugins,
+// observers, summarizers, sub-agent fleets. They pad output/Υ (claude-mem did ~27%).
+// Excluded so pillars reflect the operator, not their tools. EXTENSIBLE — add tool
+// dir-name patterns here. Strategic note: others' tools inflate the PUBLIC
+// token-dashboard / tokscale boards; SigRank filters them, so SigRank stays honest.
+// subagents/ are KEPT (real work). Future-robust signal: also drop entrypoint=sdk-cli.
+export const EXCLUDE_TOOLING =
+  /(^|[/-])(claude-mem|mem0|claude-self-reflect|basic-memory|memento|cipher-mem|memory-keeper)\b|observer-(sessions|archive)/i
 
 /** The four windows, in days. `all` = unbounded. */
 export const WINDOWS = [
@@ -125,12 +128,20 @@ export async function tokenpull({ adapter = claudeAdapter, root, now } = {}) {
     return { window: w.key, pillars, messages: inWin.length }
   })
 
+  // Auto-detect background tooling we excluded → report it (the MCP "asks" by telling).
+  let excludedTooling = []
+  try {
+    const top = await readdir(r, { withFileTypes: true })
+    excludedTooling = top.filter((d) => d.isDirectory() && EXCLUDE_TOOLING.test(d.name)).map((d) => d.name)
+  } catch { /* ignore */ }
+
   return {
     platform: adapter.platform,
     root: r,
     generatedAt: new Date(nowMs).toISOString(),
     files: files.size,
     totalMessages: msgs.length,
+    excludedTooling,
     windows,
   }
 }
