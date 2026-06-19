@@ -10,6 +10,7 @@ no transcript content.
 | `rank_paste(text)` | paste ccusage token counts → **Υ Yield / SNR / Leverage / Velocity / 10xDEV + class + a deterministic prose `card`**. Accepts JSON `{input,output,cacheCreate,cacheRead}` or 4 whitespace numbers in that order. |
 | `get_leaderboard()` | the live public board (signalaf.com) |
 | `get_operator(codename)` | one operator's live profile |
+| `submit_paste(text, codename)` | **rank AND publish** in one call: local cascade + card, then POSTs the raw paste to the board's web-paste endpoint (server re-scores authoritatively). `codename` required to publish; omit for preview-only. |
 
 The cascade math (`cascade.mjs`) mirrors `sigrank-app/lib/ingest/bridge.ts` — Υ = (Cr·O)/I².
 Open by design; the proprietary threshold cuts / weights stay server-side.
@@ -35,5 +36,9 @@ Add to an MCP client (e.g. Claude Code `.mcp.json`):
   + `rank_paste` round-trip + `get_leaderboard`/`get_operator` HTTP 200 against signalaf.com.
 - ✅ **3a insight card** (`narrate.mjs`): `rank_paste` returns a deterministic prose `card`
   ported from `moses-sigrank/narrate.py` `_template` (model path skipped on purpose).
+- ✅ **3b `submit_paste`** (first write op): ranks locally then POSTs the raw paste to the
+  existing anonymous `/api/v1/ingest-paste` (web-paste path — `source='web_paste'`, no auth).
+  Verified via injected fetch (no live write). ⚠️ The **first live submit writes production
+  Supabase** — fire it once yourself: `SIGRANK_API_BASE=https://signalaf.com` + a real paste.
 - Next: convert non-ccusage readers (canon: Claude first), richer class tiering from the
   server-side ruleset, optional `compare(a,b)` tool.

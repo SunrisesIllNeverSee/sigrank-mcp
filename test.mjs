@@ -29,4 +29,28 @@ assert.strictEqual(rp.card, rp2.card, 'card must be deterministic (same numbers 
 assert.ok(!/NaN|undefined|Infinity/.test(rp.card), 'card must not leak NaN/undefined/Infinity')
 console.log('\ncard →', rp.card)
 
-console.log('\n✓ cascade reproduces canon (Υ 18436.98) + rank_paste card is deterministic')
+// --- 3. (3b) submit_paste: no codename → local preview, NO submission ---
+const noCode = await callTool('submit_paste', { text: MOSES })
+assert.strictEqual(noCode.yield, 18436.98, 'submit_paste preview Υ mismatch')
+assert.match(noCode.card, /TRANSMITTER/, 'preview card present')
+assert.strictEqual(noCode.submission.status, 'not_submitted', 'no codename must not submit')
+assert.strictEqual(noCode.submission.reason, 'codename_required')
+
+// --- 4. (3b) submit_paste with codename → POSTs {codename, raw_paste} to ingest-paste.
+//     Verified with an INJECTED fetch — no live call, no write to production. ---
+let captured = null
+const fakeFetch = async (url, init) => {
+  captured = { url, init }
+  return { ok: true, status: 202, json: async () => ({ status: 'received', submission_id: 'paste_test', signa_rate: 96.4, class_tier: 'TRANSMITTER' }) }
+}
+const sub = await callTool('submit_paste', { text: MOSES, codename: 'TransVaultOrigin' }, { apiBase: 'http://test.local', fetchImpl: fakeFetch })
+assert.ok(captured.url.endsWith('/api/v1/ingest-paste'), 'submits to /api/v1/ingest-paste')
+assert.strictEqual(captured.init.method, 'POST')
+const body = JSON.parse(captured.init.body)
+assert.strictEqual(body.codename, 'TransVaultOrigin', 'codename forwarded')
+assert.strictEqual(body.raw_paste, MOSES, 'RAW paste forwarded (server re-scores authoritatively)')
+assert.strictEqual(sub.yield, 18436.98, 'local preview Υ still returned alongside submission')
+assert.strictEqual(sub.submission.httpStatus, 202, 'server ack status surfaced')
+assert.strictEqual(sub.submission.status, 'received', 'server ack body merged')
+
+console.log('\n✓ cascade canon (Υ 18436.98) · rank_paste card deterministic · submit_paste round-trip (injected fetch, no live write)')
