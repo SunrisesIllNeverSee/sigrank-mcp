@@ -88,6 +88,8 @@ const allP = posts.find((p) => p.body.window_type === 'all_time')
 assert.strictEqual(allP.body.raw_paste, '111 222 333 444', 'all-window canonical pillars as 4 numbers (a+b+c)')
 assert.strictEqual(allP.body.codename, 'TESTOP', 'codename forwarded')
 assert.strictEqual(allP.body.telemetry.platform.primary, 'claude', 'platform tag rides along')
+assert.match(allP.body.content_hash, /^[0-9a-f]{64}$/, 'upload is sha256-hashed')
+assert.match(allP.body.submitted_ddmmyy, /^\d{6}$/, 'upload is ddmmyy-timestamped')
 assert.strictEqual(submitted.windows.find((w) => w.window === 'all').submission.status, 'received', 'server ack merged')
 // no codename → preview, no POST
 const preview = await callTool('tokenpull_submit', {}, { adapter: mockAdapter })

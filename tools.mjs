@@ -11,6 +11,16 @@
 import { cascade, parsePillars } from './cascade.mjs'
 import { narrate } from './narrate.mjs'
 import { tokenpull as pullLocal, tokenpullCodex as pullCodex } from './tokenpull.mjs'
+import { createHash } from 'node:crypto'
+
+// Every board upload from the MCP is hashed + timestamped (ddmmyy) — provenance + dedup.
+function uploadStamp(content) {
+  const hash = createHash('sha256').update(JSON.stringify(content)).digest('hex')
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const ddmmyy = p(d.getUTCDate()) + p(d.getUTCMonth() + 1) + String(d.getUTCFullYear()).slice(-2)
+  return { content_hash: hash, submitted_ddmmyy: ddmmyy, submitted_at: d.toISOString() }
+}
 
 // Pull a platform's local usage → 4 windows of canonical pillars. Claude is native;
 // Codex is estimated — its input/cacheCreate split needs an io_ratio, which we take
@@ -119,14 +129,15 @@ export async function callTool(name, args, opts = {}) {
 
     // Submit the RAW paste so the server re-parses + re-scores authoritatively — the
     // MCP's local cascade is only a preview; the board stays the single source of truth.
+    const stamp = uploadStamp({ codename, pillars: c.pillars, source: 'web_paste' })
     const res = await doFetch(`${apiBase}/api/v1/ingest-paste`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ codename, raw_paste: String(args?.text || '') }),
+      body: JSON.stringify({ codename, raw_paste: String(args?.text || ''), ...stamp }),
     })
     let ack
     try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON response)` } }
-    return { ...c, card, submission: { httpStatus: res.status, ...ack } }
+    return { ...c, card, submission: { ...stamp, httpStatus: res.status, ...ack } }
   }
 
   if (name === 'tokenpull') {
@@ -157,14 +168,16 @@ export async function callTool(name, args, opts = {}) {
       }
       // canonical pillars → "input output cacheCreate cacheRead" (the parser's 4-bare-number form)
       const rawPaste = `${w.pillars.input} ${w.pillars.output} ${w.pillars.cacheCreate} ${w.pillars.cacheRead}`
+      const windowType = WINDOW_TYPE[w.window] || w.window
+      const stamp = uploadStamp({ codename, window: windowType, pillars: w.pillars, platform: pulled.platform })
       const res = await doFetch(`${apiBase}/api/v1/ingest-paste`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ codename, raw_paste: rawPaste, window_type: WINDOW_TYPE[w.window] || w.window, telemetry: { platform: { primary: pulled.platform } } }),
+        body: JSON.stringify({ codename, raw_paste: rawPaste, window_type: windowType, telemetry: { platform: { primary: pulled.platform } }, ...stamp }),
       })
       let ack
       try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON)` } }
-      out.push({ window: w.window, pillars: w.pillars, cascade: c, card, submission: { httpStatus: res.status, ...ack } })
+      out.push({ window: w.window, pillars: w.pillars, cascade: c, card, submission: { ...stamp, httpStatus: res.status, ...ack } })
     }
     return { platform: pulled.platform, codename: codename || null, generatedAt: pulled.generatedAt, windows: out }
   }

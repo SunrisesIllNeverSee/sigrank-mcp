@@ -21,6 +21,12 @@ import { homedir } from 'node:os'
 
 const DAY_MS = 86_400_000
 
+// Background tooling that runs under your account but is NOT your work — excluded so
+// pillars reflect the operator, not their tools. claude-mem's observer (a Sonnet
+// summarizer reading every session) was inflating output/Υ ~27%. Extend as needed.
+// NOTE: sub-agent transcripts (`subagents/`) are kept — those ARE your work.
+export const EXCLUDE_TOOLING = /(^|\/|-)claude-mem|observer-sessions/
+
 /** The four windows, in days. `all` = unbounded. */
 export const WINDOWS = [
   { key: '7d', days: 7 },
@@ -57,6 +63,7 @@ export const claudeAdapter = {
       let text
       try { text = await readFile(path, 'utf8') } catch { continue }
       const rel = path.startsWith(root) ? path.slice(root.length + 1) : path
+      if (EXCLUDE_TOOLING.test(rel)) continue // skip claude-mem observer & other background tooling
       for (const line of text.split('\n')) {
         const s = line.trim()
         if (!s) continue
