@@ -7,7 +7,7 @@ no transcript content.
 ## Tools
 | tool | what |
 |---|---|
-| `rank_paste(text)` | paste ccusage token counts → **Υ Yield / SNR / Leverage / Velocity / 10xDEV + class**. Accepts JSON `{input,output,cacheCreate,cacheRead}` or 4 whitespace numbers in that order. |
+| `rank_paste(text)` | paste ccusage token counts → **Υ Yield / SNR / Leverage / Velocity / 10xDEV + class + a deterministic prose `card`**. Accepts JSON `{input,output,cacheCreate,cacheRead}` or 4 whitespace numbers in that order. |
 | `get_leaderboard()` | the live public board (signalaf.com) |
 | `get_operator(codename)` | one operator's live profile |
 
@@ -25,13 +25,15 @@ node index.mjs         # stdio MCP server
 ```
 Add to an MCP client (e.g. Claude Code `.mcp.json`):
 ```json
-{ "mcpServers": { "sigrank": { "command": "node", "args": ["/abs/path/sigrank-mcp/index.mjs"] } } }
+{ "mcpServers": { "sigrank": { "command": "node", "args": ["/Users/dericmchenry/Desktop/SigRank/sigrank-mcp/index.mjs"] } } }
 ```
 `SIGRANK_API_BASE` overrides the board host (default `https://signalaf.com`).
 
 ## Status (MVP)
 - ✅ cascade math verified (`rank_paste` → canon Υ). `cascade.mjs` is the testable core.
-- ⏳ **Runtime smoke pending** (built under context limit): `npm install` + a live MCP-client
-  `tools/list` + `rank_paste` round-trip. The SDK wiring is the standard stdio pattern.
+- ✅ **Runtime smoke PASS** (2026-06-19): `npm install` (0 vuln) + live MCP-client `tools/list`
+  + `rank_paste` round-trip + `get_leaderboard`/`get_operator` HTTP 200 against signalaf.com.
+- ✅ **3a insight card** (`narrate.mjs`): `rank_paste` returns a deterministic prose `card`
+  ported from `moses-sigrank/narrate.py` `_template` (model path skipped on purpose).
 - Next: convert non-ccusage readers (canon: Claude first), richer class tiering from the
   server-side ruleset, optional `compare(a,b)` tool.
