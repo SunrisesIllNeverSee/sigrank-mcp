@@ -10,6 +10,7 @@
 
 import { cascade, parsePillars } from './cascade.mjs'
 import { narrate } from './narrate.mjs'
+import { tokenpull as pullLocal } from './tokenpull.mjs'
 
 export const DEFAULT_API_BASE = process.env.SIGRANK_API_BASE || 'https://signalaf.com'
 
@@ -42,6 +43,12 @@ export const TOOLS = [
       },
       required: ['text'],
     },
+  },
+  {
+    name: 'tokenpull',
+    description:
+      "Pull your LOCAL token usage (in-house reader — no ccusage/tokscale) from Claude Code's session logs (~/.claude/projects) and rank it across the four windows (7d/30d/90d/all-time) with the cascade — zero paste. Token-only: reads usage counts not message content; deduped by message.id to match billing. The numbers stay on your machine unless you submit them.",
+    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['claude'], description: 'source platform (default claude; codex/others coming)' } } },
   },
 ]
 
@@ -88,6 +95,16 @@ export async function callTool(name, args, opts = {}) {
     let ack
     try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON response)` } }
     return { ...c, card, submission: { httpStatus: res.status, ...ack } }
+  }
+
+  if (name === 'tokenpull') {
+    // Local read → 4 windows of raw pillars → cascade each. Token-only, on-device.
+    const pulled = await pullLocal({})
+    const windows = pulled.windows.map((w) => {
+      const c = cascade(w.pillars)
+      return { window: w.window, messages: w.messages, pillars: w.pillars, cascade: c, card: narrate(c, `${w.window} window`) }
+    })
+    return { platform: pulled.platform, generatedAt: pulled.generatedAt, files: pulled.files, totalMessages: pulled.totalMessages, windows }
   }
 
   throw new Error(`Unknown tool: ${name}`)
