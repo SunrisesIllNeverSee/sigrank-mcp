@@ -10,7 +10,23 @@
 
 import { cascade, parsePillars } from './cascade.mjs'
 import { narrate } from './narrate.mjs'
-import { tokenpull as pullLocal } from './tokenpull.mjs'
+import { tokenpull as pullLocal, tokenpullCodex as pullCodex } from './tokenpull.mjs'
+
+// Pull a platform's local usage → 4 windows of canonical pillars. Claude is native;
+// Codex is estimated — its input/cacheCreate split needs an io_ratio, which we take
+// from the operator's own Claude data (Beta) when present, else the 2.0 Alpha default.
+async function pullByPlatform(platform, opts = {}) {
+  if (platform === 'codex') {
+    let ioRatio = 2.0
+    try {
+      const c = await pullLocal({})
+      const all = c.windows.find((w) => w.window === 'all')
+      if (all && all.pillars.output > 0) ioRatio = all.pillars.input / all.pillars.output
+    } catch { /* no Claude data → Alpha 2.0 */ }
+    return pullCodex({ ioRatio })
+  }
+  return pullLocal({ adapter: opts.adapter })
+}
 
 export const DEFAULT_API_BASE = process.env.SIGRANK_API_BASE || 'https://signalaf.com'
 
@@ -48,7 +64,7 @@ export const TOOLS = [
     name: 'tokenpull',
     description:
       "Pull your LOCAL token usage (in-house reader — no ccusage/tokscale) from Claude Code's session logs (~/.claude/projects) and rank it across the four windows (7d/30d/90d/all-time) with the cascade — zero paste. Token-only: reads usage counts not message content; deduped by message.id to match billing. The numbers stay on your machine unless you submit them.",
-    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['claude'], description: 'source platform (default claude; codex/others coming)' } } },
+    inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['claude', 'codex'], description: 'source platform (default claude; codex is estimated via io_ratio)' } } },
   },
   {
     name: 'tokenpull_submit',
@@ -59,6 +75,7 @@ export const TOOLS = [
       properties: {
         codename: { type: 'string', description: 'operator codename to publish under (omit for preview-only)' },
         window: { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
+        platform: { type: 'string', enum: ['claude', 'codex'], description: 'source platform (default claude)' },
       },
     },
   },
@@ -113,13 +130,14 @@ export async function callTool(name, args, opts = {}) {
   }
 
   if (name === 'tokenpull') {
-    // Local read → 4 windows of raw pillars → cascade each. Token-only, on-device.
-    const pulled = await pullLocal({ adapter: opts.adapter })
+    // Local read → 4 windows of pillars → cascade each. Token-only, on-device.
+    const platform = args?.platform || 'claude'
+    const pulled = await pullByPlatform(platform, opts)
     const windows = pulled.windows.map((w) => {
       const c = cascade(w.pillars)
-      return { window: w.window, messages: w.messages, pillars: w.pillars, cascade: c, card: narrate(c, `${w.window} window`) }
+      return { window: w.window, messages: w.messages, pillars: w.pillars, cascade: c, card: narrate(c, `${w.window} ${platform}`) }
     })
-    return { platform: pulled.platform, generatedAt: pulled.generatedAt, files: pulled.files, totalMessages: pulled.totalMessages, windows }
+    return { platform: pulled.platform, estimated: pulled.estimated || false, ...(pulled.ioRatio ? { ioRatio: pulled.ioRatio } : {}), generatedAt: pulled.generatedAt, files: pulled.files, totalMessages: pulled.totalMessages, windows }
   }
 
   if (name === 'tokenpull_submit') {
@@ -127,7 +145,7 @@ export async function callTool(name, args, opts = {}) {
     // (server re-scores). The board stays platform-agnostic via the 4 pillars; the
     // source platform rides along as a tag. Conversion already happened in the adapter.
     const codename = String(args?.codename || '').trim()
-    const pulled = await pullLocal({ adapter: opts.adapter })
+    const pulled = await pullByPlatform(args?.platform || 'claude', opts)
     const targets = args?.window ? pulled.windows.filter((w) => w.window === args.window) : pulled.windows
     const out = []
     for (const w of targets) {

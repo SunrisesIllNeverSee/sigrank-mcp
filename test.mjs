@@ -4,7 +4,7 @@
 import { cascade, parsePillars } from './cascade.mjs'
 import { narrate } from './narrate.mjs'
 import { callTool } from './tools.mjs'
-import { tokenpull } from './tokenpull.mjs'
+import { tokenpull, tokenpullCodex } from './tokenpull.mjs'
 import assert from 'node:assert'
 
 const MOSES = '1251211 11296121 128196310 2555179769'
@@ -93,4 +93,22 @@ assert.strictEqual(submitted.windows.find((w) => w.window === 'all').submission.
 const preview = await callTool('tokenpull_submit', {}, { adapter: mockAdapter })
 assert.ok(preview.windows.every((w) => w.submission.status === 'not_submitted'), 'no codename → preview only')
 
-console.log('\n✓ canon Υ 18436.98 · card · submit_paste · tokenpull dedup+windows · tokenpull_submit wiring')
+// --- 7. tokenpullCodex: window-level io_ratio conversion (mock codex adapter) ---
+const mockCodex = {
+  platform: 'codex',
+  defaultRoot: () => '/mockcodex',
+  async *records() {
+    yield { ts: '2026-06-18T00:00:00Z', output: 100, cacheRead: 1000, uncached: 50, file: 'a' } // within 7d
+    yield { ts: '2026-05-30T00:00:00Z', output: 10,  cacheRead: 200,  uncached: 30, file: 'b' } // ~20d → 30d/all
+  },
+}
+const cx = await tokenpullCodex({ adapter: mockCodex, now: NOW, ioRatio: 0.5 })
+const cxw = Object.fromEntries(cx.windows.map((w) => [w.window, w]))
+assert.strictEqual(cxw['7d'].pillars.input, 50, 'codex 7d input = floor(output 100 × 0.5)')
+assert.strictEqual(cxw['7d'].pillars.cacheCreate, 0, 'codex 7d cacheCreate = max(0, uncached 50 − input 50)')
+assert.strictEqual(cxw['7d'].pillars.cacheRead, 1000, 'codex 7d cacheRead = cached')
+assert.strictEqual(cxw['all'].pillars.input, 55, 'codex all input = floor(output 110 × 0.5)')
+assert.strictEqual(cxw['all'].pillars.cacheCreate, 25, 'codex all cacheCreate = uncached 80 − input 55')
+assert.strictEqual(cxw['all'].pillars.cacheRead, 1200, 'codex all cacheRead = 1000+200')
+
+console.log('\n✓ canon · card · submit_paste · tokenpull(claude) · tokenpull_submit · tokenpullCodex conversion')

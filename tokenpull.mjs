@@ -127,3 +127,73 @@ export async function tokenpull({ adapter = claudeAdapter, root, now } = {}) {
     windows,
   }
 }
+
+// ── Codex ──────────────────────────────────────────────────────────────────
+// Logs at ~/.codex/sessions/**/rollout-*.jsonl (+ archived_sessions). Token usage is
+// on `payload.type=='token_count'` lines; `payload.info.last_token_usage` is the
+// per-turn delta. Codex `input_tokens` is INCLUSIVE of cached, so the combined input to
+// split = input_tokens − cached_input_tokens (= ccusage's inputTokens, verified ~1%).
+// The input/cacheCreate split is WINDOW-level (estInput = output × io_ratio), so Codex
+// has its own pull (tokenpullCodex) instead of the per-message claude pipeline.
+export const codexAdapter = {
+  platform: 'codex',
+  defaultRoot: () => join(homedir(), '.codex'),
+  async *records(root) {
+    for (const sub of ['sessions', 'archived_sessions']) {
+      for await (const path of _walkJsonl(join(root, sub))) {
+        let text
+        try { text = await readFile(path, 'utf8') } catch { continue }
+        const rel = path.startsWith(root) ? path.slice(root.length + 1) : path
+        for (const line of text.split('\n')) {
+          if (!line.includes('"token_count"')) continue
+          let ev
+          try { ev = JSON.parse(line) } catch { continue }
+          const p = ev && ev.payload
+          if (!p || p.type !== 'token_count') continue
+          const u = (p.info || {}).last_token_usage || {}
+          const inputIncl = Number(u.input_tokens) || 0
+          const cached = Number(u.cached_input_tokens) || 0
+          yield {
+            ts: ev.timestamp || null,
+            output: (Number(u.output_tokens) || 0) + (Number(u.reasoning_output_tokens) || 0),
+            cacheRead: cached,
+            uncached: Math.max(0, inputIncl - cached), // (true input + cache-write), split window-level
+            file: rel,
+          }
+        }
+      }
+    }
+  },
+}
+
+/**
+ * Pull local Codex usage → the 4 windows of CANONICAL pillars (always estimated).
+ * Window-level conversion: input = floor(output × ioRatio) (Beta = operator's Claude
+ * input/output ratio; Alpha = 2.0 default), cacheCreate = max(0, uncached − input).
+ * Inject ioRatio/root/now/adapter for tests.
+ */
+export async function tokenpullCodex({ adapter = codexAdapter, root, now, ioRatio = 2.0 } = {}) {
+  const r = root || adapter.defaultRoot()
+  const nowMs = now == null ? Date.now() : (typeof now === 'number' ? now : Date.parse(now))
+  const recs = []
+  const files = new Set()
+  for await (const m of adapter.records(r)) { recs.push(m); if (m.file) files.add(m.file) }
+
+  const windows = WINDOWS.map((w) => {
+    const cutoff = w.days === Infinity ? -Infinity : nowMs - w.days * DAY_MS
+    const inWin = recs.filter((m) => {
+      if (w.days === Infinity) return true
+      const t = m.ts ? Date.parse(m.ts) : NaN
+      return Number.isFinite(t) && t >= cutoff && t <= nowMs
+    })
+    const sum = inWin.reduce(
+      (a, m) => ({ output: a.output + m.output, cacheRead: a.cacheRead + m.cacheRead, uncached: a.uncached + m.uncached }),
+      { output: 0, cacheRead: 0, uncached: 0 },
+    )
+    const input = Math.floor(sum.output * ioRatio) // estimated true input
+    const cacheCreate = Math.max(0, sum.uncached - input) // split cache-write out of the combined input
+    return { window: w.key, messages: inWin.length, pillars: { input, output: sum.output, cacheCreate, cacheRead: sum.cacheRead } }
+  })
+
+  return { platform: 'codex', root: r, generatedAt: new Date(nowMs).toISOString(), files: files.size, totalMessages: recs.length, estimated: true, ioRatio, windows }
+}
