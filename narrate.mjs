@@ -10,9 +10,16 @@
  * Token-only. No network, no randomness.
  */
 
-const comma = (n, dec) =>
-  Number(n).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })
-const plain = (n, dec) => Number(n).toFixed(dec)
+// Safe formatters: never emit NaN/Infinity/undefined into the card.
+const safeNum = (n) => (Number.isFinite(Number(n)) ? Number(n) : null)
+const comma = (n, dec) => {
+  const v = safeNum(n)
+  return v !== null ? v.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : '—'
+}
+const plain = (n, dec) => {
+  const v = safeNum(n)
+  return v !== null ? v.toFixed(dec) : '—'
+}
 
 /**
  * Given a cascade result ({ velocity, leverage, dev10x, pillars, class }) and an
@@ -20,20 +27,23 @@ const plain = (n, dec) => Number(n).toFixed(dec)
  */
 export function narrate(cascade, name = 'This operator') {
   const klass = cascade.class || cascade.klass || 'UNCLASSED'
-  const v = Number(cascade.velocity)
-  const l = Number(cascade.leverage)
+  const v = safeNum(cascade.velocity)
+  const l = safeNum(cascade.leverage)
 
   // "non-compounding" = a stateless pipe: no cache commits, so the cascade can't
   // form. cascade.mjs leaves dev10x null when cacheCreate is 0 (the cw/o term
   // collapses), which is exactly metrics.py's non_compounding flag.
+  // Also catches zero-input sessions where velocity/leverage are null.
   const cw = cascade.pillars ? Number(cascade.pillars.cacheCreate) : NaN
-  const nonCompounding = cascade.dev10x == null || !(cw > 0)
+  const nonCompounding = cascade.dev10x == null || !(cw > 0) || v === null || l === null
 
   let body
   if (nonCompounding) {
+    const leverageStr = l !== null ? `Leverage ${comma(l, 1)}x comes from reuse alone.` : 'Leverage is undefined (no fresh input recorded).'
+    const dev10xNote = cascade.dev10x == null ? ' 10xDEV is undefined — the compounding loop has not formed yet.' : ''
     body =
       `${name} runs a stateless pipe — no cache commits, so the cascade can't form. ` +
-      `High read volume, but nothing is being built forward. Leverage ${comma(l, 1)}x comes from reuse alone.`
+      `High read volume, but nothing is being built forward. ${leverageStr}${dev10xNote}`
   } else if (v >= 1 && l >= 100) {
     body =
       `${name} holds both axes at once: ${plain(v, 1)}x generation AND ${comma(l, 0)}x memory leverage. ` +

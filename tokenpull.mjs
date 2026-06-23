@@ -15,9 +15,10 @@
  * the same { platform, defaultRoot(), messages(root) } contract — Claude is just the first.
  */
 
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { ADAPTERS } from './adapters.mjs'
 
 const DAY_MS = 86_400_000
 
@@ -38,17 +39,36 @@ export const WINDOWS = [
   { key: 'all', days: Infinity },
 ]
 
+/** Hard cap: stop walking after this many .jsonl files to prevent OOM on
+ *  accidentally huge or circularly-symlinked directory trees.
+ *  Override via SIGRANK_MAX_JSONL_FILES env var. */
+const MAX_JSONL_FILES = Number(process.env.SIGRANK_MAX_JSONL_FILES) || 10_000
+
 /** Recursively yield every *.jsonl path under dir (any depth), sorted. Must be
  *  recursive: Claude Code stores sub-agent transcripts in `<project>/subagents/`
  *  (and other nested logs) — a 2-level readdir silently drops them, which badly
- *  under-counts input (sub-agent runs are input-heavy). token-dashboard's rglob. */
-async function* _walkJsonl(dir) {
+ *  under-counts input (sub-agent runs are input-heavy). token-dashboard's rglob.
+ *
+ *  Hardened: skips symlinked directories (prevents circular traversal) and stops
+ *  after MAX_JSONL_FILES files (prevents OOM on pathological trees). */
+async function* _walkJsonl(dir, _counter = { n: 0 }) {
+  if (_counter.n >= MAX_JSONL_FILES) return
   let entries
   try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
   for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    if (_counter.n >= MAX_JSONL_FILES) return
     const full = join(dir, e.name)
-    if (e.isDirectory()) yield* _walkJsonl(full)
-    else if (e.isFile() && e.name.endsWith('.jsonl')) yield full
+    if (e.isDirectory()) {
+      // Skip symlinked directories — prevents circular traversal on machines where
+      // ~/.claude/projects/ contains a symlink to a large or self-referential tree.
+      let stat
+      try { stat = await lstat(full) } catch { continue }
+      if (stat.isSymbolicLink()) continue
+      yield* _walkJsonl(full, _counter)
+    } else if (e.isFile() && e.name.endsWith('.jsonl')) {
+      _counter.n++
+      yield full
+    }
   }
 }
 
@@ -162,6 +182,9 @@ export const codexAdapter = {
         let text
         try { text = await readFile(path, 'utf8') } catch { continue }
         const rel = path.startsWith(root) ? path.slice(root.length + 1) : path
+        // Apply the same background-tooling exclusion as the Claude adapter — skips
+        // memory plugins / observers running under the Codex account.
+        if (EXCLUDE_TOOLING.test(rel)) continue
         for (const line of text.split('\n')) {
           if (!line.includes('"token_count"')) continue
           let ev
@@ -214,4 +237,38 @@ export async function tokenpullCodex({ adapter = codexAdapter, root, now, ioRati
   })
 
   return { platform: 'codex', root: r, generatedAt: new Date(nowMs).toISOString(), files: files.size, totalMessages: recs.length, estimated: true, ioRatio, windows }
+}
+
+/**
+ * Unified pull for ANY platform by name. Routes to the right adapter:
+ *   - 'claude' → tokenpull()
+ *   - 'codex'  → tokenpullCodex()  (requires ioRatio via opts; auto-derives from Claude if available)
+ *   - other    → tokenpull() with the adapter from ADAPTERS registry
+ *
+ * Returns the same shape as tokenpull() with an added `estimated` flag when the
+ * adapter cannot provide full cacheCreate data, and a `dataGap` string when the
+ * source's log format doesn't expose token counts at all.
+ */
+export async function tokenpullAny(platform, opts = {}) {
+  if (!platform || platform === 'claude') return tokenpull({ adapter: claudeAdapter, ...opts })
+  if (platform === 'codex') {
+    // Auto-derive io_ratio from the operator's Claude data when not explicitly provided.
+    let ioRatio = opts.ioRatio || 2.0
+    if (!opts.ioRatio) {
+      try {
+        const c = await tokenpull({ adapter: claudeAdapter })
+        const all = c.windows.find((w) => w.window === 'all')
+        if (all && all.pillars.output > 0) ioRatio = all.pillars.input / all.pillars.output
+      } catch { /* no Claude data → Alpha 2.0 */ }
+    }
+    return tokenpullCodex({ ioRatio, ...opts })
+  }
+  const adapter = ADAPTERS[platform]
+  if (!adapter) throw new Error(`Unknown platform "${platform}". Valid platforms: claude, codex, ${Object.keys(ADAPTERS).join(', ')}`)
+  const result = await tokenpull({ adapter, ...opts })
+  // Surface adapter-level flags
+  if (adapter.estimated) result.estimated = true
+  if (adapter.dataGap)   result.dataGap   = adapter.dataGap
+  if (adapter.setupNote) result.setupNote = adapter.setupNote
+  return result
 }
