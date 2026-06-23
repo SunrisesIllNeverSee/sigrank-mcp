@@ -263,6 +263,14 @@ export async function tokenpullAny(platform, opts = {}) {
     }
     return tokenpullCodex({ ioRatio, ...opts })
   }
+  // Cloud agents (Devin, etc.) run server-side — no local JSONL to read
+  const CLOUD_AGENTS = { devin: 'Cognition/Devin', }
+  if (platform in CLOUD_AGENTS) {
+    throw new Error(
+      `"${platform}" (${CLOUD_AGENTS[platform]}) runs in the cloud — sessions are not written to local JSONL files. ` +
+      `There is no local data source to read. If ${CLOUD_AGENTS[platform]} exposes a usage API in future, an adapter can be added.`
+    )
+  }
   const adapter = ADAPTERS[platform]
   if (!adapter) throw new Error(`Unknown platform "${platform}". Valid platforms: claude, codex, ${Object.keys(ADAPTERS).join(', ')}`)
   const result = await tokenpull({ adapter, ...opts })
