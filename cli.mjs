@@ -441,7 +441,7 @@ function tokscalePillars() {
     const claude = entries.filter(e =>
       e.client === 'claude' &&
       e.model !== '<synthetic>' && e.model !== 'unknown' &&
-      e.provider !== 'unknown'
+      (e.input > 0 || e.output > 0)
     )
     const p = claude.reduce((acc, e) => ({
       input:       acc.input       + (e.input      ?? 0),
