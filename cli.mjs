@@ -22,7 +22,7 @@
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -431,6 +431,51 @@ function ccusagePillars(platform = 'claude') {
   }
 }
 
+function tokscalePillars() {
+  // Read tokscale_report.json — claude client only, all-time only (no timestamps in export)
+  const reportPath = path.join(os.homedir(), 'tokscale_report.json')
+  if (!existsSync(reportPath)) return null
+  try {
+    const data = JSON.parse(readFileSync(reportPath, 'utf8'))
+    const entries = data.entries ?? []
+    const claude = entries.filter(e =>
+      e.client === 'claude' &&
+      e.model !== '<synthetic>' && e.model !== 'unknown' &&
+      e.provider !== 'unknown'
+    )
+    const p = claude.reduce((acc, e) => ({
+      input:       acc.input       + (e.input      ?? 0),
+      output:      acc.output      + (e.output     ?? 0),
+      cacheCreate: acc.cacheCreate + (e.cacheWrite ?? 0),
+      cacheRead:   acc.cacheRead   + (e.cacheRead  ?? 0),
+    }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+    // tokscale export has no timestamps → only all-time available
+    return { all: p }
+  } catch { return null }
+}
+
+function appPillars() {
+  // App numbers from screenshots — all-time, per model (no cache fields)
+  // Hard-coded from 2026-06-23 screenshot capture (update when re-screenshotted)
+  return {
+    all: {
+      input:       6_378_000,   // sum of all models: 5.6M + 102.1K + 92.9K + 130.3K + 418.9K + 33.5K
+      output:     38_682_400,   // sum: 19.6M + 6.5M + 5.4M + 6.6M + 292.4K + 290.4K
+      cacheCreate: null,        // not shown in App UI
+      cacheRead:   null,        // not shown in App UI
+    },
+    _note: 'App UI — all-time, per-model sum from screenshots 2026-06-23. No cache fields. Update when re-screenshotted.',
+    _perModel: [
+      { model: 'claude-opus-4-8',  input: 5_600_000, output: 19_600_000 },
+      { model: 'claude-sonnet-4-5',input:   102_100,  output:  6_500_000 },
+      { model: 'claude-sonnet-4-6',input:    92_900,  output:  5_400_000 },
+      { model: 'claude-opus-4-7',  input:   130_300,  output:  6_600_000 },
+      { model: 'claude-fable-5',   input:   418_900,  output:    292_400 },
+      { model: 'claude-haiku-4-5', input:    33_500,  output:    290_400 },
+    ],
+  }
+}
+
 function tokenDashPillars() {
   // query token-dashboard SQLite directly
   const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
@@ -475,19 +520,44 @@ function fmtDelta(a, b) {
   return d > 0 ? green(label) : red(label)
 }
 
+// Compute cascade metrics from raw pillars (mirrors bridge.ts computeCascadeMetrics)
+function cascadeFromPillars(p) {
+  if (!p) return null
+  const i  = p.input       ?? 0
+  const o  = p.output      ?? 0
+  const cw = p.cacheCreate ?? 0
+  const cr = p.cacheRead   ?? 0
+  if (i === 0 && o === 0) return null
+  const safeI = Math.max(i, 1)
+  const total = i + o + cw + cr
+  const velocity = o / safeI
+  const leverage = cr / safeI
+  const yield_   = leverage * velocity
+  const snr      = (i + o) > 0 ? o / (i + o) : 0
+  // dev10x = log10(T × C × R) — only when all four pillars present
+  let dev10x = null
+  if (cw > 0 && o > 0 && i > 0 && cr > 0) {
+    const T = o / i, C = cw / o, R = cr / cw
+    dev10x = Math.log10(T * C * R)
+  }
+  // efficiency = ((cr+cw+o)/i) / 4.0
+  const efficiency = ((cr + cw + o) / safeI) / 4.0
+  const cls = yield_ > 500 ? 'TRANSMITTER' : yield_ > 400 ? 'ARCH+' : yield_ > 300 ? 'ARCH' : yield_ > 150 ? 'POWER' : 'BASE'
+  return { yield: yield_, velocity, leverage, snr, dev10x, efficiency, class: cls, total }
+}
+
 async function runCompare({ platform = 'claude' } = {}) {
   write(HIDE_CURSOR)
-  writeln(`  ${dim('reading ccusage…')}`)
-  const ccPillars = ccusagePillars(platform)
-  write(CURSOR_UP(1) + ERASE_LINE)
 
-  writeln(`  ${dim('reading tokenpull…')}`)
-  let tpData
-  try { tpData = await callTool('tokenpull', { platform }) } catch { tpData = null }
-  write(CURSOR_UP(1) + ERASE_LINE)
-
-  writeln(`  ${dim('reading token-dashboard…')}`)
-  const tdPillars = tokenDashPillars()
+  // Pull all five sources in parallel
+  writeln(`  ${dim('reading all 5 sources…')}`)
+  const [ccPillars, tpData, tdPillars, tsPillars, apPillars] = await Promise.all([
+    Promise.resolve(ccusagePillars(platform)),
+    callTool('tokenpull', { platform }).catch(() => null),
+    Promise.resolve(tokenDashPillars()),
+    Promise.resolve(tokscalePillars()),
+    Promise.resolve(appPillars()),
+  ])
   write(CURSOR_UP(1) + ERASE_LINE)
 
   const w = termWidth()
@@ -500,103 +570,115 @@ async function runCompare({ platform = 'claude' } = {}) {
     tpPillars[win.window] = win.pillars
   }
 
+  // sources: name, color, pillars-by-window, note
+  const SOURCES = [
+    { name: 'tokenpull',   color: cyan,                      pillars: tpPillars,                      note: 'JSONL deduped by msg id · canon source' },
+    { name: 'ccusage',     color: (s) => paint(c.green, s),  pillars: ccPillars ?? {},                note: 'ccusage claude subcommand · monthly only' },
+    { name: 'token-dash',  color: (s) => paint(c.magenta,s), pillars: tdPillars ?? {},                note: 'SQLite — double-counts sessions · use with caution' },
+    { name: 'tokscale',    color: (s) => paint(c.blue, s),   pillars: tsPillars ?? {},                note: 'all-time only · partial export (~5% of opus-4-8)' },
+    { name: 'App',         color: gold,                      pillars: apPillars ?? {},                note: 'screenshots 2026-06-23 · no cache fields · update manually' },
+  ]
+
   writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('Source Comparison')}  ${dim(`platform: ${platform}  ·  claude tokens only`)}`)
+  writeln(`  ${gold('⊙ SigRank')} ${bold('5-Source Comparison')}  ${dim(`platform: ${platform}  ·  claude only`)}`)
   writeln(`  ${dim('─'.repeat(w - 4))}`)
 
+  // ── PILLARS TABLE ──────────────────────────────────────────────────────────
   const PILLARS = [
     { key: 'input',       label: 'Input' },
     { key: 'output',      label: 'Output' },
-    { key: 'cacheCreate', label: 'Cache Create' },
+    { key: 'cacheCreate', label: 'Cache Write' },
     { key: 'cacheRead',   label: 'Cache Read' },
   ]
 
   for (const { key, label } of PILLARS) {
     writeln()
     writeln(`  ${bold(label)}`)
-
-    // header row
-    const hcols = [
-      padEnd(dim('Source'), 16),
-      ...WINS.map(win => padStart(dim(WIN_LABEL[win]), 14))
-    ]
+    const hcols = [padEnd(dim('Source'), 14), ...WINS.map(win => padStart(dim(WIN_LABEL[win]), 13))]
     writeln(`    ${hcols.join('  ')}`)
-    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 16 + WINS.length * 16)))}`)
+    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 14 + WINS.length * 15)))}`)
 
-    // ccusage row
-    if (ccPillars) {
-      const cols = [padEnd(cyan('ccusage'), 16), ...WINS.map(win => padStart(fmtTokens(ccPillars[win]?.[key] ?? 0), 14))]
-      writeln(`    ${cols.join('  ')}`)
-    } else {
-      writeln(`    ${padEnd(dim('ccusage'), 16)}  ${dim('not found')}`)
-    }
-
-    // tokenpull row
-    if (tpData) {
-      const cols = [padEnd(cyan('tokenpull'), 16), ...WINS.map(win => padStart(fmtTokens(tpPillars[win]?.[key] ?? 0), 14))]
-      writeln(`    ${cols.join('  ')}`)
-    } else {
-      writeln(`    ${padEnd(dim('tokenpull'), 16)}  ${dim('not found')}`)
-    }
-
-    // token-dashboard row
-    if (tdPillars) {
-      const cols = [padEnd(cyan('token-dash'), 16), ...WINS.map(win => padStart(fmtTokens(tdPillars[win]?.[key] ?? 0), 14))]
-      writeln(`    ${cols.join('  ')}`)
-    } else {
-      writeln(`    ${padEnd(dim('token-dash'), 16)}  ${dim('not found — run: python3 ~/token-dashboard/cli.py scan')}`)
-    }
-
-    // delta row: tokenpull vs token-dash (the two most comparable)
-    if (tpData && tdPillars) {
-      const cols = [
-        padEnd(dim('Δ tp→td'), 16),
-        ...WINS.map(win => {
-          const a = tpPillars[win]?.[key] ?? 0
-          const b = tdPillars[win]?.[key] ?? 0
-          return padStart(fmtDelta(a, b), 14)
-        })
-      ]
-      writeln(`    ${cols.join('  ')}`)
+    for (const src of SOURCES) {
+      const vals = WINS.map(win => {
+        const p = src.pillars[win]
+        const v = p?.[key]
+        if (v == null) return padStart(dim('—'), 13)
+        return padStart(fmtTokens(v), 13)
+      })
+      writeln(`    ${padEnd(src.color(src.name), 14)}  ${vals.join('  ')}`)
     }
   }
 
-  // SigRank cascade section
+  // ── SIGNATURE TABLE ────────────────────────────────────────────────────────
   writeln()
   writeln(`  ${dim('─'.repeat(w - 4))}`)
-  writeln(`  ${bold('SigRank Cascade')}  ${dim('(tokenpull → cascade math)')}`)
+  writeln(`  ${bold('Cascade Signature')}  ${dim('per source · all windows where data available')}`)
   writeln()
 
-  const CASCADE_ROWS = [
-    { key: 'yield',    label: 'Υ Yield',   fmt: v => fmtYield(v) },
-    { key: 'snr',      label: 'SNR',        fmt: v => fmtSNR(v) },
-    { key: 'leverage', label: 'Leverage',   fmt: v => `${fmtLev(v)}×` },
-    { key: 'velocity', label: 'Velocity',   fmt: v => v.toFixed(2) },
-    { key: 'dev10x',   label: '10xDEV',     fmt: v => v.toFixed(2) },
-    { key: 'class',    label: 'Class',      fmt: v => colorClass(v) },
+  const SIG_METRICS = [
+    { key: 'yield',      label: 'Υ Yield',    fmt: v => fmtYield(v),       w: 9 },
+    { key: 'velocity',   label: 'Vel',         fmt: v => v.toFixed(2),      w: 6 },
+    { key: 'leverage',   label: 'Lev',         fmt: v => `${fmtLev(v)}×`,  w: 7 },
+    { key: 'snr',        label: 'SNR',         fmt: v => fmtSNR(v),         w: 6 },
+    { key: 'dev10x',     label: '10x',         fmt: v => v.toFixed(2),      w: 5 },
+    { key: 'efficiency', label: 'Eff',         fmt: v => v.toFixed(1),      w: 6 },
+    { key: 'class',      label: 'Class',       fmt: v => colorClass(v),     w: 12 },
   ]
 
-  const hcols = [padEnd(dim('Metric'), 12), ...WINS.map(win => padStart(dim(WIN_LABEL[win]), 12))]
-  writeln(`    ${hcols.join('  ')}`)
-  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 12 + WINS.length * 14)))}`)
+  // header
+  const sigHdr = [
+    padEnd(dim('Source'), 14),
+    padEnd(dim('Window'), 8),
+    ...SIG_METRICS.map(m => padStart(dim(m.label), m.w)),
+  ]
+  writeln(`    ${sigHdr.join('  ')}`)
+  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 80)))}`)
 
-  for (const { key, label, fmt } of CASCADE_ROWS) {
-    const cols = [
-      padEnd(dim(label), 12),
-      ...WINS.map(win => {
-        const cas = tpPillars[win] ? (tpData?.windows?.find(w => w.window === win)?.cascade) : null
-        const v = cas?.[key]
-        return padStart(v != null ? fmt(v) : dim('—'), 12)
+  for (const src of SOURCES) {
+    const availWins = WINS.filter(win => src.pillars[win] != null)
+    if (availWins.length === 0) {
+      writeln(`    ${padEnd(src.color(src.name), 14)}  ${dim('no data')}`)
+      continue
+    }
+    let first = true
+    for (const win of availWins) {
+      const p = src.pillars[win]
+      // For tokenpull, use the pre-computed cascade from the tool if available
+      let cas
+      if (src.name === 'tokenpull') {
+        const tpWin = tpData?.windows?.find(ww => ww.window === win)
+        cas = tpWin?.cascade ? {
+          yield: tpWin.cascade.yield,
+          velocity: tpWin.cascade.velocity,
+          leverage: tpWin.cascade.leverage,
+          snr: tpWin.cascade.snr,
+          dev10x: tpWin.cascade.dev10x,
+          efficiency: null,
+          class: tpWin.cascade.class,
+        } : cascadeFromPillars(p)
+      } else {
+        cas = cascadeFromPillars(p)
+      }
+
+      const srcLabel = first ? src.color(src.name) : ' '.repeat(stripAnsi(src.name).length)
+      const winLabel = win === 'all' ? bold('all-time') : win
+      const sigCols = SIG_METRICS.map(m => {
+        const v = cas?.[m.key]
+        return padStart(v != null ? m.fmt(v) : dim('—'), m.w)
       })
-    ]
-    writeln(`    ${cols.join('  ')}`)
+      writeln(`    ${padEnd(srcLabel, 14)}  ${padEnd(winLabel, 8)}  ${sigCols.join('  ')}`)
+      first = false
+    }
   }
 
-  // estimated rank hint
+  // ── NOTES ─────────────────────────────────────────────────────────────────
   writeln()
   writeln(`  ${dim('─'.repeat(w - 4))}`)
-  writeln(`  ${dim('note: token-dash has longer history (SQLite); tokenpull reads live JSONL only')}`)
-  writeln(`  ${dim('note: ccusage = primary pillar source (all agents); tokenpull = claude-only cascade input')}`)
+  for (const src of SOURCES) {
+    writeln(`  ${src.color(src.name.padEnd(12))}  ${dim(src.note)}`)
+  }
+  writeln(`  ${dim('Eff = ((cacheRead+cacheWrite+output)/input)/4.0 vs AA baseline')}`)
+  writeln(`  ${dim('App has no cache fields → Υ/Lev/Eff/10x unavailable from App source')}`)
   writeln()
   write(SHOW_CURSOR)
 }
