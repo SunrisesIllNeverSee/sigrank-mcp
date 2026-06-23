@@ -1,6 +1,6 @@
 {
   "name": "sigrank-mcp",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "type": "module",
   "bin": {

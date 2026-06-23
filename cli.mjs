@@ -22,7 +22,7 @@
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { execSync } from 'child_process'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
 
@@ -477,34 +477,27 @@ function appPillars() {
 }
 
 function tokenDashPillars() {
-  // query token-dashboard SQLite directly
   const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
   if (!existsSync(dbPath)) return null
   try {
-    const claudeFilter = `(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')`
-    const now = new Date()
-    const result = {}
-    for (const [win, days] of [['7d', 7], ['30d', 30], ['90d', 90]]) {
-      const since = new Date(now - days * 86400000).toISOString()
-      const cmd = `python3 -c "
-import sqlite3, json
-db = sqlite3.connect('${dbPath}')
-r = db.execute('''SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE timestamp>=? AND ${claudeFilter}''',(('${since}',))).fetchone()
-print(json.dumps({'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}))
-"`
-      const raw = execSync(cmd, { timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
-      result[win] = JSON.parse(raw)
-    }
-    // all-time
-    const cmd = `python3 -c "
-import sqlite3, json
-db = sqlite3.connect('${dbPath}')
-r = db.execute('SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE ${claudeFilter}').fetchone()
-print(json.dumps({'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}))
-"`
-    const raw = execSync(cmd, { timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
-    result['all'] = JSON.parse(raw)
-    return result
+    const tmpScript = path.join(os.tmpdir(), 'sigrank_td_query.py')
+    writeFileSync(tmpScript, `
+import sqlite3, json, sys
+from datetime import datetime, timezone, timedelta
+db = sqlite3.connect(sys.argv[1])
+cf = "(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')"
+out = {}
+for win, days in [('7d',7),('30d',30),('90d',90)]:
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    r = db.execute(f"SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE timestamp>=? AND {cf}",(since,)).fetchone()
+    out[win] = {'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}
+r = db.execute(f"SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE {cf}").fetchone()
+out['all'] = {'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}
+print(json.dumps(out))
+`)
+    const raw = execSync(`python3 "${tmpScript}" "${dbPath}"`,
+      { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    return JSON.parse(raw)
   } catch {
     return null
   }
