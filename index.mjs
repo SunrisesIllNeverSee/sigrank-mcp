@@ -1,26 +1,45 @@
 #!/usr/bin/env node
 /**
- * SigRank MCP server — exposes the SigRank yield cascade + live board as MCP tools
- * any client (Claude Code, Cursor, …) can call. Token-only, Claude/ccusage-first.
+ * SigRank MCP server + CLI entry point.
  *
- * Tools (see ./tools.mjs):
- *   - rank_paste(text)              paste ccusage token counts → Υ/SNR/Leverage/…+class +card
- *   - get_leaderboard()             the live public board (signalaf.com)
- *   - get_operator(codename)        one operator's live profile
- *   - submit_paste(text, codename)  rank AND publish to the board in one call
+ * CLI mode  — triggered when any command arg is passed:
+ *   npx sigrank-mcp board           live leaderboard (auto-refresh)
+ *   npx sigrank-mcp me              your local cascade across 4 windows
+ *   npx sigrank-mcp watch           RT tune meter, re-reads local logs
+ *   npx sigrank-mcp --help          full command reference
  *
- * Pure cascade math lives in ./cascade.mjs (mirrors lib/ingest/bridge.ts); the
- * deterministic card in ./narrate.mjs; the tool table + dispatcher in ./tools.mjs.
- * No transcript content, no auth. Reuses the live read/write endpoints over HTTP.
+ * MCP server mode — triggered when no args (the default for MCP clients):
+ *   npx sigrank-mcp                 starts the MCP stdio server
+ *
+ * Tools exposed in MCP mode (see ./tools.mjs):
+ *   rank_paste · get_leaderboard · get_operator · submit_paste
+ *   tokenpull  · tokenpull_submit · rank_windows · watch_tokenpull
+ *
+ * Pure cascade math: ./cascade.mjs  |  narration card: ./narrate.mjs
+ * Tool table + dispatcher: ./tools.mjs  |  Terminal UI: ./cli.mjs
+ * Token-only — no transcript content, no auth.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { TOOLS, callTool } from './tools.mjs'
+import { runCli } from './cli.mjs'
 
-async function main() {
-  const server = new Server({ name: 'sigrank', version: '0.6.1' }, { capabilities: { tools: {} } })
+// Prevent silent crashes — log to stderr (MCP clients read stdout; stderr is safe for
+// diagnostics). The process exits so the client can respawn with a clean slate rather
+// than hanging on a broken connection.
+process.on('uncaughtException', (err) => {
+  process.stderr.write(`[sigrank-mcp] uncaughtException: ${err?.stack || err}\n`)
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  process.stderr.write(`[sigrank-mcp] unhandledRejection: ${reason?.stack || reason}\n`)
+  process.exit(1)
+})
+
+async function startMcpServer() {
+  const server = new Server({ name: 'sigrank', version: '0.6.4' }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
@@ -33,4 +52,11 @@ async function main() {
   await server.connect(new StdioServerTransport())
 }
 
-main()
+// Route: CLI commands → terminal UI; no args → MCP server
+const cliArgs = process.argv.slice(2)
+const CLI_COMMANDS = new Set(['board', 'me', 'watch', 'help', '--help', '-h', '--version', '-v'])
+if (cliArgs.length > 0 && (CLI_COMMANDS.has(cliArgs[0]) || cliArgs[0].startsWith('--'))) {
+  runCli(process.argv)
+} else {
+  startMcpServer()
+}
