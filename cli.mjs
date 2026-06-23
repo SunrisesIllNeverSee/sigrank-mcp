@@ -3,23 +3,28 @@
  *
  * Commands (no external deps — pure Node.js ANSI escape codes):
  *
- *   npx sigrank-mcp board              live leaderboard, refreshes every 30s
- *   npx sigrank-mcp board --window 7d  board for a specific window
- *   npx sigrank-mcp board --once       print once and exit (no live refresh)
- *   npx sigrank-mcp me                 your cascade across all 4 windows
- *   npx sigrank-mcp me --platform amp  use a different platform adapter
- *   npx sigrank-mcp watch              RT tune meter — local cascade, refreshes
- *   npx sigrank-mcp watch --window 7d  watch a specific window
+ *   npx sigrank-mcp board                live leaderboard, refreshes every 30s
+ *   npx sigrank-mcp board --window 7d    board for a specific window
+ *   npx sigrank-mcp board --once         print once and exit (no live refresh)
+ *   npx sigrank-mcp me                   your cascade across all 4 windows
+ *   npx sigrank-mcp me --platform amp    use a different platform adapter
+ *   npx sigrank-mcp me --compare         raw pillar comparison: ccusage vs tokenpull vs token-dashboard
+ *   npx sigrank-mcp watch                RT tune meter — local cascade, refreshes
+ *   npx sigrank-mcp watch --window 7d    watch a specific window
  *
  * Color palette mirrors the SigRank web dark theme:
  *   gold = class TRANSMITTER headline + rank #1
  *   cyan = active metrics / your row highlight
  *   dim  = secondary data, separators
- *   red  = negative movement
+ *   red  = negative movement / delta
  *   green = positive movement
  */
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { execSync } from 'child_process'
+import { existsSync } from 'fs'
+import os from 'os'
+import path from 'path'
 
 // ── ANSI helpers (no chalk dep) ────────────────────────────────────────────
 const ESC = '\x1b['
@@ -283,10 +288,10 @@ async function runBoard({ window = '30d', once = false, refresh = 30 } = {}) {
 
 // ── ME command ───────────────────────────────────────────────────────────────
 
-async function runMe({ platform = 'claude' } = {}) {
+async function runMe({ platform = 'claude', compare = false } = {}) {
+  if (compare) return runCompare({ platform })
+
   write(HIDE_CURSOR)
-  writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('Your Cascade')}  ${dim(`platform: ${platform}`)}`)
   writeln(`  ${dim('reading local token logs…')}`)
 
   let pulled
@@ -294,6 +299,7 @@ async function runMe({ platform = 'claude' } = {}) {
     pulled = await callTool('tokenpull', { platform })
   } catch (e) {
     write(SHOW_CURSOR)
+    write(CURSOR_UP(1) + ERASE_LINE)
     writeln(red(`  ✗ ${e.message}`))
     process.exit(1)
   }
@@ -302,6 +308,7 @@ async function runMe({ platform = 'claude' } = {}) {
   write(CURSOR_UP(1) + ERASE_LINE)
 
   const w = termWidth()
+  writeln()
   writeln(`  ${gold('⊙ SigRank')} ${bold('Your Cascade')}  ${dim(`platform: ${pulled.platform ?? platform}`)}`)
   if (pulled.estimated) writeln(`  ${dim('⚠  estimated values (cache data unavailable for this platform)')}`)
   writeln(`  ${dim('─'.repeat(w - 4))}`)
@@ -380,6 +387,220 @@ async function runMe({ platform = 'claude' } = {}) {
   write(SHOW_CURSOR)
 }
 
+// ── COMPARE command ───────────────────────────────────────────────────────────
+// Side-by-side: ccusage (JSON) vs tokenpull vs token-dashboard (SQLite)
+
+function ccusagePillars(platform = 'claude') {
+  // ccusage <platform> daily --json → sum by window
+  try {
+    const cmd = platform === 'claude' ? 'ccusage claude daily --json' : `ccusage ${platform} daily --json`
+    const raw = execSync(cmd, { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const data = JSON.parse(raw)
+    const rows = data.daily ?? data // ccusage may return {daily:[...]} or [...]
+
+    const now = Date.now()
+    const cutoff = { '7d': 7, '30d': 30, '90d': 90 }
+    const result = {}
+
+    for (const [win, days] of Object.entries(cutoff)) {
+      const since = new Date(now - days * 86400000)
+      let input = 0, output = 0, cacheCreate = 0, cacheRead = 0
+      for (const row of rows) {
+        const d = new Date(row.date ?? row.day ?? row.week ?? '1970-01-01')
+        if (d >= since) {
+          input       += row.inputTokens        ?? row.input_tokens        ?? 0
+          output      += row.outputTokens       ?? row.output_tokens       ?? 0
+          cacheCreate += row.cacheCreationTokens ?? row.cache_create_tokens ?? 0
+          cacheRead   += row.cacheReadTokens    ?? row.cache_read_tokens   ?? 0
+        }
+      }
+      result[win] = { input, output, cacheCreate, cacheRead }
+    }
+    // all-time = sum everything
+    let input = 0, output = 0, cacheCreate = 0, cacheRead = 0
+    for (const row of rows) {
+      input       += row.inputTokens        ?? row.input_tokens        ?? 0
+      output      += row.outputTokens       ?? row.output_tokens       ?? 0
+      cacheCreate += row.cacheCreationTokens ?? row.cache_create_tokens ?? 0
+      cacheRead   += row.cacheReadTokens    ?? row.cache_read_tokens   ?? 0
+    }
+    result['all'] = { input, output, cacheCreate, cacheRead }
+    return result
+  } catch {
+    return null
+  }
+}
+
+function tokenDashPillars() {
+  // query token-dashboard SQLite directly
+  const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
+  if (!existsSync(dbPath)) return null
+  try {
+    const claudeFilter = `(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')`
+    const now = new Date()
+    const result = {}
+    for (const [win, days] of [['7d', 7], ['30d', 30], ['90d', 90]]) {
+      const since = new Date(now - days * 86400000).toISOString()
+      const cmd = `python3 -c "
+import sqlite3, json
+db = sqlite3.connect('${dbPath}')
+r = db.execute('''SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE timestamp>=? AND ${claudeFilter}''',(('${since}',))).fetchone()
+print(json.dumps({'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}))
+"`
+      const raw = execSync(cmd, { timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+      result[win] = JSON.parse(raw)
+    }
+    // all-time
+    const cmd = `python3 -c "
+import sqlite3, json
+db = sqlite3.connect('${dbPath}')
+r = db.execute('SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE ${claudeFilter}').fetchone()
+print(json.dumps({'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}))
+"`
+    const raw = execSync(cmd, { timeout: 10000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    result['all'] = JSON.parse(raw)
+    return result
+  } catch {
+    return null
+  }
+}
+
+function fmtDelta(a, b) {
+  if (a == null || b == null) return dim('  —')
+  const d = b - a
+  if (d === 0) return dim('  =')
+  const pct = a !== 0 ? `${d > 0 ? '+' : ''}${((d / a) * 100).toFixed(1)}%` : ''
+  const abs = `${d > 0 ? '+' : ''}${fmtTokens(Math.abs(d))}`
+  const label = `${abs} ${pct}`
+  return d > 0 ? green(label) : red(label)
+}
+
+async function runCompare({ platform = 'claude' } = {}) {
+  write(HIDE_CURSOR)
+  writeln(`  ${dim('reading ccusage…')}`)
+  const ccPillars = ccusagePillars(platform)
+  write(CURSOR_UP(1) + ERASE_LINE)
+
+  writeln(`  ${dim('reading tokenpull…')}`)
+  let tpData
+  try { tpData = await callTool('tokenpull', { platform }) } catch { tpData = null }
+  write(CURSOR_UP(1) + ERASE_LINE)
+
+  writeln(`  ${dim('reading token-dashboard…')}`)
+  const tdPillars = tokenDashPillars()
+  write(CURSOR_UP(1) + ERASE_LINE)
+
+  const w = termWidth()
+  const WINS = ['7d', '30d', '90d', 'all']
+  const WIN_LABEL = { '7d': '7d', '30d': '30d', '90d': '90d', 'all': 'all-time' }
+
+  // build tokenpull pillar lookup
+  const tpPillars = {}
+  for (const win of (tpData?.windows ?? [])) {
+    tpPillars[win.window] = win.pillars
+  }
+
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Source Comparison')}  ${dim(`platform: ${platform}  ·  claude tokens only`)}`)
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+
+  const PILLARS = [
+    { key: 'input',       label: 'Input' },
+    { key: 'output',      label: 'Output' },
+    { key: 'cacheCreate', label: 'Cache Create' },
+    { key: 'cacheRead',   label: 'Cache Read' },
+  ]
+
+  for (const { key, label } of PILLARS) {
+    writeln()
+    writeln(`  ${bold(label)}`)
+
+    // header row
+    const hcols = [
+      padEnd(dim('Source'), 16),
+      ...WINS.map(win => padStart(dim(WIN_LABEL[win]), 14))
+    ]
+    writeln(`    ${hcols.join('  ')}`)
+    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 16 + WINS.length * 16)))}`)
+
+    // ccusage row
+    if (ccPillars) {
+      const cols = [padEnd(cyan('ccusage'), 16), ...WINS.map(win => padStart(fmtTokens(ccPillars[win]?.[key] ?? 0), 14))]
+      writeln(`    ${cols.join('  ')}`)
+    } else {
+      writeln(`    ${padEnd(dim('ccusage'), 16)}  ${dim('not found')}`)
+    }
+
+    // tokenpull row
+    if (tpData) {
+      const cols = [padEnd(cyan('tokenpull'), 16), ...WINS.map(win => padStart(fmtTokens(tpPillars[win]?.[key] ?? 0), 14))]
+      writeln(`    ${cols.join('  ')}`)
+    } else {
+      writeln(`    ${padEnd(dim('tokenpull'), 16)}  ${dim('not found')}`)
+    }
+
+    // token-dashboard row
+    if (tdPillars) {
+      const cols = [padEnd(cyan('token-dash'), 16), ...WINS.map(win => padStart(fmtTokens(tdPillars[win]?.[key] ?? 0), 14))]
+      writeln(`    ${cols.join('  ')}`)
+    } else {
+      writeln(`    ${padEnd(dim('token-dash'), 16)}  ${dim('not found — run: python3 ~/token-dashboard/cli.py scan')}`)
+    }
+
+    // delta row: tokenpull vs token-dash (the two most comparable)
+    if (tpData && tdPillars) {
+      const cols = [
+        padEnd(dim('Δ tp→td'), 16),
+        ...WINS.map(win => {
+          const a = tpPillars[win]?.[key] ?? 0
+          const b = tdPillars[win]?.[key] ?? 0
+          return padStart(fmtDelta(a, b), 14)
+        })
+      ]
+      writeln(`    ${cols.join('  ')}`)
+    }
+  }
+
+  // SigRank cascade section
+  writeln()
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+  writeln(`  ${bold('SigRank Cascade')}  ${dim('(tokenpull → cascade math)')}`)
+  writeln()
+
+  const CASCADE_ROWS = [
+    { key: 'yield',    label: 'Υ Yield',   fmt: v => fmtYield(v) },
+    { key: 'snr',      label: 'SNR',        fmt: v => fmtSNR(v) },
+    { key: 'leverage', label: 'Leverage',   fmt: v => `${fmtLev(v)}×` },
+    { key: 'velocity', label: 'Velocity',   fmt: v => v.toFixed(2) },
+    { key: 'dev10x',   label: '10xDEV',     fmt: v => v.toFixed(2) },
+    { key: 'class',    label: 'Class',      fmt: v => colorClass(v) },
+  ]
+
+  const hcols = [padEnd(dim('Metric'), 12), ...WINS.map(win => padStart(dim(WIN_LABEL[win]), 12))]
+  writeln(`    ${hcols.join('  ')}`)
+  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 12 + WINS.length * 14)))}`)
+
+  for (const { key, label, fmt } of CASCADE_ROWS) {
+    const cols = [
+      padEnd(dim(label), 12),
+      ...WINS.map(win => {
+        const cas = tpPillars[win] ? (tpData?.windows?.find(w => w.window === win)?.cascade) : null
+        const v = cas?.[key]
+        return padStart(v != null ? fmt(v) : dim('—'), 12)
+      })
+    ]
+    writeln(`    ${cols.join('  ')}`)
+  }
+
+  // estimated rank hint
+  writeln()
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+  writeln(`  ${dim('note: token-dash has longer history (SQLite); tokenpull reads live JSONL only')}`)
+  writeln(`  ${dim('note: ccusage = primary pillar source (all agents); tokenpull = claude-only cascade input')}`)
+  writeln()
+  write(SHOW_CURSOR)
+}
+
 // ── WATCH command ─────────────────────────────────────────────────────────────
 
 async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 } = {}) {
@@ -446,16 +667,17 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
 
 function showHelp() {
   writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('CLI')}  ${dim('v0.6.4')}`)
+  writeln(`  ${gold('⊙ SigRank')} ${bold('CLI')}  ${dim('v0.6.5')}`)
   writeln()
   writeln(`  ${bold('Commands')}`)
-  writeln(`    ${cyan('board')}              live leaderboard (refreshes every 30s)`)
-  writeln(`    ${cyan('board --window 7d')} board for a specific window (7d, 30d, 90d, all_time)`)
-  writeln(`    ${cyan('board --once')}      print once and exit`)
-  writeln(`    ${cyan('me')}                your cascade across all 4 time windows`)
-  writeln(`    ${cyan('me --platform amp')} use a different platform adapter`)
-  writeln(`    ${cyan('watch')}             live tune meter — re-reads local logs every 30s`)
-  writeln(`    ${cyan('watch --window 7d')} watch a specific window`)
+  writeln(`    ${cyan('board')}                live leaderboard (refreshes every 30s)`)
+  writeln(`    ${cyan('board --window 7d')}    board for a specific window (7d, 30d, 90d, all_time)`)
+  writeln(`    ${cyan('board --once')}         print once and exit`)
+  writeln(`    ${cyan('me')}                   your cascade across all 4 time windows`)
+  writeln(`    ${cyan('me --platform amp')}    use a different platform adapter`)
+  writeln(`    ${cyan('me --compare')}         raw pillar comparison: ccusage vs tokenpull vs token-dashboard`)
+  writeln(`    ${cyan('watch')}                live tune meter — re-reads local logs every 30s`)
+  writeln(`    ${cyan('watch --window 7d')}    watch a specific window`)
   writeln()
   writeln(`  ${bold('Options')}`)
   writeln(`    ${dim('--window')}    7d · 30d · 90d · all_time  (default: 30d for board, 7d for watch)`)
@@ -498,7 +720,7 @@ export async function runCli(argv) {
         refresh: Number(flags.refresh) || 30,
       })
     } else if (cmd === 'me') {
-      await runMe({ platform: flags.platform ?? 'claude' })
+      await runMe({ platform: flags.platform ?? 'claude', compare: flags.compare === true || flags.compare === 'true' })
     } else if (cmd === 'watch') {
       await runWatch({
         platform: flags.platform ?? 'claude',
@@ -508,7 +730,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.6.4')
+      writeln('0.6.5')
     } else {
       // unknown command: show help
       showHelp()
