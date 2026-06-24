@@ -1161,6 +1161,8 @@ function showHelp() {
   writeln(`    ${cyan('me --platform codex')}      use a different platform adapter`)
   writeln(`    ${cyan('compare')}                  raw pillar audit: tokenpull vs ccusage vs token-dash vs tokscale`)
   writeln(`    ${cyan('compare --platform codex')} compare for a specific platform`)
+  writeln(`    ${cyan('tui')}                      full tabbed TUI: Dashboard / Compare / Board / Watch`)
+  writeln(`    ${cyan('tui --platform codex')}     TUI with a different default platform`)
   writeln(`    ${cyan('watch')}                    live tune meter — re-reads local logs every 30s`)
   writeln(`    ${cyan('watch --window 7d')}        watch a specific window`)
   writeln()
@@ -1212,6 +1214,9 @@ export async function runCli(argv) {
       await runMe({ platform: flags.platform ?? 'claude', compare: flags.compare === true || flags.compare === 'true' })
     } else if (cmd === 'compare') {
       await runCompare({ platform: flags.platform ?? 'claude' })
+    } else if (cmd === 'tui') {
+      const { runTui } = await import('./tui.mjs')
+      await runTui({ platform: flags.platform ?? 'claude', window: flags.window ?? '7d' })
     } else if (cmd === 'watch') {
       await runWatch({
         platform: flags.platform ?? 'claude',
@@ -1221,7 +1226,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln("0.9.0")
+      writeln("0.9.1")
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
