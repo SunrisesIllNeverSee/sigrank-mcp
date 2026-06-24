@@ -551,9 +551,9 @@ async function runCompare({ platform = 'claude' } = {}) {
   const [ccPillars, tpData, tdPillars, tsPillars, apPillars] = await Promise.all([
     Promise.resolve(ccusagePillars(platform)),
     callTool('tokenpull', { platform }).catch(() => null),
-    Promise.resolve(tokenDashPillars()),
-    Promise.resolve(tokscalePillars()),
-    Promise.resolve(appPillars()),
+    Promise.resolve(platform === 'claude' ? tokenDashPillars() : null),
+    Promise.resolve(tokscalePillars(platform)),
+    Promise.resolve(platform === 'claude' ? appPillars() : null),
   ])
   write(CURSOR_UP(1) + ERASE_LINE)
 
@@ -577,7 +577,7 @@ async function runCompare({ platform = 'claude' } = {}) {
   ]
 
   writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('5-Source Comparison')}  ${dim(`platform: ${platform}  ·  claude only`)}`)
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Source Comparison')}  ${dim(`platform: ${platform}`)}  ${dim('tokenpull · ccusage · token-dash · tokscale')}`)
   writeln(`  ${dim('─'.repeat(w - 4))}`)
 
   // ── PILLARS TABLE ──────────────────────────────────────────────────────────
@@ -1221,7 +1221,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln("0.8.9")
+      writeln("0.9.0")
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
