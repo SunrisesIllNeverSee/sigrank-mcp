@@ -8,18 +8,61 @@ Zero external dependencies. Pure Node.js. No account required to read.
 
 ---
 
-## Install
+## Install & run
 
 ```bash
-npx sigrank-mcp board
+npx sigrank-mcp
 ```
 
-No install needed. `npx` runs it directly. Or install globally:
+No install needed. Runs immediately. Opens your full operator dashboard — all platforms detected, all windows, token pillars, live board position, submit prompt.
+
+Or install globally:
 
 ```bash
 npm install -g sigrank-mcp
-sigrank-mcp board
+sigrank-mcp
 ```
+
+---
+
+## Default view
+
+```
+⊙ SigRank  Operator Dashboard                       signalaf.com  07:31:19
+Detected:  claude 720 files · 18,375 msgs  codex 103 files · 6,608 msgs
+────────────────────────────────────────────────────────────────────────────
+
+Your Cascade
+  Platform   Window    Υ Yield    SNR      Leverage   Velocity   10xDEV  Class
+  ············································································
+  claude     7d          430.7   55.9%        340×      1.27x     2.53   ARCH+
+  claude     30d         423.2   57.0%        320×      1.32x     2.50   ARCH+
+  claude     90d         739.9   62.9%        436×      1.70x     2.64   TRANSMITTER
+  claude     all         739.9   62.9%        436×      1.70x     2.64   TRANSMITTER
+  codex      all         506.3   62.9%        299×      1.70x     2.48   TRANSMITTER
+
+Token Pillars  (all-time · transparency)
+  Source          Input       Output   Cache Write    Cache Read      Total
+  ··········································································
+  claude           8.5M       14.5M       151.0M          3.7B        3.9B
+  codex            2.4M        4.1M        57.3M        714.4M      778.1M
+  ccusage          8.6M       17.8M       192.6M          4.0B        4.2B  ccusage CLI
+  token-dash       8.6M       17.8M       192.9M          4.0B        4.2B  token-dashboard.db
+  tokscale         8.4M       11.3M       128.1M          2.6B        2.7B  tokscale_report.json
+
+Board  30d window · signalaf.com
+  #1  TransVaultOrigin      TRANSMITTER    96.4
+  #2  OrcaVanguard          TRANSMITTER    88.0
+  #3  IronLattice           TRANSMITTER    84.0
+  #4  PrismCartographer     ARCH+          79.3
+  #5  MeridianScribe        ARCH+          76.1
+  … 15 more operators on signalaf.com
+
+────────────────────────────────────────────────────────────────────────────
+[S] submit to board   [B] open board in browser   [Q] quit
+```
+
+Press **S** to submit — enter your codename, all windows post to signalaf.com automatically.
 
 ---
 
