@@ -845,31 +845,74 @@ async function runSigRank() {
   writeln(`  ${dim('·'.repeat(Math.min(w - 4, 110)))}`)
 
   const WINS = ['7d', '30d', '90d', 'all']
+
+  // helper to render one platform/combined row
+  const renderCascadeRow = (label, labelColorFn, winKey, p, est = false) => {
+    const cas = cascadeFromPillars(p)
+    if (!cas) return
+    const clsFn = CLASS_COLOR[cas.class] ?? ((s) => s)
+    const cols = [
+      padEnd(labelColorFn(label), 10),
+      padEnd(dim(winKey), 5),
+      padStart(est ? dim('~') + fmtTokens(p.input) : fmtTokens(p.input), 8),
+      padStart(fmtTokens(p.output), 8),
+      padStart(p.cacheCreate > 0 ? (est ? dim('~') + fmtTokens(p.cacheCreate) : fmtTokens(p.cacheCreate)) : dim('—'), 8),
+      padStart(p.cacheRead   > 0 ? fmtTokens(p.cacheRead)   : dim('—'), 9),
+      padStart(cas.yield != null ? (cas.yield > 10000 ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield)) : '—', 9),
+      padStart(fmtSNR(cas.snr), 7),
+      padStart(cas.leverage != null ? `${fmtLev(cas.leverage)}×` : '—', 10),
+      padStart(cas.velocity != null ? cas.velocity.toFixed(2) : '—', 6),
+      padStart(cas.dev10x   != null ? cas.dev10x.toFixed(2)   : '—', 6),
+      padEnd(clsFn(cas.class), 13),
+    ]
+    writeln(`    ${cols.join('  ')}`)
+  }
+
+  // per-platform rows
   for (const d of active) {
+    const isFirst = (winKey) => winKey === '7d' || (winKey === '30d' && !d.windows?.find(w => w.window === '7d' && (w.pillars.input + w.pillars.output) > 0))
     for (const winKey of WINS) {
       const wdata = d.windows?.find(ww => ww.window === winKey)
       if (!wdata) continue
-      const p = wdata.pillars
-      const cas = cascadeFromPillars(p)
-      if (!cas) continue
-      const isFirst = winKey === '7d' || (winKey === '30d' && !d.windows?.find(w => w.window === '7d' && (w.pillars.input + w.pillars.output) > 0))
-      const clsFn = CLASS_COLOR[cas.class] ?? ((s) => s)
-      const est = d.estimated === true
-      const cols = [
-        padEnd(isFirst ? cyan(d.platform) : dim(d.platform), 10),
-        padEnd(dim(winKey), 5),
-        padStart(est ? dim('~') + fmtTokens(p.input) : fmtTokens(p.input), 8),
-        padStart(fmtTokens(p.output), 8),
-        padStart(p.cacheCreate > 0 ? (est ? dim('~') + fmtTokens(p.cacheCreate) : fmtTokens(p.cacheCreate)) : dim('—'), 8),
-        padStart(p.cacheRead   > 0 ? fmtTokens(p.cacheRead)   : dim('—'), 9),
-        padStart(cas.yield != null ? (cas.yield > 10000 ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield)) : '—', 9),
-        padStart(fmtSNR(cas.snr), 7),
-        padStart(cas.leverage != null ? `${fmtLev(cas.leverage)}×` : '—', 10),
-        padStart(cas.velocity != null ? cas.velocity.toFixed(2) : '—', 6),
-        padStart(cas.dev10x   != null ? cas.dev10x.toFixed(2)   : '—', 6),
-        padEnd(clsFn(cas.class), 13),
-      ]
-      writeln(`    ${cols.join('  ')}`)
+      renderCascadeRow(
+        d.platform,
+        (s) => isFirst(winKey) ? cyan(s) : dim(s),
+        winKey,
+        wdata.pillars,
+        d.estimated === true,
+      )
+    }
+    writeln()
+  }
+
+  // combined row (only when 2+ platforms active)
+  if (active.length > 1) {
+    const combinedLabel = active.map(d => d.platform).join('+')
+    const hasEstimated = active.some(d => d.estimated === true)
+    let isFirstWin = true
+    for (const winKey of WINS) {
+      const combinedP = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+      let hasData = false
+      for (const d of active) {
+        const wdata = d.windows?.find(ww => ww.window === winKey)
+        if (!wdata) continue
+        const p = wdata.pillars
+        if ((p.input + p.output) === 0) continue
+        combinedP.input       += p.input       ?? 0
+        combinedP.output      += p.output      ?? 0
+        combinedP.cacheCreate += p.cacheCreate ?? 0
+        combinedP.cacheRead   += p.cacheRead   ?? 0
+        hasData = true
+      }
+      if (!hasData) continue
+      renderCascadeRow(
+        combinedLabel,
+        (s) => isFirstWin ? bold(cyan(s)) : dim(s),
+        winKey,
+        combinedP,
+        hasEstimated,
+      )
+      isFirstWin = false
     }
     writeln()
   }
@@ -1178,7 +1221,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln("0.8.8")
+      writeln("0.8.9")
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
