@@ -817,16 +817,20 @@ async function runSigRank() {
   writeln(`  ${bold('Your Cascade')}`)
   const CH = [
     padEnd(dim('Platform'), 10),
-    padEnd(dim('Window'), 7),
-    padStart(dim('Υ Yield'), 10),
+    padEnd(dim('Win'), 5),
+    padStart(dim('Input'), 8),
+    padStart(dim('Output'), 8),
+    padStart(dim('CacheW'), 8),
+    padStart(dim('CacheR'), 9),
+    padStart(dim('Υ Yield'), 9),
     padStart(dim('SNR'), 7),
     padStart(dim('Leverage'), 10),
-    padStart(dim('Velocity'), 9),
-    padStart(dim('10xDEV'), 8),
+    padStart(dim('Vel'), 6),
+    padStart(dim('10x'), 6),
     padEnd(dim('Class'), 13),
   ]
   writeln(`    ${CH.join('  ')}`)
-  writeln(`  ${dim('·'.repeat(w - 4))}`)
+  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 110)))}`)
 
   const WINS = ['7d', '30d', '90d', 'all']
   for (const d of active) {
@@ -836,16 +840,20 @@ async function runSigRank() {
       const p = wdata.pillars
       const cas = cascadeFromPillars(p)
       if (!cas) continue
-      const isTop = cas.yield > 10000
+      const isFirst = winKey === '7d' || (winKey === '30d' && !d.windows?.find(w => w.window === '7d' && (w.pillars.input + w.pillars.output) > 0))
       const clsFn = CLASS_COLOR[cas.class] ?? ((s) => s)
       const cols = [
-        padEnd(winKey === '7d' ? cyan(d.platform) : dim(d.platform), 10),
-        padEnd(dim(winKey), 7),
-        padStart(isTop ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield), 10),
+        padEnd(isFirst ? cyan(d.platform) : dim(d.platform), 10),
+        padEnd(dim(winKey), 5),
+        padStart(fmtTokens(p.input), 8),
+        padStart(fmtTokens(p.output), 8),
+        padStart(p.cacheCreate > 0 ? fmtTokens(p.cacheCreate) : dim('—'), 8),
+        padStart(p.cacheRead   > 0 ? fmtTokens(p.cacheRead)   : dim('—'), 9),
+        padStart(cas.yield != null ? (cas.yield > 10000 ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield)) : '—', 9),
         padStart(fmtSNR(cas.snr), 7),
         padStart(cas.leverage != null ? `${fmtLev(cas.leverage)}×` : '—', 10),
-        padStart(cas.velocity != null ? cas.velocity.toFixed(2) + 'x' : '—', 9),
-        padStart(cas.dev10x  != null ? cas.dev10x.toFixed(2)  : '—', 8),
+        padStart(cas.velocity != null ? cas.velocity.toFixed(2) : '—', 6),
+        padStart(cas.dev10x   != null ? cas.dev10x.toFixed(2)   : '—', 6),
         padEnd(clsFn(cas.class), 13),
       ]
       writeln(`    ${cols.join('  ')}`)
@@ -1077,7 +1085,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.1')
+      writeln('0.8.2')
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
