@@ -434,19 +434,20 @@ function ccusagePillars(platform = 'claude') {
   }
 }
 
-function tokscalePillars() {
-  // Read tokscale_report.json — claude client only, all-time only (no timestamps in export)
+function tokscalePillars(platform = 'claude') {
+  // Read tokscale_report.json — all-time only (no timestamps in export)
   const reportPath = path.join(os.homedir(), 'tokscale_report.json')
   if (!existsSync(reportPath)) return null
   try {
     const data = JSON.parse(readFileSync(reportPath, 'utf8'))
     const entries = data.entries ?? []
-    const claude = entries.filter(e =>
-      e.client === 'claude' &&
+    const rows = entries.filter(e =>
+      e.client === platform &&
       e.model !== '<synthetic>' && e.model !== 'unknown' &&
       (e.input > 0 || e.output > 0)
     )
-    const p = claude.reduce((acc, e) => ({
+    if (rows.length === 0) return null
+    const p = rows.reduce((acc, e) => ({
       input:       acc.input       + (e.input      ?? 0),
       output:      acc.output      + (e.output     ?? 0),
       cacheCreate: acc.cacheCreate + (e.cacheWrite ?? 0),
@@ -772,12 +773,23 @@ async function runSigRank() {
     new Promise(r => setTimeout(() => r(null), 5000)),
   ])
 
-  const [platformResults, ccPillars, tdPillars, tsPillars] = await Promise.all([
+  const [platformResults, tdPillars] = await Promise.all([
     Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
-    Promise.resolve(ccusagePillars('claude')),
     Promise.resolve(tokenDashPillars()),
-    Promise.resolve(tokscalePillars()),
   ])
+
+  // per-platform verifiers: ccusage + tokscale both support multiple platforms
+  // build map: platform → { cc, ts }
+  const verifierMap = {}
+  for (const platform of ALL_PLATFORMS) {
+    verifierMap[platform] = {
+      cc: ccusagePillars(platform),
+      ts: tokscalePillars(platform),
+    }
+  }
+  // keep top-level claude refs for combined section
+  const ccPillars = verifierMap['claude']?.cc ?? null
+  const tsPillars = verifierMap['claude']?.ts ?? null
 
   const boardData = await boardPromise
 
@@ -895,33 +907,21 @@ async function runSigRank() {
     writeln(`    ${cols.join('  ')}${note ? '  ' + dim(note) : ''}`)
   }
 
-  // ── Claude block ────────────────────────────────────────────────────────
-  const claudeData = active.find(d => d.platform === 'claude')
-  if (claudeData) {
-    const all = claudeData.windows?.find(ww => ww.window === 'all')
-    if (all) {
-      printPillarRow('claude', cyan, all.pillars, 'tokenpull')
-      if (ccPillars?.all) printPillarRow('  ccusage',    (s) => paint(c.green,   s), ccPillars.all, 'ccusage CLI')
-      if (tdPillars?.all) printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
-      if (tsPillars?.all) printPillarRow('  tokscale',   (s) => paint(c.blue,    s), tsPillars.all, 'tokscale_report.json')
-    }
-  }
-
-  // ── Other platforms (codex, amp, etc) ──────────────────────────────────
+  // ── Per-platform blocks ─────────────────────────────────────────────────
   for (const d of active) {
-    if (d.platform === 'claude') continue
     const all = d.windows?.find(ww => ww.window === 'all')
-    if (all) {
-      writeln() // spacing between platform blocks
-      printPillarRow(d.platform, cyan, all.pillars, 'tokenpull')
-      // codex has no external verifier yet
-      writeln(`    ${dim('  no external verifier for ' + d.platform)}`)
-    }
+    if (!all) continue
+    const v = verifierMap[d.platform] ?? {}
+    printPillarRow(d.platform, cyan, all.pillars, 'tokenpull')
+    if (v.cc?.all)      printPillarRow('  ccusage',    (s) => paint(c.green,   s), v.cc.all,    'ccusage CLI')
+    if (d.platform === 'claude' && tdPillars?.all)
+                        printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
+    if (v.ts?.all)      printPillarRow('  tokscale',   (s) => paint(c.blue,    s), v.ts.all,    'tokscale_report.json')
+    writeln()
   }
 
   // ── Combined (if more than one platform) ───────────────────────────────
   if (active.length > 1) {
-    writeln()
     const combined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
     for (const d of active) {
       const all = d.windows?.find(ww => ww.window === 'all')
@@ -931,10 +931,31 @@ async function runSigRank() {
       combined.cacheCreate += all.pillars.cacheCreate ?? 0
       combined.cacheRead   += all.pillars.cacheRead   ?? 0
     }
+    // sum verifiers across all active platforms
+    const ccCombined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+    const tsCombined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+    let hasCc = false, hasTs = false
+    for (const d of active) {
+      const v = verifierMap[d.platform] ?? {}
+      if (v.cc?.all) {
+        ccCombined.input       += v.cc.all.input       ?? 0
+        ccCombined.output      += v.cc.all.output      ?? 0
+        ccCombined.cacheCreate += v.cc.all.cacheCreate ?? 0
+        ccCombined.cacheRead   += v.cc.all.cacheRead   ?? 0
+        hasCc = true
+      }
+      if (v.ts?.all) {
+        tsCombined.input       += v.ts.all.input       ?? 0
+        tsCombined.output      += v.ts.all.output      ?? 0
+        tsCombined.cacheCreate += v.ts.all.cacheCreate ?? 0
+        tsCombined.cacheRead   += v.ts.all.cacheRead   ?? 0
+        hasTs = true
+      }
+    }
     printPillarRow('combined', (s) => bold(s), combined, active.map(d => d.platform).join('+'))
-    if (ccPillars?.all) printPillarRow('  ccusage',    (s) => paint(c.green,   s), ccPillars.all, 'ccusage CLI')
-    if (tdPillars?.all) printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
-    if (tsPillars?.all) printPillarRow('  tokscale',   (s) => paint(c.blue,    s), tsPillars.all, 'tokscale_report.json')
+    if (hasCc)          printPillarRow('  ccusage',    (s) => paint(c.green,   s), ccCombined,   'ccusage CLI')
+    if (tdPillars?.all) printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all,'token-dashboard.db')
+    if (hasTs)          printPillarRow('  tokscale',   (s) => paint(c.blue,    s), tsCombined,   'tokscale_report.json')
   }
 
   // ── 5. Board position ─────────────────────────────────────────────────────
@@ -1116,7 +1137,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.4')
+      writeln('0.8.5')
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
