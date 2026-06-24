@@ -57,7 +57,7 @@ async function startMcpServer() {
 //   no args + TTY stdout → terminal dashboard (interactive use)
 //   no args + piped      → MCP stdio server (AI client use)
 const cliArgs = process.argv.slice(2)
-const CLI_COMMANDS = new Set(['board', 'me', 'watch', 'help', '--help', '-h', '--version', '-v'])
+const CLI_COMMANDS = new Set(['board', 'me', 'compare', 'watch', 'help', '--help', '-h', '--version', '-v'])
 if (cliArgs.length > 0 && (CLI_COMMANDS.has(cliArgs[0]) || cliArgs[0].startsWith('--'))) {
   runCli(process.argv)
 } else if (cliArgs.length === 0 && process.stdout.isTTY) {

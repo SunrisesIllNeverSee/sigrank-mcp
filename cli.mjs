@@ -977,12 +977,33 @@ async function runSigRank() {
   const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
   if (Array.isArray(entries) && entries.length > 0) {
     const top5 = entries.slice(0, 5)
+    // header
+    const BH = [
+      padStart(dim('#'),    4),
+      padEnd(dim('Codename'), 20),
+      padEnd(dim('Class'),   13),
+      padStart(dim('SIGNA'), 7),
+      padStart(dim('SNR'),   6),
+      padStart(dim('Depth'), 6),
+      padStart(dim('Tokens'),8),
+      padStart(dim('Force'), 6),
+      padStart(dim('Pct'),   5),
+      padStart(dim('7d↕'),   5),
+    ]
+    writeln(`    ${BH.join('  ')}`)
+    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 90)))}`)
     for (const e of top5) {
-      const rank = e.rank === 1 ? gold(`#${e.rank}`) : dim(`#${e.rank}`)
-      const name = padEnd(trunc(e.codename ?? '—', 20), 20)
-      const cls  = padEnd(colorClass(e.class_tier ?? '—'), 13)
-      const signa = padStart(e.signa_rate != null ? e.signa_rate.toFixed(1) : '—', 7)
-      writeln(`    ${rank}  ${name}  ${cls}  ${signa}`)
+      const rank   = e.rank === 1 ? gold(`#${e.rank}`) : `#${e.rank}`
+      const name   = padEnd(trunc(e.codename ?? '—', 20), 20)
+      const cls    = padEnd(colorClass(e.class_tier ?? '—'), 13)
+      const signa  = padStart(e.signa_rate        != null ? e.signa_rate.toFixed(1)        : '—', 7)
+      const snr    = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio)    : '—', 6)
+      const depth  = padStart(e.session_depth     != null ? e.session_depth.toFixed(1)     : '—', 6)
+      const tok    = padStart(e.token_throughput  != null ? fmtTokens(e.token_throughput)  : '—', 8)
+      const force  = padStart(e.signal_force      != null ? e.signal_force.toFixed(1)      : '—', 6)
+      const pct    = padStart(e.percentile        != null ? `${e.percentile}%`             : '—', 5)
+      const mv7    = padStart(fmtMove(e.movement_7d), 5)
+      writeln(`    ${padStart(rank, 4)}  ${name}  ${cls}  ${signa}  ${snr}  ${depth}  ${tok}  ${force}  ${pct}  ${mv7}`)
     }
     if (entries.length > 5) writeln(`  ${dim(`  … ${entries.length - 5} more operators on signalaf.com`)}`)
   } else {
@@ -1095,6 +1116,8 @@ function showHelp() {
   writeln(`    ${cyan('board --once')}             print once and exit`)
   writeln(`    ${cyan('me')}                       single-platform cascade (claude by default)`)
   writeln(`    ${cyan('me --platform codex')}      use a different platform adapter`)
+  writeln(`    ${cyan('compare')}                  raw pillar audit: tokenpull vs ccusage vs token-dash vs tokscale`)
+  writeln(`    ${cyan('compare --platform codex')} compare for a specific platform`)
   writeln(`    ${cyan('watch')}                    live tune meter — re-reads local logs every 30s`)
   writeln(`    ${cyan('watch --window 7d')}        watch a specific window`)
   writeln()
@@ -1109,8 +1132,10 @@ function showHelp() {
   writeln(`    ${dim('(Claude, Cursor, and other AI clients use this automatically)')}`)
   writeln()
   writeln(`  ${bold('Examples')}`)
-  writeln(`    ${dim('sigrank-mcp')}`)
-  writeln(`    ${dim('sigrank-mcp board')}`)
+  writeln(`    ${dim('sigrank-mcp')}                        # unified dashboard`)
+  writeln(`    ${dim('sigrank-mcp board')}                  # live leaderboard`)
+  writeln(`    ${dim('sigrank-mcp compare')}                # pillar audit (claude)`)
+  writeln(`    ${dim('sigrank-mcp compare --platform codex')}`)
   writeln(`    ${dim('sigrank-mcp me --platform codex')}`)
   writeln(`    ${dim('sigrank-mcp watch --window 7d --refresh 60')}`)
   writeln(`    ${dim('sigrank-mcp board --window all --once')}`)
@@ -1142,6 +1167,8 @@ export async function runCli(argv) {
       })
     } else if (cmd === 'me') {
       await runMe({ platform: flags.platform ?? 'claude', compare: flags.compare === true || flags.compare === 'true' })
+    } else if (cmd === 'compare') {
+      await runCompare({ platform: flags.platform ?? 'claude' })
     } else if (cmd === 'watch') {
       await runWatch({
         platform: flags.platform ?? 'claude',
@@ -1151,7 +1178,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.7')
+      writeln("0.8.8")
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
