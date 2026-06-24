@@ -13,6 +13,71 @@ import { narrate } from './narrate.mjs'
 import { tokenpull as pullLocal, tokenpullCodex as pullCodex, tokenpullAny } from './tokenpull.mjs'
 import { ALL_PLATFORMS } from './adapters.mjs'
 import { createHash } from 'node:crypto'
+import { execSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+// ── Verifier readers (sync, on-device, token-only) ────────────────────────────
+// These mirror the implementations in cli.mjs / tui.mjs without the circular import.
+
+function _ccusagePillars(platform = 'claude') {
+  try {
+    const raw = execSync(`ccusage ${platform} daily --json`, { timeout: 15000, stdio: ['ignore','pipe','ignore'] }).toString()
+    const rows = JSON.parse(raw)?.daily ?? JSON.parse(raw)
+    const now = Date.now()
+    const result = {}
+    for (const [win, days] of Object.entries({ '7d': 7, '30d': 30, '90d': 90 })) {
+      const since = new Date(now - days * 86400000)
+      let i=0,o=0,cw=0,cr=0
+      for (const r of rows) {
+        if (new Date(r.date ?? r.day ?? '1970') >= since) {
+          i  += r.inputTokens         ?? r.input_tokens         ?? 0
+          o  += r.outputTokens        ?? r.output_tokens        ?? 0
+          cw += r.cacheCreationTokens ?? r.cache_create_tokens  ?? 0
+          cr += r.cacheReadTokens     ?? r.cache_read_tokens    ?? 0
+        }
+      }
+      result[win] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
+    }
+    let i=0,o=0,cw=0,cr=0
+    for (const r of rows) {
+      i+=r.inputTokens??0; o+=r.outputTokens??0; cw+=r.cacheCreationTokens??0; cr+=r.cacheReadTokens??0
+    }
+    result['all'] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
+    return result
+  } catch { return null }
+}
+
+function _tokenDashPillars() {
+  const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
+  if (!existsSync(dbPath)) return null
+  try {
+    const raw = execSync(
+      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
+      { timeout: 5000, stdio: ['ignore','pipe','ignore'] }
+    ).toString().trim()
+    const [i,o,cw,cr] = raw.split('|').map(Number)
+    return { all: { input: i||0, output: o||0, cacheCreate: cw||0, cacheRead: cr||0 } }
+  } catch { return null }
+}
+
+function _tokscalePillars(platform = 'claude') {
+  const p = path.join(os.homedir(), 'tokscale_report.json')
+  if (!existsSync(p)) return null
+  try {
+    const data = JSON.parse(readFileSync(p, 'utf8'))
+    const rows = (data.entries ?? []).filter(e =>
+      e.client === platform && e.model !== '<synthetic>' && e.model !== 'unknown' && (e.input > 0 || e.output > 0)
+    )
+    if (!rows.length) return null
+    const acc = rows.reduce((a,e) => ({
+      input: a.input+(e.input??0), output: a.output+(e.output??0),
+      cacheCreate: a.cacheCreate+(e.cacheWrite??0), cacheRead: a.cacheRead+(e.cacheRead??0),
+    }), { input:0, output:0, cacheCreate:0, cacheRead:0 })
+    return { all: acc }
+  } catch { return null }
+}
 
 // Every board upload from the MCP is hashed + timestamped (ddmmyy) — provenance + dedup.
 function uploadStamp(content) {
@@ -131,6 +196,21 @@ export const TOOLS = [
         interval_s:  { type: 'number', description: 'poll interval in seconds (default: 60, min: 10)' },
         window:      { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'which window to watch (default: 7d — most sensitive to recent activity)' },
         codename:    { type: 'string', description: 'TODO(AUTH.WIRE): when set, will auto-submit on change once auth is live' },
+      },
+    },
+  },
+  {
+    name: 'tokenpull_compare',
+    description:
+      'Pull token usage from ALL four local sources in parallel — tokenpull (JSONL canon), ccusage CLI, token-dashboard SQLite, and tokscale report — and return them side-by-side with delta % vs tokenpull as the baseline. Also computes the cascade (Υ, SNR, Leverage, class) for each source so you can see how each verifier scores. Useful for validating your numbers before submitting, or understanding discrepancies between tools. Claude only for token-dash; codex and others use tokenpull + ccusage + tokscale. Token-only, on-device.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        platform: {
+          type: 'string',
+          enum: ALL_PLATFORMS,
+          description: 'platform to compare (default: claude). token-dash and App only available for claude.',
+        },
       },
     },
   },
@@ -316,6 +396,74 @@ export async function callTool(name, args, opts = {}) {
         ? { status: 'TODO(AUTH.WIRE)', codename: args.codename, detail: 'Auto-submit on change will activate once device enrollment is live (SECURE_INGEST.md).' }
         : null,
       note: 'One snapshot per call — re-call at your poll interval to detect changes.',
+    }
+  }
+
+  if (name === 'tokenpull_compare') {
+    const platform = args?.platform || 'claude'
+    const WINS = ['7d', '30d', '90d', 'all']
+
+    // Pull all four sources in parallel (verifiers are sync, wrap in Promise.resolve)
+    const [tpResult, ccPillars, tdPillars, tsPillars] = await Promise.all([
+      pullByPlatform(platform, opts).catch(() => null),
+      Promise.resolve(_ccusagePillars(platform)),
+      Promise.resolve(platform === 'claude' ? _tokenDashPillars() : null),
+      Promise.resolve(_tokscalePillars(platform)),
+    ])
+
+    // Build tokenpull window lookup
+    const tpByWin = {}
+    for (const w of (tpResult?.windows ?? [])) tpByWin[w.window] = w.pillars
+
+    // Helper: delta % vs tokenpull baseline
+    const delta = (val, base) => base > 0 ? +((( val - base) / base * 100).toFixed(1)) : null
+
+    // Build per-source per-window comparison
+    const SOURCES = [
+      { source: 'tokenpull',   note: 'JSONL deduped by msg id — canon source', byWin: tpByWin },
+      { source: 'ccusage',     note: 'ccusage CLI — monthly only',             byWin: ccPillars ?? {} },
+      { source: 'token-dash',  note: 'token-dashboard SQLite — all-time only', byWin: tdPillars ?? {} },
+      { source: 'tokscale',    note: 'tokscale_report.json — all-time only',   byWin: tsPillars ?? {} },
+    ]
+
+    const comparison = {}
+    for (const win of WINS) {
+      const baseP = tpByWin[win]
+      comparison[win] = SOURCES
+        .filter(s => s.byWin[win] != null)
+        .map(s => {
+          const p = s.byWin[win]
+          const cas = cascade(p)
+          const entry = {
+            source: s.source,
+            note: s.note,
+            pillars: p,
+            cascade: { yield: cas.yield, snr: cas.snr, leverage: cas.leverage, velocity: cas.velocity, dev10x: cas.dev10x, class: cas.class },
+          }
+          if (s.source !== 'tokenpull' && baseP) {
+            entry.delta_vs_tokenpull = {
+              input:       delta(p.input,       baseP.input),
+              output:      delta(p.output,      baseP.output),
+              cacheCreate: delta(p.cacheCreate, baseP.cacheCreate),
+              cacheRead:   delta(p.cacheRead,   baseP.cacheRead),
+            }
+          }
+          return entry
+        })
+    }
+
+    // Sources available summary
+    const available = SOURCES
+      .filter(s => Object.keys(s.byWin).length > 0)
+      .map(s => s.source)
+
+    return {
+      platform,
+      estimated: tpResult?.estimated ?? false,
+      generatedAt: tpResult?.generatedAt ?? new Date().toISOString(),
+      sources_available: available,
+      sources_missing: SOURCES.map(s => s.source).filter(s => !available.includes(s)),
+      comparison,
     }
   }
 

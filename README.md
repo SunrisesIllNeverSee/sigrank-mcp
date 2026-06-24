@@ -112,6 +112,7 @@ Or if installed globally:
 | `submit_paste(text, codename)` | `{text, codename?}` | Rank locally then POST to board. Omit codename for preview-only |
 | `tokenpull(platform?)` | `{platform?}` | On-device local reader: scans local logs → 4-window cascade. Zero paste, token-only |
 | `tokenpull_submit(codename, window?)` | `{codename?, window?}` | `tokenpull` → publish to board. Omit codename for preview |
+| `tokenpull_compare(platform?)` | `{platform?}` | All four sources side-by-side: tokenpull + ccusage + token-dash + tokscale. Returns pillars, cascade metrics, and delta % vs tokenpull per window |
 | `rank_windows` | `{platform?, window?}` | Multi-window cascade from local logs |
 | `watch_tokenpull` | `{platform?, interval_s?}` | Streaming cascade snapshots |
 
