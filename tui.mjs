@@ -111,6 +111,8 @@ function cascadeFrom(p) {
 
 // ── Unicode bar chart (no dep) ───────────────────────────────────────────────
 const BLOCKS = ' ▏▎▍▌▋▊▉█'
+
+// Linear bar — use when all values are the same order of magnitude.
 function barChart(values, labels, opts = {}) {
   const { width = 30, colorFn = (s) => s, maxVal } = opts
   const max = maxVal ?? Math.max(...values.filter(Number.isFinite), 1)
@@ -126,6 +128,19 @@ function barChart(values, labels, opts = {}) {
     lines.push(`    ${lbl}  ${padEnd(bar, width)}  ${val}`)
   }
   return lines
+}
+
+// Log-scale bar — use when values span multiple orders of magnitude (e.g. token pillars
+// where cacheRead >> input). Maps log10(v) to bar width so each 10x = same visual step.
+// minLog floor prevents zero/tiny values from going negative.
+function logBar(v, maxLog, width = 40, colorCode = c.cyan) {
+  if (!v || v <= 0) return { bar: dim('·'.repeat(width)), pct: 0 }
+  const log = Math.log10(v)
+  const pct = Math.min(log / maxLog, 1)
+  const full = Math.floor(pct * width)
+  const frac = Math.floor((pct * width - full) * 8)
+  const bar = paint(colorCode, '█'.repeat(full) + (frac > 0 ? BLOCKS[frac] : ''))
+  return { bar, pct }
 }
 
 // ── Sparkline (no dep) ────────────────────────────────────────────────────────
@@ -411,7 +426,7 @@ function renderDashboard(data, status = '') {
   // ── Token bar charts
   writeln(`  ${hr()}`)
   writeln()
-  writeln(`  ${bold('Token Composition')}  ${dim('all-time · █ input  █ cacheWrite  █ cacheRead  █ output')}`)
+  writeln(`  ${bold('Token Composition')}  ${dim('all-time · proportional · █')}${paint(c.cyan,'I')}${dim(' input  █')}${paint(c.blue,'W')}${dim(' cacheWrite  █')}${paint(c.boldGold,'R')}${dim(' cacheRead  █')}${paint(c.green,'O')}${dim(' output')}`)
   writeln()
   for (const d of active) {
     const all = d.windows?.find(w => w.window === 'all')
@@ -430,6 +445,7 @@ function renderDashboard(data, status = '') {
     const lbl = active.map(d => d.platform).join('+')
     writeln(`    ${padEnd(bold(lbl), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input+cp.output+cp.cacheCreate+cp.cacheRead))}`)
   }
+  writeln(`  ${dim('proportional — cacheRead typically dominates (~90%) for high-leverage operators')}`)
   writeln()
 
   // ── Mini board (top 3)
@@ -653,14 +669,17 @@ async function renderWatch(platform = 'claude', win = '7d') {
     { label: 'Cache Write', val: p.cacheCreate, color: c.blue,    est: d.estimated },
     { label: 'Cache Read',  val: p.cacheRead,   color: c.boldGold,est: false },
   ]
-  const maxPillar = Math.max(...pillarsData.map(x => x.val ?? 0), 1)
+  // Log scale: token pillars span 2–3 orders of magnitude (input ~8M, cacheRead ~1.9B).
+  // Linear scale crushes input/output bars to near-invisible. Log10 gives equal visual
+  // weight per order-of-magnitude step.
+  const maxLog = Math.log10(Math.max(...pillarsData.map(x => x.val ?? 0), 10))
   for (const item of pillarsData) {
     const v   = item.val ?? 0
-    const pct = v / maxPillar
-    const bar = paint(item.color, '█'.repeat(Math.round(pct * 40)))
+    const { bar } = logBar(v, maxLog, 40, item.color)
     const est = item.est ? dim('~') : ''
     writeln(`    ${padEnd(dim(item.label), 12)}  ${padEnd(bar, 40)}  ${est}${fmtTok(v)}`)
   }
+  writeln(`  ${dim('log₁₀ scale — each step = 10× · absolute values right')}`)
   writeln()
 
   // trend across windows
