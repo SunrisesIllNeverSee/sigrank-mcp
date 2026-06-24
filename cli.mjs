@@ -1,8 +1,11 @@
 /**
  * cli.mjs — SigRank terminal UI.
  *
- * Commands (no external deps — pure Node.js ANSI escape codes):
+ * Default (no command): full unified view — all platforms, all windows, token pillars,
+ *   board position, [S] submit prompt.
  *
+ * Commands:
+ *   npx sigrank-mcp                      full unified view (default)
  *   npx sigrank-mcp board                live leaderboard, refreshes every 30s
  *   npx sigrank-mcp board --window 7d    board for a specific window
  *   npx sigrank-mcp board --once         print once and exit (no live refresh)
@@ -738,6 +741,272 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
   }
 }
 
+// ── UNIFIED DEFAULT VIEW ──────────────────────────────────────────────────────
+// npx sigrank-mcp (no args) — pulls everything at once:
+//   - all platforms in parallel (only shows ones with data)
+//   - all 4 windows per platform
+//   - token pillars table (transparency layer)
+//   - comparison sources (ccusage, tokscale, token-dashboard) if available
+//   - live board position
+//   - [S] submit  [B] board  [Q] quit
+
+const ALL_PLATFORMS = [
+  'claude','codex','amp','gemini','kimi','qwen','goose','kilo',
+  'hermes','droid','codebuff','copilot','openclaw','pi',
+]
+
+async function runSigRank() {
+  write(HIDE_CURSOR)
+  const w = termWidth()
+
+  // ── 1. Pull everything in parallel ────────────────────────────────────────
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')}  ${dim('reading all sources…')}`)
+
+  const { tokenpullAny } = await import('./tokenpull.mjs')
+
+  const [platformResults, boardData, ccPillars, tdPillars, tsPillars] = await Promise.all([
+    // all platforms
+    Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
+    // live board
+    callTool('get_leaderboard', {}).catch(() => null),
+    // ccusage
+    Promise.resolve(ccusagePillars('claude')),
+    // token-dashboard
+    Promise.resolve(tokenDashPillars()),
+    // tokscale
+    Promise.resolve(tokscalePillars()),
+  ])
+
+  // filter to platforms with actual data
+  const active = []
+  for (let i = 0; i < ALL_PLATFORMS.length; i++) {
+    const r = platformResults[i]
+    if (r.status !== 'fulfilled') continue
+    const d = r.value
+    const all = d.windows?.find(w => w.window === 'all')
+    if (!all) continue
+    const total = (all.pillars.input ?? 0) + (all.pillars.output ?? 0)
+    if (total === 0) continue
+    active.push(d)
+  }
+
+  // clear loading line
+  write(CURSOR_UP(2) + ERASE_LINE + CURSOR_UP(1) + ERASE_LINE)
+
+  // ── 2. Header ─────────────────────────────────────────────────────────────
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false })
+  const header = `  ${gold('⊙ SigRank')}  ${bold('Operator Dashboard')}`
+  const right = dim(`signalaf.com  ${ts}`)
+  const gap = Math.max(1, w - stripAnsi(header).length - stripAnsi(right).length)
+  writeln()
+  writeln(`${header}${' '.repeat(gap)}${right}`)
+
+  const platformSummary = active.map(d => {
+    const all = d.windows.find(w => w.window === 'all')
+    return `${cyan(d.platform)} ${dim(`${d.files ?? '?'} files · ${(all?.messages ?? 0).toLocaleString()} msgs`)}`
+  }).join('  ')
+  writeln(`  ${dim('Detected:')}  ${platformSummary || dim('no local data found')}`)
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+
+  // ── 3. Cascade table — all platforms × all windows ─────────────────────────
+  writeln()
+  writeln(`  ${bold('Your Cascade')}`)
+  const CH = [
+    padEnd(dim('Platform'), 10),
+    padEnd(dim('Window'), 7),
+    padStart(dim('Υ Yield'), 10),
+    padStart(dim('SNR'), 7),
+    padStart(dim('Leverage'), 10),
+    padStart(dim('Velocity'), 9),
+    padStart(dim('10xDEV'), 8),
+    padEnd(dim('Class'), 13),
+  ]
+  writeln(`    ${CH.join('  ')}`)
+  writeln(`  ${dim('·'.repeat(w - 4))}`)
+
+  const WINS = ['7d', '30d', '90d', 'all']
+  for (const d of active) {
+    for (const winKey of WINS) {
+      const wdata = d.windows?.find(ww => ww.window === winKey)
+      if (!wdata) continue
+      const p = wdata.pillars
+      const cas = cascadeFromPillars(p)
+      if (!cas) continue
+      const isTop = cas.yield > 10000
+      const clsFn = CLASS_COLOR[cas.class] ?? ((s) => s)
+      const cols = [
+        padEnd(winKey === '7d' ? cyan(d.platform) : dim(d.platform), 10),
+        padEnd(dim(winKey), 7),
+        padStart(isTop ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield), 10),
+        padStart(fmtSNR(cas.snr), 7),
+        padStart(cas.leverage != null ? `${fmtLev(cas.leverage)}×` : '—', 10),
+        padStart(cas.velocity != null ? cas.velocity.toFixed(2) + 'x' : '—', 9),
+        padStart(cas.dev10x  != null ? cas.dev10x.toFixed(2)  : '—', 8),
+        padEnd(clsFn(cas.class), 13),
+      ]
+      writeln(`    ${cols.join('  ')}`)
+    }
+    writeln()
+  }
+
+  // ── 4. Token Pillars transparency table ──────────────────────────────────
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+  writeln()
+  writeln(`  ${bold('Token Pillars')}  ${dim('(all-time · transparency)')}`)
+
+  // rows: each active platform + comparison sources
+  const PCOLS = [
+    padEnd(dim('Source'), 14),
+    padStart(dim('Input'), 10),
+    padStart(dim('Output'), 10),
+    padStart(dim('Cache Write'), 12),
+    padStart(dim('Cache Read'), 12),
+    padStart(dim('Total'), 10),
+  ]
+  writeln(`    ${PCOLS.join('  ')}`)
+  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 74)))}`)
+
+  const printPillarRow = (label, colorFn, p, note = '') => {
+    if (!p) return
+    const i  = p.input       ?? 0
+    const o  = p.output      ?? 0
+    const cw = p.cacheCreate ?? 0
+    const cr = p.cacheRead   ?? 0
+    const total = i + o + cw + cr
+    const cols = [
+      padEnd(colorFn(label), 14),
+      padStart(fmtTokens(i),  10),
+      padStart(fmtTokens(o),  10),
+      padStart(cw > 0 ? fmtTokens(cw) : dim('—'), 12),
+      padStart(cr > 0 ? fmtTokens(cr) : dim('—'), 12),
+      padStart(fmtTokens(total), 10),
+    ]
+    writeln(`    ${cols.join('  ')}${note ? '  ' + dim(note) : ''}`)
+  }
+
+  for (const d of active) {
+    const all = d.windows?.find(ww => ww.window === 'all')
+    if (all) printPillarRow(d.platform, cyan, all.pillars)
+  }
+
+  // comparison sources (dim, only shown if available)
+  if (ccPillars?.all)  printPillarRow('ccusage',      (s) => paint(c.green,   s), ccPillars.all,   'ccusage CLI')
+  if (tdPillars?.all)  printPillarRow('token-dash',   (s) => paint(c.magenta, s), tdPillars.all,   'token-dashboard.db')
+  if (tsPillars?.all)  printPillarRow('tokscale',     (s) => paint(c.blue,    s), tsPillars.all,   'tokscale_report.json')
+
+  // ── 5. Board position ─────────────────────────────────────────────────────
+  writeln()
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+  writeln()
+  writeln(`  ${bold('Board')}  ${dim('30d window · signalaf.com')}`)
+
+  const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
+  if (Array.isArray(entries) && entries.length > 0) {
+    const top5 = entries.slice(0, 5)
+    for (const e of top5) {
+      const rank = e.rank === 1 ? gold(`#${e.rank}`) : dim(`#${e.rank}`)
+      const name = padEnd(trunc(e.codename ?? '—', 20), 20)
+      const cls  = padEnd(colorClass(e.class_tier ?? '—'), 13)
+      const signa = padStart(e.signa_rate != null ? e.signa_rate.toFixed(1) : '—', 7)
+      writeln(`    ${rank}  ${name}  ${cls}  ${signa}`)
+    }
+    if (entries.length > 5) writeln(`  ${dim(`  … ${entries.length - 5} more operators on signalaf.com`)}`)
+  } else {
+    writeln(`  ${dim('  board unavailable')}`)
+  }
+
+  // ── 6. Footer / submit prompt ────────────────────────────────────────────
+  writeln()
+  writeln(`  ${dim('─'.repeat(w - 4))}`)
+  writeln(`  ${dim('[S]')} submit to board   ${dim('[B]')} open board in browser   ${dim('[Q]')} quit`)
+  writeln()
+
+  // ── 7. Keypress handler ───────────────────────────────────────────────────
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+    process.stdin.setEncoding('utf8')
+
+    await new Promise((resolve) => {
+      process.stdin.on('data', async (key) => {
+        const k = key.toLowerCase()
+        if (k === 'q' || key === '\u0003') { // q or ctrl+c
+          resolve()
+        } else if (k === 'b') {
+          const { execSync: es } = await import('child_process')
+          try { es('open https://signalaf.com', { stdio: 'ignore' }) } catch { }
+          resolve()
+        } else if (k === 's') {
+          process.stdin.setRawMode(false)
+          write(SHOW_CURSOR)
+          process.stdout.write('\n  Codename: ')
+          let codename = ''
+          process.stdin.on('data', async function onData(chunk) {
+            if (chunk === '\r' || chunk === '\n') {
+              process.stdin.removeListener('data', onData)
+              codename = codename.trim()
+              if (!codename) { writeln(red('  ✗ codename required')); resolve(); return }
+              writeln()
+              writeln(`  ${dim('Submitting all windows for')} ${cyan(codename)}${dim('…')}`)
+              write(HIDE_CURSOR)
+              try {
+                for (const d of active) {
+                  const apiBase = DEFAULT_API_BASE
+                  const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', 'all': 'all_time' }
+                  for (const ww of (d.windows ?? [])) {
+                    const rawPaste = `${ww.pillars.input} ${ww.pillars.output} ${ww.pillars.cacheCreate} ${ww.pillars.cacheRead}`
+                    const windowType = WINDOW_TYPE[ww.window] || ww.window
+                    const now = new Date()
+                    const ddmmyy = `${String(now.getDate()).padStart(2,'0')}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getFullYear()).slice(-2)}`
+                    const content_hash = `sha256:${codename}|${windowType}|${rawPaste}|${ddmmyy}`
+                    const res = await fetch(`${apiBase}/api/v1/ingest-paste`, {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json', accept: 'application/json' },
+                      body: JSON.stringify({
+                        codename,
+                        raw_paste: rawPaste,
+                        window_type: windowType,
+                        telemetry: { platform: { primary: d.platform } },
+                        content_hash,
+                        submitted_ddmmyy: ddmmyy,
+                        submitted_at: now.toISOString(),
+                      }),
+                    }).catch(() => null)
+                    const ok = res?.ok ?? false
+                    const status = ok ? green('✓') : red('✗')
+                    writeln(`    ${status}  ${d.platform}  ${ww.window}${!ok ? dim(` HTTP ${res?.status ?? 'err'}`) : ''}`)
+                  }
+                }
+                writeln()
+                writeln(`  ${green('✓')} Submitted. Visit ${cyan(`signalaf.com/user/${codename}`)}`)
+              } catch (e) {
+                writeln(red(`  ✗ ${e.message}`))
+              }
+              resolve()
+            } else if (chunk === '\u007f') { // backspace
+              if (codename.length > 0) {
+                codename = codename.slice(0, -1)
+                process.stdout.write('\b \b')
+              }
+            } else {
+              codename += chunk
+              process.stdout.write(chunk)
+            }
+          })
+          process.stdin.resume()
+        }
+      })
+    })
+  }
+
+  write(SHOW_CURSOR)
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false)
+    process.stdin.pause()
+  }
+}
+
 // ── HELP ─────────────────────────────────────────────────────────────────────
 
 function showHelp() {
@@ -805,7 +1074,10 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.7.0')
+      writeln('0.8.0')
+    } else if (!cmd || cmd === 'start' || cmd === 'run') {
+      // default: full unified view
+      await runSigRank()
     } else {
       // unknown command: show help
       showHelp()
