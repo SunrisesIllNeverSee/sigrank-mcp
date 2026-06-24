@@ -805,7 +805,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.6.5')
+      writeln('0.7.0')
     } else {
       // unknown command: show help
       showHelp()
