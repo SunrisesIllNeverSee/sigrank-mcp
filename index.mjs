@@ -2,14 +2,21 @@
 /**
  * SigRank MCP server + CLI entry point.
  *
- * CLI mode  — triggered when any command arg is passed:
+ * Default (no args, TTY):
+ *   npx sigrank-mcp                 launches the full tabbed TUI
+ *                                   tabs: Dashboard / Compare / Board / Watch
+ *                                   keys: 1-4 or ← → switch · R refresh · Q quit
+ *
+ * CLI commands:
+ *   npx sigrank-mcp tui             same as default — explicit TUI launch
  *   npx sigrank-mcp board           live leaderboard (auto-refresh)
  *   npx sigrank-mcp me              your local cascade across 4 windows
+ *   npx sigrank-mcp compare         source audit: tokenpull vs ccusage vs token-dash vs tokscale
  *   npx sigrank-mcp watch           RT tune meter, re-reads local logs
  *   npx sigrank-mcp --help          full command reference
  *
- * MCP server mode — triggered when no args (the default for MCP clients):
- *   npx sigrank-mcp                 starts the MCP stdio server
+ * MCP server mode — triggered when no args + non-TTY (AI client default):
+ *   npx sigrank-mcp                 starts the MCP stdio server (piped mode)
  *
  * Tools exposed in MCP mode (see ./tools.mjs):
  *   rank_paste · get_leaderboard · get_operator · submit_paste
@@ -53,16 +60,17 @@ async function startMcpServer() {
 }
 
 // Route:
-//   any CLI command arg  → terminal UI
-//   no args + TTY stdout → terminal dashboard (interactive use)
+//   any CLI command arg  → terminal UI / CLI command
+//   no args + TTY stdout → full tabbed TUI (interactive use)
 //   no args + piped      → MCP stdio server (AI client use)
 const cliArgs = process.argv.slice(2)
 const CLI_COMMANDS = new Set(['board', 'me', 'compare', 'tui', 'watch', 'help', '--help', '-h', '--version', '-v'])
 if (cliArgs.length > 0 && (CLI_COMMANDS.has(cliArgs[0]) || cliArgs[0].startsWith('--'))) {
   runCli(process.argv)
 } else if (cliArgs.length === 0 && process.stdout.isTTY) {
-  // Interactive terminal — show the dashboard
-  runCli(process.argv)
+  // Interactive terminal — launch the full tabbed TUI
+  const { runTui } = await import('./tui.mjs')
+  runTui()
 } else {
   startMcpServer()
 }

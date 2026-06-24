@@ -12,22 +12,27 @@ Dual-mode package: **interactive CLI dashboard** for operators, **MCP stdio serv
 
 ```bash
 npm install -g sigrank-mcp
-sigrank-mcp          # unified dashboard (TTY detected automatically)
+sigrank-mcp          # launches the full tabbed TUI (TTY detected automatically)
 ```
 
 ---
 
 ## CLI — Commands
 
-### Default (no args)
+### Default (no args) — full tabbed TUI
 ```bash
 sigrank-mcp
+sigrank-mcp tui                        # explicit — same thing
+sigrank-mcp tui --platform codex       # default platform for Watch tab
 ```
-Unified operator dashboard:
-- **Your Cascade** — all detected platforms (claude, codex, …) × all 4 time windows (7d/30d/90d/all), with raw token pillars (Input/Output/CacheW/CacheR) and cascade metrics (Υ Yield / SNR / Leverage / Velocity / 10xDEV / Class) per row. Estimated columns marked `~`.
-- **Token Pillars** — per-platform verification block: tokenpull numbers vs ccusage / token-dashboard / tokscale. For estimated platforms (Codex), shows the estimation formula inline (`input = output × ioRatio`). Ends with a **Combined** block summing all active platforms.
-- **Board** — top 5 live entries from signalaf.com with full metrics: SIGNA / SNR / Depth / Tokens / Force / Percentile / 7d movement.
-- **Prompt** — `[S]` submit to board · `[B]` open signalaf.com · `[Q]` quit.
+Launches the full tabbed TUI. Keys: `1`-`4` or `←` `→` to switch tabs · `R` refresh · `Q` quit.
+
+| Tab | Key | Content |
+|---|---|---|
+| **Dashboard** | `1` | Cascade table (all platforms × windows + combined) · Υ sparklines · token composition bars · mini board |
+| **Compare** | `2` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
+| **Board** | `3` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all) |
+| **Watch** | `4` | Live cascade: big numbers + pillar bars + Υ trend · auto-refreshes 30s |
 
 ### `board`
 ```bash
