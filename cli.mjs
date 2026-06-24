@@ -861,12 +861,11 @@ async function runSigRank() {
     writeln()
   }
 
-  // ── 4. Token Pillars transparency table ──────────────────────────────────
+  // ── 4. Token Pillars — per-platform verification + combined ──────────────
   writeln(`  ${dim('─'.repeat(w - 4))}`)
   writeln()
-  writeln(`  ${bold('Token Pillars')}  ${dim('(all-time · transparency)')}`)
+  writeln(`  ${bold('Token Pillars')}  ${dim('(all-time · per-platform verification)')}`)
 
-  // rows: each active platform + comparison sources
   const PCOLS = [
     padEnd(dim('Source'), 14),
     padStart(dim('Input'), 10),
@@ -896,15 +895,47 @@ async function runSigRank() {
     writeln(`    ${cols.join('  ')}${note ? '  ' + dim(note) : ''}`)
   }
 
-  for (const d of active) {
-    const all = d.windows?.find(ww => ww.window === 'all')
-    if (all) printPillarRow(d.platform, cyan, all.pillars)
+  // ── Claude block ────────────────────────────────────────────────────────
+  const claudeData = active.find(d => d.platform === 'claude')
+  if (claudeData) {
+    const all = claudeData.windows?.find(ww => ww.window === 'all')
+    if (all) {
+      printPillarRow('claude', cyan, all.pillars, 'tokenpull')
+      if (ccPillars?.all) printPillarRow('  ccusage',    (s) => paint(c.green,   s), ccPillars.all, 'ccusage CLI')
+      if (tdPillars?.all) printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
+      if (tsPillars?.all) printPillarRow('  tokscale',   (s) => paint(c.blue,    s), tsPillars.all, 'tokscale_report.json')
+    }
   }
 
-  // comparison sources (dim, only shown if available)
-  if (ccPillars?.all)  printPillarRow('ccusage',      (s) => paint(c.green,   s), ccPillars.all,   'ccusage CLI')
-  if (tdPillars?.all)  printPillarRow('token-dash',   (s) => paint(c.magenta, s), tdPillars.all,   'token-dashboard.db')
-  if (tsPillars?.all)  printPillarRow('tokscale',     (s) => paint(c.blue,    s), tsPillars.all,   'tokscale_report.json')
+  // ── Other platforms (codex, amp, etc) ──────────────────────────────────
+  for (const d of active) {
+    if (d.platform === 'claude') continue
+    const all = d.windows?.find(ww => ww.window === 'all')
+    if (all) {
+      writeln() // spacing between platform blocks
+      printPillarRow(d.platform, cyan, all.pillars, 'tokenpull')
+      // codex has no external verifier yet
+      writeln(`    ${dim('  no external verifier for ' + d.platform)}`)
+    }
+  }
+
+  // ── Combined (if more than one platform) ───────────────────────────────
+  if (active.length > 1) {
+    writeln()
+    const combined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+    for (const d of active) {
+      const all = d.windows?.find(ww => ww.window === 'all')
+      if (!all) continue
+      combined.input       += all.pillars.input       ?? 0
+      combined.output      += all.pillars.output      ?? 0
+      combined.cacheCreate += all.pillars.cacheCreate ?? 0
+      combined.cacheRead   += all.pillars.cacheRead   ?? 0
+    }
+    printPillarRow('combined', (s) => bold(s), combined, active.map(d => d.platform).join('+'))
+    if (ccPillars?.all) printPillarRow('  ccusage',    (s) => paint(c.green,   s), ccPillars.all, 'ccusage CLI')
+    if (tdPillars?.all) printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
+    if (tsPillars?.all) printPillarRow('  tokscale',   (s) => paint(c.blue,    s), tsPillars.all, 'tokscale_report.json')
+  }
 
   // ── 5. Board position ─────────────────────────────────────────────────────
   writeln()
@@ -1085,7 +1116,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.3')
+      writeln('0.8.4')
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
