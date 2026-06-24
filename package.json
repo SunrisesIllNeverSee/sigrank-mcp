@@ -3,6 +3,15 @@
   "version": "0.6.9",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SunrisesIllNeverSee/sigrank-mcp.git"
+  },
+  "homepage": "https://signalaf.com",
+  "bugs": {
+    "url": "https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues"
+  },
   "bin": {
     "sigrank-mcp": "index.mjs"
   },
