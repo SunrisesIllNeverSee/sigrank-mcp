@@ -45,11 +45,13 @@ const cyan   = (s) => paint(c.boldCyan, s)
 const green  = (s) => paint(c.green, s)
 const red    = (s) => paint(c.red, s)
 
-const CLEAR  = `${ESC}2J${ESC}H`
-const HIDE   = `${ESC}?25l`
-const SHOW   = `${ESC}?25h`
-const UP     = (n) => `${ESC}${n}A`
-const ERLINE = `${ESC}2K`
+const CLEAR      = `${ESC}H${ESC}2J`   // home + erase visible area
+const ENTER_ALT  = `${ESC}?1049h`       // enter alternate screen buffer
+const EXIT_ALT   = `${ESC}?1049l`       // exit alternate screen buffer (restores original)
+const HIDE       = `${ESC}?25l`
+const SHOW       = `${ESC}?25h`
+const UP         = (n) => `${ESC}${n}A`
+const ERLINE     = `${ESC}2K`
 
 const write  = (s) => process.stdout.write(s)
 const writeln = (s = '') => process.stdout.write(s + '\n')
@@ -196,7 +198,7 @@ function tokenDashPillars() {
   if (!existsSync(dbPath)) return null
   try {
     const raw = execSync(
-      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_creation_input_tokens),SUM(cache_read_input_tokens) FROM messages"`,
+      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
       { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }
     ).toString().trim()
     const [i, o, cw, cr] = raw.split('|').map(Number)
@@ -433,19 +435,19 @@ function renderDashboard(data, status = '') {
   // ── Mini board (top 3)
   writeln(`  ${hr()}`)
   writeln()
-  writeln(`  ${bold('Board')}  ${dim('30d · top 5 · signalaf.com')}`)
+  writeln(`  ${bold('Board')}  ${dim('30d · top 5 · signalaf.com')}  ${dim('SIGNA = server-side credential score (calibrating)')}`)
   writeln()
   const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
   if (Array.isArray(entries) && entries.length > 0) {
-    const BH = [padStart(dim('#'),4), padEnd(dim('Codename'),20), padEnd(dim('Class'),13), padStart(dim('SIGNA'),7), padStart(dim('SNR'),6), padStart(dim('7d↕'),5)]
+    const BH = [padStart(dim('#'),4), padEnd(dim('Codename'),20), padEnd(dim('Class'),13), padStart(dim('SIGNA~'),7), padStart(dim('SNR'),7), padStart(dim('7d↕'),5)]
     writeln(`    ${BH.join('  ')}`)
-    writeln(`  ${dim('·'.repeat(Math.min(w-4, 66)))}`)
+    writeln(`  ${dim('·'.repeat(Math.min(w-4, 68)))}`)
     for (const e of entries.slice(0, 5)) {
       const rk  = e.rank === 1 ? gold(`#${e.rank}`) : `#${e.rank}`
       const nm  = padEnd(trunc(e.codename ?? '—', 20), 20)
       const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
-      const sna = padStart(e.signa_rate != null ? e.signa_rate.toFixed(1) : '—', 7)
-      const snr = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—', 6)
+      const sna = padStart(e.signa_rate != null ? dim(e.signa_rate.toFixed(1)) : dim('—'), 7)
+      const snr = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—', 7)
       const mv  = padStart(fmtMov(e.movement_7d), 5)
       writeln(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${sna}  ${snr}  ${mv}`)
     }
@@ -672,6 +674,7 @@ async function renderWatch(platform = 'claude', win = '7d') {
 
 // ── MAIN TUI LOOP ─────────────────────────────────────────────────────────────
 export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
+  write(ENTER_ALT)  // switch to alternate screen — original terminal state preserved on exit
   write(HIDE)
   write(CLEAR)
 
@@ -737,6 +740,11 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
     await redraw()
   }
 
+  // Always restore terminal on unexpected exit
+  const cleanup = () => { write(SHOW); write(EXIT_ALT); process.exit(0) }
+  process.once('SIGINT',  cleanup)
+  process.once('SIGTERM', cleanup)
+
   await loadAll()
 
   // auto-refresh board + watch every 30s
@@ -767,7 +775,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       if (k === 'q' || k === '\x03') {
         if (refreshTimer) clearInterval(refreshTimer)
         write(SHOW)
-        writeln()
+        write(EXIT_ALT)
         resolve()
         return
       }
@@ -792,12 +800,11 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       }
 
       if (k === 's' && activeTab === 0) {
-        // submit flow — hand off to existing runSigRank submit path
+        // submit flow — exit alt screen, hand off to CLI submit path
         const { runCli } = await import('./cli.mjs')
         if (refreshTimer) clearInterval(refreshTimer)
         write(SHOW)
-        write(CLEAR)
-        // re-invoke with submit prompt
+        write(EXIT_ALT)
         await runCli(['node', 'cli.mjs', '--submit'])
         resolve()
         return
