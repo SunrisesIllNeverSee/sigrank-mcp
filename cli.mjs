@@ -759,24 +759,27 @@ async function runSigRank() {
   write(HIDE_CURSOR)
   const w = termWidth()
 
-  // ── 1. Pull everything in parallel ────────────────────────────────────────
+  // ── 1. Show immediate header so screen isn't blank ────────────────────────
   writeln()
-  writeln(`  ${gold('⊙ SigRank')}  ${dim('reading all sources…')}`)
+  writeln(`  ${gold('⊙ SigRank')}  ${bold('Operator Dashboard')}`)
+  writeln(`  ${dim('reading local data…')}`)
 
   const { tokenpullAny } = await import('./tokenpull.mjs')
 
-  const [platformResults, boardData, ccPillars, tdPillars, tsPillars] = await Promise.all([
-    // all platforms
-    Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
-    // live board
+  // Local sources first (fast) — board fetch with 5s timeout runs in parallel
+  const boardPromise = Promise.race([
     callTool('get_leaderboard', {}).catch(() => null),
-    // ccusage
+    new Promise(r => setTimeout(() => r(null), 5000)),
+  ])
+
+  const [platformResults, ccPillars, tdPillars, tsPillars] = await Promise.all([
+    Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
     Promise.resolve(ccusagePillars('claude')),
-    // token-dashboard
     Promise.resolve(tokenDashPillars()),
-    // tokscale
     Promise.resolve(tokscalePillars()),
   ])
+
+  const boardData = await boardPromise
 
   // filter to platforms with actual data
   const active = []
@@ -791,8 +794,8 @@ async function runSigRank() {
     active.push(d)
   }
 
-  // clear loading line
-  write(CURSOR_UP(2) + ERASE_LINE + CURSOR_UP(1) + ERASE_LINE)
+  // clear the 3 loading lines (blank + header + "reading…")
+  write(CURSOR_UP(3) + ERASE_LINE + CURSOR_UP(1) + ERASE_LINE + CURSOR_UP(1) + ERASE_LINE)
 
   // ── 2. Header ─────────────────────────────────────────────────────────────
   const ts = new Date().toLocaleTimeString('en-US', { hour12: false })
@@ -1074,7 +1077,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.0')
+      writeln('0.8.1')
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
