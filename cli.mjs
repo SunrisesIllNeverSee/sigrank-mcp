@@ -854,12 +854,13 @@ async function runSigRank() {
       if (!cas) continue
       const isFirst = winKey === '7d' || (winKey === '30d' && !d.windows?.find(w => w.window === '7d' && (w.pillars.input + w.pillars.output) > 0))
       const clsFn = CLASS_COLOR[cas.class] ?? ((s) => s)
+      const est = d.estimated === true
       const cols = [
         padEnd(isFirst ? cyan(d.platform) : dim(d.platform), 10),
         padEnd(dim(winKey), 5),
-        padStart(fmtTokens(p.input), 8),
+        padStart(est ? dim('~') + fmtTokens(p.input) : fmtTokens(p.input), 8),
         padStart(fmtTokens(p.output), 8),
-        padStart(p.cacheCreate > 0 ? fmtTokens(p.cacheCreate) : dim('—'), 8),
+        padStart(p.cacheCreate > 0 ? (est ? dim('~') + fmtTokens(p.cacheCreate) : fmtTokens(p.cacheCreate)) : dim('—'), 8),
         padStart(p.cacheRead   > 0 ? fmtTokens(p.cacheRead)   : dim('—'), 9),
         padStart(cas.yield != null ? (cas.yield > 10000 ? gold(fmtYield(cas.yield)) : fmtYield(cas.yield)) : '—', 9),
         padStart(fmtSNR(cas.snr), 7),
@@ -912,11 +913,20 @@ async function runSigRank() {
     const all = d.windows?.find(ww => ww.window === 'all')
     if (!all) continue
     const v = verifierMap[d.platform] ?? {}
-    printPillarRow(d.platform, cyan, all.pillars, 'tokenpull')
+    const estMarker = d.estimated ? dim('  ~ estimated') : ''
+    printPillarRow(d.platform, cyan, all.pillars, `tokenpull${estMarker}`)
+    if (d.estimated) {
+      // show the estimation formula inline
+      const ratio = d.ioRatio != null ? d.ioRatio.toFixed(3) : '?'
+      writeln(`    ${dim(`  ~ input = output × ioRatio(${ratio})   cacheCreate = uncached − input   cacheRead = exact`)}`)
+    }
     if (v.cc?.all)      printPillarRow('  ccusage',    (s) => paint(c.green,   s), v.cc.all,    'ccusage CLI')
     if (d.platform === 'claude' && tdPillars?.all)
                         printPillarRow('  token-dash', (s) => paint(c.magenta, s), tdPillars.all, 'token-dashboard.db')
     if (v.ts?.all)      printPillarRow('  tokscale',   (s) => paint(c.blue,    s), v.ts.all,    'tokscale_report.json')
+    if (d.estimated && (v.cc?.all || v.ts?.all)) {
+      writeln(`    ${dim('  ^ verifiers show raw uncached input (input_tokens − cached) — different field than estimated input above')}`)
+    }
     writeln()
   }
 
@@ -1137,7 +1147,7 @@ export async function runCli(argv) {
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln('0.8.5')
+      writeln('0.8.6')
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
