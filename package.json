@@ -21,7 +21,7 @@
   },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node test.mjs"
+    "test": "node test.mjs && node sign.test.mjs"
   },
   "files": [
     "index.mjs",
@@ -32,6 +32,8 @@
     "narrate.mjs",
     "tokenpull.mjs",
     "adapters.mjs",
+    "sign.mjs",
+    "keystore.mjs",
     "README.md"
   ],
   "dependencies": {
