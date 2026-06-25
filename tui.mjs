@@ -817,6 +817,77 @@ async function renderOnce(tabIdx = 0) {
   lines.forEach((ln) => process.stdout.write(stripAnsi(ln) + '\n'))
 }
 
+// ── OPENING SPLASH ───────────────────────────────────────────────────────────
+// Block-letter SIGRANK wordmark that flashes through colors CONTINUOUSLY until a
+// key is pressed (owner 2026-06-25: "keep the animation going"). Randomizes the
+// mode each launch (moses gold-shimmer / rainbow / chaos per-letter). Centered to
+// terminal width. Any key dismisses → the dashboard loads.
+const SPLASH_ART = [
+  '███████ ██  ██████  ██████   █████  ███    ██ ██   ██',
+  '██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██ ',
+  '███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████  ',
+  '     ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██ ',
+  '███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██',
+]
+const SPLASH_RULE = '◈  ───────────────────────────────────────────  ◈'
+const MOSES_PAL = [220, 178, 214, 208, 222, 230]
+const RAINBOW_PAL = [196, 202, 226, 46, 51, 21, 201, 213]
+const col256 = (n, s) => `${ESC}38;5;${n}m${s}${c.reset}`
+const stripA = (s) => s.replace(/\x1b\[[0-9;]*m/g, '')
+const ctr = (s) => { const pad = Math.max(0, Math.floor((W() - stripA(s).length) / 2)); return ' '.repeat(pad) + s }
+
+function splashFrame(mode) {
+  const pick = (a) => a[Math.floor(Math.random() * a.length)]
+  const out = ['', '', ctr(dim(SPLASH_RULE)), '']
+  for (const line of SPLASH_ART) {
+    if (mode === 'chaos') {
+      out.push(ctr([...line].map((ch) => ch === ' ' ? ' ' : col256(Math.floor(Math.random() * 256), ch)).join('')))
+    } else {
+      const n = mode === 'rainbow' ? pick(RAINBOW_PAL) : pick(MOSES_PAL)
+      out.push(ctr(col256(n, line)))
+    }
+  }
+  out.push('', ctr(dim(SPLASH_RULE)), '')
+  out.push(ctr(bold('For all builders, burners and 10xers')))
+  out.push(ctr(dim('signalaf')), '')
+  out.push(ctr(`${dim('powered by')}  ${gold('MO§ES™')}`))
+  out.push(ctr(dim('$ npx sigrank-mcp')), '')
+  out.push(ctr(`${gold('▸')} ${dim('press any key')} ${gold('◂')}`))
+  return out.join('\n')
+}
+
+// Animated splash. Controls: [P] pause/resume the color animation · [Enter] (or
+// any other key) enter the TUI · Ctrl-C quit. Mode (moses/rainbow/chaos) varies
+// per launch. Frozen frame keeps the last colors so a pause reads as intentional.
+function showSplash() {
+  const modes = ['moses', 'rainbow', 'chaos']
+  const mode = modes[Math.floor((Date.now() / 1000) % modes.length)]
+  return new Promise((resolve) => {
+    let paused = false
+    const hint = () => `${dim('  [P]')} ${paused ? 'resume' : 'pause'}    ${dim('[Enter]')} enter`
+    const paint = () => { write(CLEAR); write(splashFrame(mode)); write(`\n${ctr(hint())}`) }
+    paint()
+    let timer = setInterval(paint, 110)
+    process.stdin.setRawMode?.(true)
+    process.stdin.resume()
+    process.stdin.setEncoding('utf8')
+    const onKey = (key) => {
+      const k = key.toLowerCase()
+      if (k === 'p') {                          // toggle pause — don't enter
+        paused = !paused
+        if (paused) { clearInterval(timer); timer = null; paint() }      // freeze on current frame
+        else { timer = setInterval(paint, 110) }                          // resume animating
+        return
+      }
+      if (timer) clearInterval(timer)
+      process.stdin.removeListener('data', onKey)
+      if (key === '\x03') { write(SHOW); write(EXIT_ALT); process.exit(0) } // Ctrl-C
+      resolve()                                  // Enter / any other key → enter the TUI
+    }
+    process.stdin.on('data', onKey)
+  })
+}
+
 // ── MAIN TUI LOOP ─────────────────────────────────────────────────────────────
 export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   // Debug render mode — non-interactive, dumps a tab + width audit, then exits.
@@ -830,6 +901,13 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   write(ENTER_ALT)  // switch to alternate screen — original terminal state preserved on exit
   write(HIDE)
   write(CLEAR)
+
+  // Opening splash — animated SIGRANK wordmark, dismisses on any key.
+  // (Skippable with --no-splash for scripted/fast launches.)
+  if (!process.argv.includes('--no-splash') && process.stdin.isTTY) {
+    await showSplash()
+    write(CLEAR)
+  }
 
   // ── State
   let activeTab    = 0
