@@ -12,6 +12,7 @@ import { cascade, parsePillars } from './cascade.mjs'
 import { narrate } from './narrate.mjs'
 import { tokenpull as pullLocal, tokenpullCodex as pullCodex, tokenpullAny } from './tokenpull.mjs'
 import { ALL_PLATFORMS } from './adapters.mjs'
+import { ensureIdentity, recordEnrollment } from './keystore.mjs'
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -214,6 +215,19 @@ export const TOOLS = [
       },
     },
   },
+  {
+    name: 'enroll',
+    description:
+      'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the single-use connect code from signalaf.com → Settings → Connect a device. On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. One binding per device (revoke + re-enroll from Settings).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', description: 'the connect code (SIGR-XXXXX-XXXXX-XXXXX) from Settings → Connect a device' },
+        device_label: { type: 'string', description: 'optional label for this device (default: hostname · agent version)' },
+      },
+      required: ['code'],
+    },
+  },
 ]
 
 // tokenpull window key → the board's window_type enum.
@@ -259,6 +273,40 @@ export async function callTool(name, args, opts = {}) {
     const codename = String(args?.codename || '').trim()
     if (!codename) throw new Error('get_operator requires a non-empty `codename` argument.')
     return fetchJson(`/api/v1/operators/${encodeURIComponent(codename)}`)
+  }
+
+  if (name === 'enroll') {
+    // Redeem a web connect code → bind this device. Generates/loads the local keypair;
+    // sends ONLY the public key. operator binding happens server-side from the code row.
+    const code = String(args?.code || '').trim()
+    if (!code) throw new Error('enroll requires a `code` — paste your connect code from signalaf.com → Settings → Connect a device.')
+    const id = opts.identity || ensureIdentity()
+    const deviceLabel = String(args?.device_label || `${os.hostname()} · ${id.agent_version}`).slice(0, 120)
+    const res = await doFetch(`${apiBase}/api/v1/devices/enroll`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        code,
+        device_id: id.device_id,
+        public_key: id.public_key,
+        device_label: deviceLabel,
+        agent_version: id.agent_version,
+      }),
+    })
+    let ack
+    try { ack = await res.json() } catch { ack = {} }
+    if (res.status === 201 && ack.status === 'enrolled') {
+      // Persist the binding locally (skipped when a test injects opts.identity → no keystore write).
+      if (!opts.identity) recordEnrollment({ codename: ack.codename, operator_id: ack.operator_id })
+      return {
+        status: 'enrolled',
+        codename: ack.codename ?? null,
+        operator_id: ack.operator_id ?? null,
+        device_id: id.device_id,
+        trust_status: ack.trust_status ?? 'trusted',
+      }
+    }
+    return { status: 'error', httpStatus: res.status, reason: ack.reason || ack.status || `http_${res.status}`, detail: ack.detail ?? null }
   }
 
   if (name === 'submit_paste') {

@@ -6,6 +6,7 @@ import { narrate } from './narrate.mjs'
 import { callTool } from './tools.mjs'
 import { tokenpull, tokenpullCodex, tokenpullAny, EXCLUDE_TOOLING, codexAdapter } from './tokenpull.mjs'
 import { ADAPTERS, ALL_PLATFORMS } from './adapters.mjs'
+import { generateIdentity } from './keystore.mjs'
 import assert from 'node:assert'
 
 const MOSES = '1251211 11296121 128196310 2555179769'
@@ -368,4 +369,31 @@ console.log('\n✓ canon · card · submit_paste · tokenpull(claude) · tokenpu
 console.log('✓ hardening: div-by-zero guards · parsePillars warnings · fetch timeout · codex tooling filter · narrate safety')
 console.log('✓ adapters: registry (15 platforms) · amp · qwen · goose · gemini · opencode · droid · tokenpullAny routing')
 console.log('✓ rank_windows: 4-window paste scoring · partial input · no-network · canon Υ · source_tool · empty throws')
+// --- 30. enroll: posts the keystore IDENTITY (public key only) to /devices/enroll, maps the ack ---
+// Inject opts.identity so the tool skips keystore persistence + uses a fixed device_id.
+const testIdentity = generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' })
+let enrollCap = null
+const enrollFetch = async (url, init) => {
+  enrollCap = { url, init }
+  return { ok: true, status: 201, json: async () => ({ status: 'enrolled', codename: 'TransVaultOrigin', operator_id: 'op_123', trust_status: 'trusted' }) }
+}
+const enr = await callTool('enroll', { code: 'SIGR-7F3KQ-9QXM2-4HJ8R' }, { apiBase: 'http://test.local', fetchImpl: enrollFetch, identity: testIdentity })
+assert.ok(enrollCap.url.endsWith('/api/v1/devices/enroll'), 'enroll POSTs to /api/v1/devices/enroll')
+assert.strictEqual(enrollCap.init.method, 'POST', 'enroll uses POST')
+const enrollBody = JSON.parse(enrollCap.init.body)
+assert.strictEqual(enrollBody.device_id, testIdentity.device_id, 'enroll sends the keystore device_id')
+assert.strictEqual(enrollBody.public_key, testIdentity.public_key, 'enroll sends the PUBLIC key')
+assert.ok(enrollBody.public_key.startsWith('ed25519:'), 'public key carries the ed25519: prefix')
+assert.ok(!('private_key_pkcs8_b64' in enrollBody) && !JSON.stringify(enrollBody).includes(testIdentity.private_key_pkcs8_b64), 'enroll NEVER transmits the private key')
+assert.strictEqual(enr.status, 'enrolled', 'enroll maps a 201 to enrolled')
+assert.strictEqual(enr.codename, 'TransVaultOrigin', 'enroll surfaces the bound codename')
+// invalid code → mapped error, never throws
+const badFetch = async () => ({ ok: false, status: 410, json: async () => ({ reason: 'code_invalid' }) })
+const bad = await callTool('enroll', { code: 'SIGR-NOPE' }, { apiBase: 'http://test.local', fetchImpl: badFetch, identity: testIdentity })
+assert.strictEqual(bad.status, 'error', 'invalid code → error status (no throw)')
+assert.strictEqual(bad.reason, 'code_invalid', 'invalid-code reason surfaced')
+// empty code → throws at the tool boundary
+await assert.rejects(() => callTool('enroll', { code: '' }, { identity: testIdentity }), /requires a `code`/, 'enroll rejects empty code')
+
 console.log('✓ watch_tokenpull: cascade snapshot · interval_s · TODO(AUTH.WIRE) stub')
+console.log('✓ enroll: posts identity (public key only) · hides private key · maps 201 enrolled + 410 code_invalid')

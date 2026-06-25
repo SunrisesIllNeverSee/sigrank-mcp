@@ -25,6 +25,7 @@
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { classify } from './cascade.mjs'
+import { ensureIdentity, keystorePath } from './keystore.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
@@ -1192,6 +1193,61 @@ async function showHelp() {
 
 // ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
+// ── enroll: bind this device to your operator via a web connect code (D7 §4.5) ──
+async function runEnroll({ label } = {}) {
+  const id = ensureIdentity()
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Connect this device')}`)
+  writeln(`  ${dim(`device ${id.device_id}`)}`)
+  if (id.codename && id.operator_id) {
+    writeln(`  ${dim(`already enrolled as ${id.codename} — re-enrolling a bound device is rejected this slice.`)}`)
+  }
+  writeln(`  ${dim('Get a code at signalaf.com → Settings → Connect a device.')}`)
+  writeln()
+
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  let code
+  try {
+    code = (await rl.question('  Paste your connect code: ')).trim()
+  } finally {
+    rl.close()
+  }
+  if (!code) {
+    writeln(red('  ✗ No code entered.'))
+    process.exitCode = 1
+    return
+  }
+
+  let out
+  try {
+    out = await callTool('enroll', { code, device_label: typeof label === 'string' ? label : undefined })
+  } catch (e) {
+    writeln(red(`  ✗ ${e.message}`))
+    process.exitCode = 1
+    return
+  }
+
+  if (out.status === 'enrolled') {
+    writeln()
+    writeln(`  ${green('✓')} Enrolled as ${cyan(out.codename || '(operator)')}.`)
+    writeln(`  ${dim('Your runs now cascade to the board. Try ')}${bold('npx sigrank-mcp me')}${dim(' or ')}${bold('npx sigrank-mcp watch --submit')}${dim('.')}`)
+    writeln(`  ${dim(`identity: ${keystorePath()}`)}`)
+    return
+  }
+
+  const msg =
+    {
+      code_invalid: 'That code is invalid, expired, or already used — generate a fresh one.',
+      device_already_enrolled: 'This device is already enrolled. Revoke it in Settings to re-bind (key rotation lands later).',
+      bad_request: 'The code or device key was malformed.',
+      rate_limited: 'Too many attempts — wait a few minutes and retry.',
+      persistence_unavailable: 'Enrollment is temporarily unavailable — try again shortly.',
+    }[out.reason] || `Enrollment failed (${out.reason || 'unknown'}).`
+  writeln(red(`  ✗ ${msg}`))
+  process.exitCode = 1
+}
+
 export async function runCli(argv) {
   const args = argv.slice(2) // strip 'node' + script path
   const cmd  = args[0]
@@ -1226,6 +1282,8 @@ export async function runCli(argv) {
         window:   flags.window   ?? '7d',
         refresh:  Number(flags.refresh) || 30,
       })
+    } else if (cmd === 'enroll') {
+      await runEnroll({ label: flags.label })
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       await showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
