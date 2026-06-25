@@ -15,6 +15,29 @@ npm install -g sigrank-mcp
 sigrank-mcp          # launches the full tabbed TUI (TTY detected automatically)
 ```
 
+## Install from GitHub
+
+Until npm publish is live, install directly from the repo:
+
+```bash
+# Clone + install
+git clone https://github.com/SunrisesIllNeverSee/sigrank-mcp.git
+cd sigrank-mcp
+npm install
+
+# Run CLI
+node index.mjs                        # TUI (if TTY)
+node cli.mjs board --once             # leaderboard one-shot
+
+# Or link globally for `sigrank-mcp` command
+npm link
+sigrank-mcp
+```
+
+**Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
+**Site:** [signalaf.com](https://signalaf.com)
+**Version:** 0.9.12
+
 ---
 
 ## CLI — Commands
@@ -41,7 +64,7 @@ sigrank-mcp board --window 7d          # specific window: 7d · 30d · 90d · al
 sigrank-mcp board --once               # print once and exit
 sigrank-mcp board --window all --once
 ```
-Full leaderboard view with all board metrics. Columns: `#` / Codename / Class / SIGNA / SNR / Depth / Tokens / Force / Pct / 7d↕.
+Full leaderboard view with all board metrics. Columns: `#` / Codename / Class / Υ Yield / SNR / Depth / Tokens / Force / Pct / 7d↕. Sorted by Υ Yield (the token cascade).
 
 ### `me`
 ```bash
@@ -107,7 +130,7 @@ Or if installed globally:
 | Tool | Args | What |
 |---|---|---|
 | `rank_paste(text)` | `{input, output, cacheCreate, cacheRead}` JSON or 4 whitespace-delimited numbers | Scores token pillars → Υ Yield / SNR / Leverage / Velocity / 10xDEV / Class + prose narration card |
-| `get_leaderboard()` | `{window?}` | Live board from signalaf.com |
+| `get_leaderboard()` | `{window?}` | Live board from signalaf.com — sorted by Υ Yield |
 | `get_operator(codename)` | `{codename}` | One operator's live profile |
 | `submit_paste(text, codename)` | `{text, codename?}` | Rank locally then POST to board. Omit codename for preview-only |
 | `tokenpull(platform?)` | `{platform?}` | On-device local reader: scans local logs → 4-window cascade. Zero paste, token-only |
@@ -203,15 +226,20 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 ## Dev / test
 
 ```bash
-node test.mjs          # all unit tests
-node index.mjs         # stdio MCP server directly
+node test.mjs          # 29 unit tests (no network, no fs writes)
+node index.mjs         # stdio MCP server directly (pipe to MCP client)
 ```
 
-Tests verify:
+Tests verify (29 assertions):
 - `rank_paste` canon: MO§ES `(1251211, 11296121, 128196310, 2555179769)` → Υ 18436.98 · TRANSMITTER
-- Adapter registry (15 platforms)
-- `rank_windows` 4-window scoring, partial input, no-network
-- `watch_tokenpull` snapshot shape
+- `submit_paste` preview (no codename) + POST shape (injected fetch, no live writes)
+- `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
+- `tokenpull_submit` all 4 windows POST, sha256 hash, ddmmyy stamp
+- `tokenpullCodex` io_ratio conversion per-window
+- Adapter registry (15 platforms) + per-adapter shape contracts
+- `rank_windows` 4-window paste scoring, partial input, no-network
+- `watch_tokenpull` cascade snapshot, interval_s, TODO(AUTH.WIRE) stub
+- Hardening: div-by-zero guards, parsePillars warnings, fetch timeout, EXCLUDE_TOOLING regex, narrate safety
 
 ---
 

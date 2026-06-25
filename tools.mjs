@@ -101,9 +101,9 @@ async function pullByPlatform(platform, opts = {}) {
         const all = c.windows.find((w) => w.window === 'all')
         if (all && all.pillars.output > 0) ioRatio = all.pillars.input / all.pillars.output
       } catch { /* no Claude data → Alpha 2.0 */ }
-      return pullCodex({ ioRatio, adapter: opts.adapter })
+      return pullCodex({ ioRatio, adapter: opts.adapter, now: opts.now })
     }
-    return pullLocal({ adapter: opts.adapter })
+    return pullLocal({ adapter: opts.adapter, now: opts.now })
   }
   return tokenpullAny(platform || 'claude', opts)
 }
@@ -254,7 +254,7 @@ export async function callTool(name, args, opts = {}) {
     const c = withParseWarnings(pillars, cascade(pillars))
     return { ...c, card: narrate(c) }
   }
-  if (name === 'get_leaderboard') return fetchJson('/api/v1/leaderboard')
+  if (name === 'get_leaderboard') return fetchJson('/api/v1/leaderboard?metric=yield_')
   if (name === 'get_operator') {
     const codename = String(args?.codename || '').trim()
     if (!codename) throw new Error('get_operator requires a non-empty `codename` argument.')

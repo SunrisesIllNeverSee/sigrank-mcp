@@ -17,6 +17,13 @@ import { execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
+import { createRequire } from 'module'
+
+// Version read from package.json (single source of truth — matches cli.mjs;
+// never hardcode, that's what caused the version drift).
+const VERSION = (() => {
+  try { return createRequire(import.meta.url)('./package.json').version } catch { return '?' }
+})()
 
 // ── ANSI ───────────────────────────────────────────────────────────────────
 const ESC = '\x1b['
@@ -52,13 +59,63 @@ const HIDE       = `${ESC}?25l`
 const SHOW       = `${ESC}?25h`
 const UP         = (n) => `${ESC}${n}A`
 const ERLINE     = `${ESC}2K`
+const GOTO       = (r, col = 1) => `${ESC}${r};${col}H`   // absolute cursor position
 
-const write  = (s) => process.stdout.write(s)
-const writeln = (s = '') => process.stdout.write(s + '\n')
 const W      = () => process.stdout.columns || 100
 const H      = () => process.stdout.rows    || 40
 
+// ── Screen buffer: collect lines, then paint only what fits ─────────────
+// Render functions call write/writeln as before; the buffer captures them.
+// flushScreen() paints to the real terminal using absolute cursor positioning
+// so the TUI never scrolls — it's a locked frame like tokscale.
+let _screenBuf = null    // null = direct mode (unbuffered); string[] = buffered
+const write  = (s) => { if (_screenBuf) { const parts = s.split('\n'); if (parts.length === 1) { _screenBuf[_screenBuf.length-1] += s } else { _screenBuf[_screenBuf.length-1] += parts[0]; for (let i=1;i<parts.length;i++) _screenBuf.push(parts[i]) } } else { process.stdout.write(s) } }
+const writeln = (s = '') => { if (_screenBuf) { _screenBuf[_screenBuf.length-1] += s; _screenBuf.push('') } else { process.stdout.write(s + '\n') } }
+
+let _footerBuf = null    // footer lines pinned to bottom
+function startBuffer() { _screenBuf = ['']; _footerBuf = null }
+function setFooter(lines) { _footerBuf = lines }
+function flushScreen() {
+  if (!_screenBuf) return
+  const lines = _screenBuf
+  const footer = _footerBuf || []
+  _screenBuf = null
+  _footerBuf = null
+  const h = H()
+  const w = W()
+  // Footer FLOWS right after content (not pinned to the terminal bottom). This
+  // avoids both the tall-terminal gap and the short-terminal cutoff the pinned
+  // layout caused. Content + footer are clamped together to the terminal height
+  // so a frame never scrolls the alt-screen (which would smear old rows).
+  const frame = [...lines, ...footer]
+  const maxRows = Math.min(frame.length, h)
+  let out = ''
+  for (let i = 0; i < maxRows; i++) {
+    out += GOTO(i + 1) + ERLINE + ansiTrunc(frame[i], w)
+  }
+  // Clear any rows below the frame left over from a taller previous frame.
+  for (let i = maxRows; i < h; i++) {
+    out += GOTO(i + 1) + ERLINE
+  }
+  process.stdout.write(out)
+}
+
 function stripAnsi(s) { return s.replace(/\x1b\[[0-9;]*m/g, '') }
+// ANSI-aware truncate: cut to `w` VISIBLE columns while keeping color escapes
+// intact (escapes don't count toward width, and we never slice mid-sequence).
+// Replaces raw `.slice(0, w)`, which corrupts color codes + miscounts width.
+function ansiTrunc(s, w) {
+  if (stripAnsi(s).length <= w) return s
+  let out = '', vis = 0, i = 0
+  while (i < s.length && vis < w) {
+    if (s[i] === '\x1b') {
+      const m = s.slice(i).match(/^\x1b\[[0-9;]*m/)
+      if (m) { out += m[0]; i += m[0].length; continue }
+    }
+    out += s[i]; vis++; i++
+  }
+  return out + '\x1b[0m' // reset so a cut mid-color doesn't bleed into next line
+}
 function padEnd(s, w)  { const v = stripAnsi(s).length; return v >= w ? s : s + ' '.repeat(w - v) }
 function padStart(s,w) { const v = stripAnsi(s).length; return v >= w ? s : ' '.repeat(w - v) + s }
 function trunc(s, w)   { return stripAnsi(s).length <= w ? s : s.slice(0, w - 1) + '…' }
@@ -228,12 +285,14 @@ async function loadDashboardData() {
     'hermes','droid','codebuff','copilot','openclaw','pi',
   ]
   const boardPromise = Promise.race([
-    fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d`, { headers: { accept: 'application/json' } })
+    fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=yield_`, { headers: { accept: 'application/json' } })
       .then(r => r.ok ? r.json() : null).catch(() => null),
     new Promise(r => setTimeout(() => r(null), 5000)),
   ])
 
-  const [platformResults, tdPillars] = await Promise.all([
+  // All platforms scan in parallel. tokenpullAny handles each platform's
+  // canonical conversion (Codex ioRatio, reasoning→output, etc.) internally.
+  const [allResults, tdPillars] = await Promise.all([
     Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
     Promise.resolve(tokenDashPillars()),
   ])
@@ -245,7 +304,7 @@ async function loadDashboardData() {
 
   const active = []
   for (let i = 0; i < ALL_PLATFORMS.length; i++) {
-    const r = platformResults[i]
+    const r = allResults[i]
     if (r.status !== 'fulfilled') continue
     const d = r.value
     const all = d.windows?.find(w => w.window === 'all')
@@ -267,7 +326,7 @@ async function loadCompareData(platform = 'claude') {
 }
 
 async function loadBoardData(window = '30d') {
-  const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}`, {
+  const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`, {
     headers: { accept: 'application/json' }
   })
   if (!res.ok) return null
@@ -279,7 +338,7 @@ const TABS = [
   { key: '1', label: 'Dashboard', short: 'D' },
   { key: '2', label: 'Compare',   short: 'C' },
   { key: '3', label: 'Board',     short: 'B' },
-  { key: '4', label: 'Watch',     short: 'W' },
+  { key: '4', label: 'Watch',     short: 'W' },  // in-TUI landing panel; [Enter] launches the watcher
 ]
 
 function renderTabBar(activeIdx) {
@@ -295,8 +354,8 @@ function renderTabBar(activeIdx) {
       ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
       : `${c.bgDim}${c.dim}${lbl}${c.reset}`
   }).join('')
-  // right side
-  const right = dim(`signalaf.com  ${ts}`)
+  // right side — version (single source of truth) · site · clock
+  const right = dim(`${gold('v' + VERSION)}${c.reset}${c.dim}  ·  signalaf.com  ·  ${ts}`)
 
   const logoVis  = stripAnsi(logo).length
   const tabsVis  = TABS.reduce((a, t) => a + t.label.length + 4, 0)
@@ -338,25 +397,16 @@ function yieldSpark(d) {
 function renderDashboard(data, status = '') {
   const { active, verifierMap, tdPillars, boardData } = data
   const w = W()
+  const budget = H() - 4  // 2 tab bar + 2 footer
   const WINS = ['7d', '30d', '90d', 'all']
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
-  // ── Cascade table
-  writeln()
-  writeln(`  ${bold('Your Cascade')}  ${dim('all platforms · all windows')}`)
-  writeln()
-
-  // header
-  const CH = [
-    padEnd(dim('Platform'), 12), padEnd(dim('Win'), 5),
-    padStart(dim('Input'), 8), padStart(dim('Output'), 8),
-    padStart(dim('CacheW'), 8), padStart(dim('CacheR'), 9),
-    padStart(dim('Υ Yield'), 9), padStart(dim('SNR'), 7),
-    padStart(dim('Lev'), 7), padStart(dim('Vel'), 6),
-    padStart(dim('10x'), 6), padEnd(dim('Class'), 13),
-  ]
-  writeln(`    ${CH.join('  ')}`)
-  writeln(`  ${dim('·'.repeat(Math.min(w - 4, 114)))}`)
-
+  // Responsive: the full 12-col table is ~124 wide. On terminals narrower than
+  // that, drop the two derived columns (Vel, 10x) and tighten the inter-column
+  // gap from 2 spaces to 1, so the core pillars + Υ/SNR/Lev/Class still fit.
+  const narrow = w < 124
+  const gap = narrow ? ' ' : '  '
   const renderRow = (label, colorFn, winKey, p, est = false) => {
     const cas = cascadeFrom(p)
     if (!cas) return
@@ -370,29 +420,64 @@ function renderDashboard(data, status = '') {
       padStart(cas.yield > 10000 ? gold(fmtY(cas.yield)) : fmtY(cas.yield), 9),
       padStart(fmtSNR(cas.snr), 7),
       padStart(fmtLev(cas.leverage)+'×', 7),
-      padStart(cas.velocity?.toFixed(2) ?? '—', 6),
-      padStart(cas.dev10x?.toFixed(2) ?? '—', 6),
+      ...(narrow ? [] : [
+        padStart(cas.velocity?.toFixed(2) ?? '—', 6),
+        padStart(cas.dev10x?.toFixed(2) ?? '—', 6),
+      ]),
       padEnd(clsFn(cas.class), 13),
     ]
-    writeln(`    ${cols.join('  ')}`)
+    emit(`    ${cols.join(gap)}`)
   }
 
+  // ── Cascade table
+  emit()
+  emit(`  ${bold('Your Cascade')}  ${dim('all platforms · all windows')}`)
+  emit()
+
+  // header (matches renderRow's responsive column set + gap)
+  const CH = [
+    padEnd(dim('Platform'), 12), padEnd(dim('Win'), 5),
+    padStart(dim('Input'), 8), padStart(dim('Output'), 8),
+    padStart(dim('CacheW'), 8), padStart(dim('CacheR'), 9),
+    padStart(dim('Υ Yield'), 9), padStart(dim('SNR'), 7),
+    padStart(dim('Lev'), 7),
+    ...(narrow ? [] : [padStart(dim('Vel'), 6), padStart(dim('10x'), 6)]),
+    padEnd(dim('Class'), 13),
+  ]
+  emit(`    ${CH.join(gap)}`)
+  emit(`  ${dim('·'.repeat(Math.max(0, Math.min(w - 4, narrow ? 96 : 114))))}`)
+
+  if (active.length === 0) {
+    emit(`  ${dim('  reading token logs… (takes ~4s on first load · press [R] to refresh)')}`)
+  }
+
+  // Calculate how many cascade rows we can fit — reserve space for lower sections
+  const platformCount = active.length
+  const sparkLines = 3 + platformCount  // hr + header + platforms + blank
+  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0)  // hr + header + platforms + combined + note
+  const boardLines = 9  // hr + header + col header + sep + top 3 + blank + status
+  const sectionsBelow = sparkLines + barLines + boardLines
+  const maxCascadeRows = Math.max(4, budget - used - sectionsBelow)
+
   let firstWin = {}
+  let cascadeRowCount = 0
   for (const d of active) {
     firstWin[d.platform] = WINS.find(wk => {
       const wd = d.windows?.find(w => w.window === wk)
       return wd && (wd.pillars.input + wd.pillars.output) > 0
     })
     for (const wk of WINS) {
+      if (cascadeRowCount >= maxCascadeRows || used >= budget - sectionsBelow) break
       const wd = d.windows?.find(x => x.window === wk)
       if (!wd || (wd.pillars.input + wd.pillars.output) === 0) continue
       renderRow(d.platform, (s) => wk === firstWin[d.platform] ? cyan(s) : dim(s), wk, wd.pillars, d.estimated)
+      cascadeRowCount++
     }
-    writeln()
+    emit()
   }
 
   // combined
-  if (active.length > 1) {
+  if (active.length > 1 && used < budget - sectionsBelow) {
     const lbl = active.map(d => d.platform).join('+')
     const hasEst = active.some(d => d.estimated)
     let fst = true
@@ -410,79 +495,73 @@ function renderDashboard(data, status = '') {
       renderRow(lbl, (s) => fst ? bold(cyan(s)) : dim(s), wk, cp, hasEst)
       fst = false
     }
-    writeln()
+    emit()
   }
 
-  // ── Yield sparklines
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Υ Trend')}  ${dim('across windows (7d→all)')}`)
-  writeln()
-  for (const d of active) {
-    writeln(`    ${padEnd(cyan(d.platform), 10)}  ${yieldSpark(d)}`)
-  }
-  writeln()
-
-  // ── Token bar charts
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Token Composition')}  ${dim('all-time · proportional · █')}${paint(c.cyan,'I')}${dim(' input  █')}${paint(c.blue,'W')}${dim(' cacheWrite  █')}${paint(c.boldGold,'R')}${dim(' cacheRead  █')}${paint(c.green,'O')}${dim(' output')}`)
-  writeln()
-  for (const d of active) {
-    const all = d.windows?.find(w => w.window === 'all')
-    if (!all) continue
-    writeln(`    ${padEnd(cyan(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input??0)+(all.pillars.output??0)+(all.pillars.cacheCreate??0)+(all.pillars.cacheRead??0)))}`)
-  }
-  // combined bar
-  if (active.length > 1) {
-    const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+  // ── Yield sparklines (skip if no room)
+  if (used < budget - barLines - boardLines) {
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Υ Trend')}  ${dim('across windows (7d→all)')}`)
     for (const d of active) {
+      if (used >= budget - barLines - boardLines) break
+      emit(`    ${padEnd(cyan(d.platform), 10)}  ${yieldSpark(d)}`)
+    }
+  }
+
+  // ── Token bar charts (skip if no room)
+  if (used < budget - boardLines) {
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Token Composition')}  ${dim('█')}${paint(c.cyan,'I')}${dim(' in  █')}${paint(c.blue,'W')}${dim(' cW  █')}${paint(c.boldGold,'R')}${dim(' cR  █')}${paint(c.green,'O')}${dim(' out')}`)
+    for (const d of active) {
+      if (used >= budget - boardLines) break
       const all = d.windows?.find(w => w.window === 'all')
       if (!all) continue
-      cp.input += all.pillars.input??0; cp.output += all.pillars.output??0
-      cp.cacheCreate += all.pillars.cacheCreate??0; cp.cacheRead += all.pillars.cacheRead??0
+      emit(`    ${padEnd(cyan(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input??0)+(all.pillars.output??0)+(all.pillars.cacheCreate??0)+(all.pillars.cacheRead??0)))}`)
     }
-    const lbl = active.map(d => d.platform).join('+')
-    writeln(`    ${padEnd(bold(lbl), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input+cp.output+cp.cacheCreate+cp.cacheRead))}`)
-  }
-  writeln(`  ${dim('proportional — cacheRead typically dominates (~90%) for high-leverage operators')}`)
-  writeln()
-
-  // ── Mini board (top 3)
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Board')}  ${dim('30d · top 5 · signalaf.com')}  ${dim('SIGNA = server-side credential score (calibrating)')}`)
-  writeln()
-  const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
-  if (Array.isArray(entries) && entries.length > 0) {
-    const BH = [padStart(dim('#'),4), padEnd(dim('Codename'),20), padEnd(dim('Class'),13), padStart(dim('SIGNA~'),7), padStart(dim('SNR'),7), padStart(dim('7d↕'),5)]
-    writeln(`    ${BH.join('  ')}`)
-    writeln(`  ${dim('·'.repeat(Math.min(w-4, 68)))}`)
-    for (const e of entries.slice(0, 5)) {
-      const rk  = e.rank === 1 ? gold(`#${e.rank}`) : `#${e.rank}`
-      const nm  = padEnd(trunc(e.codename ?? '—', 20), 20)
-      const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
-      const sna = padStart(e.signa_rate != null ? dim(e.signa_rate.toFixed(1)) : dim('—'), 7)
-      const snr = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—', 7)
-      const mv  = padStart(fmtMov(e.movement_7d), 5)
-      writeln(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${sna}  ${snr}  ${mv}`)
+    if (active.length > 1) {
+      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+      for (const d of active) {
+        const all = d.windows?.find(w => w.window === 'all')
+        if (!all) continue
+        cp.input += all.pillars.input??0; cp.output += all.pillars.output??0
+        cp.cacheCreate += all.pillars.cacheCreate??0; cp.cacheRead += all.pillars.cacheRead??0
+      }
+      emit(`    ${padEnd(bold(active.map(d => d.platform).join('+')), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input+cp.output+cp.cacheCreate+cp.cacheRead))}`)
     }
-    if (entries.length > 5) writeln(`  ${dim(`  … ${entries.length - 5} more on signalaf.com`)}`)
-  } else {
-    writeln(`  ${dim('  board unavailable')}`)
   }
-  writeln()
 
-  // status line
-  if (status) writeln(`  ${dim(status)}`)
+  // ── Mini board (top 3, compact)
+  if (used < budget - 4) {
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Board')}  ${dim('top 3 · signalaf.com/leaderboard')}`)
+    const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? []
+    if (Array.isArray(entries) && entries.length > 0) {
+      const sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
+      const maxBoard = Math.min(3, sorted.length, budget - used - 1)
+      for (let idx = 0; idx < maxBoard; idx++) {
+        const e = sorted[idx]
+        const rk  = idx === 0 ? gold(`#${idx+1}`) : cyan(`#${idx+1}`)
+        const nm  = padEnd(trunc(e.codename ?? '—', 18), 18)
+        const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
+        const yld = padStart(e.yield_ != null ? (e.yield_ > 10000 ? gold(fmtY(e.yield_)) : fmtY(e.yield_)) : '—', 9)
+        emit(`    ${padStart(rk,3)}  ${nm}  ${cls}  ${yld}`)
+      }
+    } else {
+      emit(`  ${dim('  board unavailable')}`)
+    }
+  }
+
+  if (status && used < budget) emit(`  ${dim(status)}`)
 }
 
 // ── TAB 2: COMPARE ───────────────────────────────────────────────────────────
 function renderCompare(data) {
   const { tpData, cc, ts, td, platform } = data
   const WINS = ['7d', '30d', '90d', 'all']
-  const WIN_LABEL = { '7d': '7d', '30d': '30d', '90d': '90d', 'all': 'all' }
   const w = W()
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
   const tpPillars = {}
   for (const win of (tpData?.windows ?? [])) tpPillars[win.window] = win.pillars
@@ -494,130 +573,149 @@ function renderCompare(data) {
     { name: 'tokscale',   color: (s) => paint(c.blue, s),        pillars: ts ?? {},   note: 'report.json' },
   ].filter(s => Object.keys(s.pillars).length > 0)
 
+  emit()
+  emit(`  ${bold('Source Comparison')}  ${dim(`platform: ${platform}`)}  ${dim('·  tokenpull vs ccusage vs token-dash vs tokscale')}`)
+
+  if (!tpData) {
+    emit(`  ${dim('tokenpull: no JSONL data found — check ~/.claude/projects/')}`)
+  } else {
+    const all = tpPillars['all']
+    if (all) {
+      emit(`  ${dim('tokenpull all-time:')}  In ${cyan(fmtTok(all.input))}  Out ${green(fmtTok(all.output))}  CW ${paint(c.blue, fmtTok(all.cacheCreate))}  CR ${gold(fmtTok(all.cacheRead))}`)
+    }
+  }
+  emit()
+
+  const COL_W = 11
+  const hcols = [padEnd(dim('Source'), 12), padEnd(dim('Pillar'), 10), ...WINS.map(wn => padStart(dim(wn), COL_W))]
+  emit(`    ${hcols.join('  ')}`)
+  emit(`  ${dim('·'.repeat(Math.min(w-4, 12 + 12 + WINS.length*(COL_W+2))))}`)
+
   const PILLARS = [
     { key: 'input',       label: 'Input' },
     { key: 'output',      label: 'Output' },
-    { key: 'cacheCreate', label: 'Cache Write' },
-    { key: 'cacheRead',   label: 'Cache Read' },
+    { key: 'cacheWrite',  label: 'CacheW',  dbKey: 'cacheCreate' },
+    { key: 'cacheRead',   label: 'CacheR' },
   ]
 
-  writeln()
-  writeln(`  ${bold('Source Comparison')}  ${dim(`platform: ${platform}  ·  tokenpull vs ccusage vs token-dash vs tokscale`)}`)
-  writeln()
-
-  for (const { key, label } of PILLARS) {
-    writeln(`  ${bold(label)}`)
-    const hcols = [padEnd(dim('Source'), 12), ...WINS.map(w => padStart(dim(WIN_LABEL[w]), 12))]
-    writeln(`    ${hcols.join('  ')}`)
-    writeln(`  ${dim('·'.repeat(Math.min(w-4, 72)))}`)
-
-    // get tokenpull as baseline for delta
-    const base = tpPillars
-
-    for (const src of SOURCES) {
+  // Reserve space for cascade metrics below (~8 lines)
+  const metricsLines = 6 + SOURCES.length
+  for (const src of SOURCES) {
+    let firstRow = true
+    for (const pil of PILLARS) {
+      if (used >= budget - metricsLines) break
+      const dbKey = pil.dbKey ?? pil.key
       const cells = WINS.map(win => {
         const p = src.pillars[win]
-        const val = p?.[key] ?? null
-        if (val == null) return padStart(dim('—'), 12)
-        const baseVal = base[win]?.[key]
+        const val = p?.[dbKey] ?? null
+        if (val == null) return padStart(dim('—'), COL_W)
+        const baseVal = tpPillars[win]?.[dbKey]
         if (src.name !== 'tokenpull' && baseVal != null && baseVal > 0) {
-          const delta = ((val - baseVal) / baseVal * 100)
-          const deltaStr = delta === 0 ? '' : delta > 0 ? green(` +${delta.toFixed(0)}%`) : red(` ${delta.toFixed(0)}%`)
-          return padStart(`${fmtTok(val)}${deltaStr}`, 12)
+          const delta = (val - baseVal) / baseVal * 100
+          const dStr = delta === 0 ? '' : delta > 0 ? green(` +${delta.toFixed(0)}%`) : red(` ${delta.toFixed(0)}%`)
+          return padStart(`${fmtTok(val)}${dStr}`, COL_W)
         }
-        return padStart(fmtTok(val), 12)
+        return padStart(fmtTok(val), COL_W)
       })
-      writeln(`    ${padEnd(src.color(src.name), 12)}  ${cells.join('  ')}  ${dim(src.note)}`)
+      const srcLabel = firstRow ? padEnd(src.color(src.name), 12) : padEnd(dim(''), 12)
+      emit(`    ${srcLabel}  ${padEnd(dim(pil.label), 10)}  ${cells.join('  ')}`)
+      firstRow = false
     }
-    writeln()
+    emit()
   }
 
-  // cascade metrics comparison (all-time)
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Cascade Metrics')}  ${dim('all-time · computed from each source')}`)
-  writeln()
-  const MCH = [padEnd(dim('Source'),12), padStart(dim('Υ Yield'),9), padStart(dim('SNR'),7), padStart(dim('Leverage'),10), padStart(dim('Vel'),6), padStart(dim('10x'),6), padEnd(dim('Class'),13)]
-  writeln(`    ${MCH.join('  ')}`)
-  writeln(`  ${dim('·'.repeat(Math.min(w-4, 74)))}`)
-  for (const src of SOURCES) {
-    const p = src.pillars['all']
-    if (!p) continue
-    const cas = cascadeFrom(p)
-    if (!cas) continue
-    const clsFn = CLS[cas.class] ?? ((s) => s)
-    const cols = [
-      padEnd(src.color(src.name), 12),
-      padStart(cas.yield > 10000 ? gold(fmtY(cas.yield)) : fmtY(cas.yield), 9),
-      padStart(fmtSNR(cas.snr), 7),
-      padStart(fmtLev(cas.leverage)+'×', 10),
-      padStart(cas.velocity?.toFixed(2) ?? '—', 6),
-      padStart(cas.dev10x?.toFixed(2) ?? '—', 6),
-      padEnd(clsFn(cas.class), 13),
-    ]
-    writeln(`    ${cols.join('  ')}`)
+  if (used < budget - 4) {
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Cascade Metrics')}  ${dim('all-time · computed from each source')}`)
+    const MCH = [padEnd(dim('Source'),12), padStart(dim('Υ Yield'),9), padStart(dim('SNR'),7), padStart(dim('Lev'),8), padStart(dim('Vel'),6), padStart(dim('10x'),6), padEnd(dim('Class'),13)]
+    emit(`    ${MCH.join('  ')}`)
+    emit(`  ${dim('·'.repeat(Math.min(w-4, 72)))}`)
+    for (const src of SOURCES) {
+      if (used >= budget) break
+      const p = src.pillars['all']
+      if (!p) continue
+      const cas = cascadeFrom(p)
+      if (!cas) continue
+      const clsFn = CLS[cas.class] ?? ((s) => s)
+      const cols = [
+        padEnd(src.color(src.name), 12),
+        padStart(cas.yield > 10000 ? gold(fmtY(cas.yield)) : fmtY(cas.yield), 9),
+        padStart(fmtSNR(cas.snr), 7),
+        padStart(fmtLev(cas.leverage)+'×', 8),
+        padStart(cas.velocity?.toFixed(2) ?? '—', 6),
+        padStart(cas.dev10x?.toFixed(2) ?? '—', 6),
+        padEnd(clsFn(cas.class), 13),
+      ]
+      emit(`    ${cols.join('  ')}`)
+    }
   }
-  writeln()
-
-  // bar chart comparison — cacheRead all-time
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Cache Read  (all-time)')}`)
-  writeln()
-  const crVals   = SOURCES.map(s => s.pillars['all']?.cacheRead ?? 0)
-  const crLabels = SOURCES.map(s => s.name)
-  const crColors = [
-    (s) => paint(c.boldCyan, s),
-    (s) => paint(c.green, s),
-    (s) => paint(c.magenta, s),
-    (s) => paint(c.blue, s),
-  ]
-  const maxCr = Math.max(...crVals, 1)
-  for (let i = 0; i < SOURCES.length; i++) {
-    const v    = crVals[i]
-    const pct  = v / maxCr
-    const full = Math.round(pct * 40)
-    const bar  = crColors[i % crColors.length]('█'.repeat(full))
-    writeln(`    ${padEnd(dim(crLabels[i]), 12)}  ${padEnd(bar, 40)}  ${fmtTok(v)}`)
-  }
-  writeln()
 }
 
 // ── TAB 3: BOARD ─────────────────────────────────────────────────────────────
 function renderBoard(boardData, window = '30d') {
-  const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
+  const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? []
   const w = W()
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
-  writeln()
-  writeln(`  ${bold('Leaderboard')}  ${dim(`window: ${window}  ·  sorted by SIGNA rate  ·  signalaf.com`)}`)
-  writeln()
+  emit()
+  emit(`  ${bold('Leaderboard')}  ${dim(`window: ${window}  ·  sorted by Υ Yield  ·  signalaf.com/leaderboard`)}`)
+  emit()
 
   if (!Array.isArray(entries) || entries.length === 0) {
-    writeln(`  ${dim('  board unavailable')}`)
+    emit(`  ${dim('  board unavailable')}`)
     return
   }
 
+  const sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
+
   const BH = [
     padStart(dim('#'), 4), padEnd(dim('Codename'), 22), padEnd(dim('Class'), 13),
-    padStart(dim('SIGNA'), 7), padStart(dim('SNR'), 7), padStart(dim('Depth'), 7),
-    padStart(dim('Tokens'), 8), padStart(dim('Force'), 7), padStart(dim('Pct'), 5), padStart(dim('7d↕'), 5),
+    padStart(dim('Υ Yield'), 9), padStart(dim('SNR'), 7), padStart(dim('Lev'), 7),
+    padStart(dim('Vel'), 6), padStart(dim('10x'), 6), padStart(dim('Pct'), 5), padStart(dim('7d↕'), 5),
   ]
-  writeln(`    ${BH.join('  ')}`)
-  writeln(`  ${dim('·'.repeat(Math.min(w-4, 95)))}`)
+  emit(`    ${BH.join('  ')}`)
+  emit(`  ${dim('·'.repeat(Math.min(w-4, 98)))}`)
 
-  for (const e of entries) {
-    const rk  = e.rank === 1 ? gold(`#${e.rank}`) : e.rank <= 3 ? cyan(`#${e.rank}`) : `#${e.rank}`
+  for (let idx = 0; idx < sorted.length; idx++) {
+    if (used >= budget) break
+    const e   = sorted[idx]
+    const rk  = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
     const nm  = padEnd(trunc(e.codename ?? '—', 22), 22)
     const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
-    const sna = padStart(e.signa_rate        != null ? e.signa_rate.toFixed(1) : '—', 7)
-    const snr = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—', 7)
-    const dep = padStart(e.session_depth     != null ? e.session_depth.toFixed(1) : '—', 7)
-    const tok = padStart(e.token_throughput  != null ? fmtTok(e.token_throughput)  : '—', 8)
-    const frc = padStart(e.signal_force      != null ? e.signal_force.toFixed(1) : '—', 7)
-    const pct = padStart(e.percentile        != null ? `${e.percentile}%` : '—', 5)
+    const yld = padStart(e.yield_ != null ? (e.yield_ > 10000 ? gold(fmtY(e.yield_)) : fmtY(e.yield_)) : '—', 9)
+    const snr = padStart(e.snr != null ? fmtSNR(e.snr) : (e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—'), 7)
+    const lev = padStart(e.leverage != null ? fmtLev(e.leverage)+'×' : '—', 7)
+    const vel = padStart(e.velocity != null ? e.velocity.toFixed(2) : '—', 6)
+    const d10 = padStart(e.dev10x  != null ? e.dev10x.toFixed(2) : '—', 6)
+    const pct = padStart(e.percentile != null ? `${e.percentile}%` : '—', 5)
     const mv  = padStart(fmtMov(e.movement_7d), 5)
-    writeln(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${sna}  ${snr}  ${dep}  ${tok}  ${frc}  ${pct}  ${mv}`)
+    emit(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${yld}  ${snr}  ${lev}  ${vel}  ${d10}  ${pct}  ${mv}`)
   }
+}
+
+// ── TAB 4: WATCH — landing panel (instructions + why it matters) ─────────────
+// Explains what the live watcher does and why it's the point of the agent: it
+// re-reads your local logs on an interval and feeds your verified cascade to the
+// leaderboard. Launched (in its own window) with [Enter]; interval is tunable.
+function renderWatchInfo(platform, win, refresh) {
+  writeln()
+  writeln(`  ${bold('Live Watch')}  ${dim('the agent that keeps your rank current')}`)
+  writeln()
+  writeln(`  ${dim('What it does')}`)
+  writeln(`    Re-reads your local ${cyan(platform)} token logs every ${gold(refresh + 's')} and recomputes`)
+  writeln(`    your cascade (Υ Yield · SNR · Leverage · class) live, on this machine.`)
+  writeln()
+  writeln(`  ${dim('Why it matters')}`)
+  writeln(`    Watch is how the board stays ${bold('current')}: each refresh submits your latest`)
+  writeln(`    verified cascade so ${cyan('signalaf.com/leaderboard')} ${bold('auto-updates')} as you work —`)
+  writeln(`    no manual re-submit. Tokens never leave your machine; only the metrics post.`)
+  writeln()
+  writeln(`  ${dim('Settings')}`)
+  writeln(`    ${dim('Platform')}  ${cyan(platform)}     ${dim('Window')}  ${cyan(win)}     ${dim('Refresh')}  ${gold(refresh + 's')}`)
+  writeln()
+  writeln(`    ${dim('[Enter]')} launch watcher (new window)   ${dim('[+]/[-]')} refresh ±5s   ${dim('[P]')} platform   ${dim('[W]')} window`)
   writeln()
 }
 
@@ -691,8 +789,44 @@ async function renderWatch(platform = 'claude', win = '7d') {
   writeln()
 }
 
+// ── DEBUG: render a tab once (no TTY/alt-screen) + audit each line's visible
+// width vs terminal columns. Usage: `node tui.mjs --render [0|1|2]`. Prints a
+// width report (>w = would overflow/wrap) then the raw frame. For diagnosing
+// layout overflow without an interactive session.
+async function renderOnce(tabIdx = 0) {
+  const w = W()
+  const data = {
+    0: await loadDashboardData().catch((e) => ({ error: e.message })),
+    1: await loadCompareData('claude').catch(() => null),
+    2: await loadBoardData('30d').catch(() => null),
+  }[tabIdx]
+  startBuffer()
+  if (tabIdx === 0) renderDashboard(data, 'debug')
+  else if (tabIdx === 1) renderCompare(data)
+  else if (tabIdx === 2) renderBoard(data, '30d')
+  const lines = _screenBuf || []
+  _screenBuf = null; _footerBuf = null
+  process.stdout.write(`\n=== WIDTH AUDIT (terminal w=${w}) — lines exceeding w wrap/overflow ===\n`)
+  lines.forEach((ln, i) => {
+    const vis = stripAnsi(ln).length
+    if (vis > w) process.stdout.write(`  OVERFLOW line ${i}: visible=${vis} (>${w} by ${vis - w})  «${stripAnsi(ln).slice(0, 60)}…»\n`)
+  })
+  const maxVis = Math.max(0, ...lines.map((l) => stripAnsi(l).length))
+  process.stdout.write(`  widest visible line = ${maxVis} (terminal w=${w}) → ${maxVis > w ? 'OVERFLOWS' : 'fits'}\n`)
+  process.stdout.write(`\n=== RAW FRAME (stripAnsi) ===\n`)
+  lines.forEach((ln) => process.stdout.write(stripAnsi(ln) + '\n'))
+}
+
 // ── MAIN TUI LOOP ─────────────────────────────────────────────────────────────
 export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
+  // Debug render mode — non-interactive, dumps a tab + width audit, then exits.
+  const ri = process.argv.indexOf('--render')
+  if (ri !== -1) {
+    const tab = parseInt(process.argv[ri + 1] ?? '0', 10) || 0
+    await renderOnce(tab)
+    return
+  }
+
   write(ENTER_ALT)  // switch to alternate screen — original terminal state preserved on exit
   write(HIDE)
   write(CLEAR)
@@ -705,16 +839,18 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   let boardWindow  = '30d'
   let watchPlatform = platform
   let watchWindow  = win
+  let watchRefresh = 30        // [4] Watch poll interval (seconds) — [+]/[-] adjust
   let loading      = true
   let status       = 'loading…'
   let refreshTimer = null
 
-  // ── Redraw
+  // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
-    write(CLEAR)
+    startBuffer()
     renderTabBar(activeTab)
 
     const hint = `  ${dim('← → or 1-4')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
+    const submitHint = `   ${dim('[S]')} submit · ${dim('signalaf.com/login')} to sign in`
 
     if (activeTab === 0) {
       if (!dashData) {
@@ -722,29 +858,26 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       } else {
         renderDashboard(dashData, status)
       }
-      writeln(`  ${hr()}`)
-      writeln(`${hint}   ${dim('[S]')} submit to board`)
+      setFooter([`  ${hr()}`, `${hint}${submitHint}`])
     } else if (activeTab === 1) {
       if (!compareData) {
         writeln(`\n  ${dim(`loading compare (${platform})…`)}`)
       } else {
         renderCompare(compareData)
       }
-      writeln(`  ${hr()}`)
-      writeln(`${hint}   ${dim('[P]')} switch platform`)
+      setFooter([`  ${hr()}`, `${hint}   ${dim('[P]')} switch platform${submitHint}`])
     } else if (activeTab === 2) {
       if (!boardData) {
         writeln(`\n  ${dim(`loading board (${boardWindow})…`)}`)
       } else {
         renderBoard(boardData, boardWindow)
       }
-      writeln(`  ${hr()}`)
-      writeln(`${hint}   ${dim('[W]')} window`)
+      setFooter([`  ${hr()}`, `${hint}   ${dim('[W]')} window${submitHint}`])
     } else if (activeTab === 3) {
-      await renderWatch(watchPlatform, watchWindow)
-      writeln(`  ${hr()}`)
-      writeln(`${hint}   auto-refresh 30s`)
+      renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
+      setFooter([`  ${hr()}`, `${hint}${submitHint}`])
     }
+    flushScreen()
   }
 
   // ── Initial data load
@@ -764,16 +897,16 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   process.once('SIGINT',  cleanup)
   process.once('SIGTERM', cleanup)
 
+  // Draw loading state immediately so user sees tab bar + border
+  await redraw()
   await loadAll()
 
-  // auto-refresh board + watch every 30s
+  // auto-refresh board every 30s
   const startAutoRefresh = () => {
     if (refreshTimer) clearInterval(refreshTimer)
     refreshTimer = setInterval(async () => {
       if (activeTab === 2) {
         boardData = await loadBoardData(boardWindow).catch(() => null)
-        await redraw()
-      } else if (activeTab === 3) {
         await redraw()
       }
     }, 30000)
@@ -799,17 +932,35 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
-      // tab switching
-      let switched = false
-      if (k === '\x1b[c' || k === '\x1b[d') { // right/left arrows (some terminals)
-        // handled below via raw escape
+      // ESC → go back to Dashboard from any tab
+      if (key === '\x1b' && activeTab !== 0) {
+        activeTab = 0
+        await redraw()
+        return
       }
+
+      // tab switching (4 tabs: 0..3)
+      let switched = false
       if (key === '\x1b[C') { activeTab = Math.min(3, activeTab + 1); switched = true }
       if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); switched = true }
       if (k === '1') { activeTab = 0; switched = true }
       if (k === '2') { activeTab = 1; switched = true }
       if (k === '3') { activeTab = 2; switched = true }
-      if (k === '4') { activeTab = 3; switched = true }
+      if (k === '4') { activeTab = 3; switched = true }  // Watch = an in-TUI landing panel
+
+      // Watch tab: [+]/[-] tune the refresh interval (5–600s), [Enter] launches the watcher
+      if (activeTab === 3 && (k === '+' || k === '=' )) { watchRefresh = Math.min(600, watchRefresh + 5); await redraw(); return }
+      if (activeTab === 3 && (k === '-' || k === '_')) { watchRefresh = Math.max(5, watchRefresh - 5); await redraw(); return }
+      if (activeTab === 3 && (key === '\r' || key === '\n')) {
+        // Launch the live watcher in its own window, passing the chosen refresh interval.
+        try {
+          const watchCmd = `sigrank-mcp watch --platform ${watchPlatform} --window ${watchWindow} --refresh ${watchRefresh}`
+          execSync(`osascript -e 'tell application "Terminal" to do script "${watchCmd}"'`, { stdio: 'ignore' })
+          status = `watcher launched (${watchRefresh}s) in a new window`
+        } catch { status = 'could not open Terminal.app — run: sigrank-mcp watch' }
+        await redraw()
+        return
+      }
 
       if (k === 'r') {
         status = 'refreshing…'
@@ -843,4 +994,9 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   process.stdin.setRawMode(false)
   process.stdin.pause()
   writeln()
+}
+
+// Direct-run entry (e.g. `node tui.mjs --render 0`). Normal launch is via cli.mjs.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runTui().catch((e) => { console.error(e); process.exit(1) })
 }

@@ -24,6 +24,7 @@
  */
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { classify } from './cascade.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
@@ -148,7 +149,7 @@ const BOARD_COLS = [
   { key: 'rank',              label: '#',       w: 4,  align: 'r' },
   { key: 'codename',          label: 'Operator',w: 20, align: 'l' },
   { key: 'class_tier',        label: 'Class',   w: 13, align: 'l' },
-  { key: 'signa_rate',        label: 'SIGNA',   w: 7,  align: 'r' },
+  { key: 'yield_',            label: 'Υ Yield', w: 9,  align: 'r' },
   { key: 'compression_ratio', label: 'SNR',     w: 6,  align: 'r' },
   { key: 'session_depth',     label: 'Depth',   w: 6,  align: 'r' },
   { key: 'token_throughput',  label: 'Tokens',  w: 8,  align: 'r' },
@@ -161,7 +162,7 @@ function renderBoardRow(entry, highlight = false) {
     ? cyan(trunc(entry.codename, 19))
     : trunc(entry.codename, 19)
   const cls  = colorClass(entry.class_tier ?? '—')
-  const sna  = (entry.signa_rate ?? 0).toFixed(1)
+  const yld  = entry.yield_ != null ? fmtYield(entry.yield_) : '—'
   const snr  = fmtSNR(entry.compression_ratio)
   const dep  = entry.session_depth != null ? entry.session_depth.toFixed(1) : '—'
   const tok  = fmtTokens(entry.token_throughput)
@@ -171,7 +172,7 @@ function renderBoardRow(entry, highlight = false) {
     padStart(rank, 4),
     padEnd(name, 20),
     padEnd(cls, 13),
-    padStart(sna, 7),
+    padStart(yld, 9),
     padStart(snr, 6),
     padStart(dep, 6),
     padStart(tok, 8),
@@ -184,7 +185,7 @@ function renderBoardRow(entry, highlight = false) {
 function renderBoardHeader(window = '30d') {
   renderHeader(
     `${gold('⊙ SigRank')} ${bold('Leaderboard')}`,
-    `window: ${window}  ·  sorted by SIGNA rate  ·  top 25 operators`
+    `window: ${window}  ·  sorted by Υ Yield  ·  top 25 operators`
   )
   // column headers
   const headers = BOARD_COLS.map(col =>
@@ -197,7 +198,7 @@ function renderBoardHeader(window = '30d') {
 }
 
 async function fetchBoard(window = '30d') {
-  const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}`, {
+  const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`, {
     headers: { accept: 'application/json' }
   })
   if (!res.ok) throw new Error(`Board API → HTTP ${res.status}`)
@@ -247,7 +248,7 @@ async function runBoard({ window = '30d', once = false, refresh = 30 } = {}) {
       const rank = entry.rank === 1 ? gold(`#${entry.rank}`) : `#${entry.rank}`
       const name = trunc(entry.codename ?? '—', 19)
       const cls  = colorClass(entry.class_tier ?? '—')
-      const sna  = (entry.signa_rate ?? 0).toFixed(1)
+      const yld  = entry.yield_ != null ? fmtYield(entry.yield_) : '—'
       const snr  = fmtSNR(entry.compression_ratio)
       const dep  = entry.session_depth != null ? entry.session_depth.toFixed(1) : '—'
       const tok  = fmtTokens(entry.token_throughput)
@@ -256,7 +257,7 @@ async function runBoard({ window = '30d', once = false, refresh = 30 } = {}) {
         padStart(rank, 4),
         padEnd(name, 20),
         padEnd(cls, 13),
-        padStart(sna, 7),
+        padStart(yld, 9),
         padStart(snr, 6),
         padStart(dep, 6),
         padStart(tok, 8),
@@ -539,7 +540,7 @@ function cascadeFromPillars(p) {
   }
   // efficiency = ((cr+cw+o)/i) / 4.0
   const efficiency = ((cr + cw + o) / safeI) / 4.0
-  const cls = yield_ > 500 ? 'TRANSMITTER' : yield_ > 400 ? 'ARCH+' : yield_ > 300 ? 'ARCH' : yield_ > 150 ? 'POWER' : 'BASE'
+  const cls = classify(yield_, dev10x)
   return { yield: yield_, velocity, leverage, snr, dev10x, efficiency, class: cls, total }
 }
 
@@ -1015,7 +1016,7 @@ async function runSigRank() {
   writeln()
   writeln(`  ${dim('─'.repeat(w - 4))}`)
   writeln()
-  writeln(`  ${bold('Board')}  ${dim('30d window · signalaf.com')}`)
+  writeln(`  ${bold('Board')}  ${dim('30d window · signalaf.com · sorted by Υ Yield')}`)
 
   const entries = boardData?.operators ?? boardData?.entries ?? boardData ?? []
   if (Array.isArray(entries) && entries.length > 0) {
@@ -1025,7 +1026,7 @@ async function runSigRank() {
       padStart(dim('#'),    4),
       padEnd(dim('Codename'), 20),
       padEnd(dim('Class'),   13),
-      padStart(dim('SIGNA'), 7),
+      padStart(dim('Υ Yield'), 9),
       padStart(dim('SNR'),   6),
       padStart(dim('Depth'), 6),
       padStart(dim('Tokens'),8),
@@ -1034,19 +1035,19 @@ async function runSigRank() {
       padStart(dim('7d↕'),   5),
     ]
     writeln(`    ${BH.join('  ')}`)
-    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 90)))}`)
+    writeln(`  ${dim('·'.repeat(Math.min(w - 4, 92)))}`)
     for (const e of top5) {
       const rank   = e.rank === 1 ? gold(`#${e.rank}`) : `#${e.rank}`
       const name   = padEnd(trunc(e.codename ?? '—', 20), 20)
       const cls    = padEnd(colorClass(e.class_tier ?? '—'), 13)
-      const signa  = padStart(e.signa_rate        != null ? e.signa_rate.toFixed(1)        : '—', 7)
+      const yld    = padStart(e.yield_              != null ? fmtYield(e.yield_)              : '—', 9)
       const snr    = padStart(e.compression_ratio != null ? fmtSNR(e.compression_ratio)    : '—', 6)
       const depth  = padStart(e.session_depth     != null ? e.session_depth.toFixed(1)     : '—', 6)
       const tok    = padStart(e.token_throughput  != null ? fmtTokens(e.token_throughput)  : '—', 8)
       const force  = padStart(e.signal_force      != null ? e.signal_force.toFixed(1)      : '—', 6)
       const pct    = padStart(e.percentile        != null ? `${e.percentile}%`             : '—', 5)
       const mv7    = padStart(fmtMove(e.movement_7d), 5)
-      writeln(`    ${padStart(rank, 4)}  ${name}  ${cls}  ${signa}  ${snr}  ${depth}  ${tok}  ${force}  ${pct}  ${mv7}`)
+      writeln(`    ${padStart(rank, 4)}  ${name}  ${cls}  ${yld}  ${snr}  ${depth}  ${tok}  ${force}  ${pct}  ${mv7}`)
     }
     if (entries.length > 5) writeln(`  ${dim(`  … ${entries.length - 5} more operators on signalaf.com`)}`)
   } else {
@@ -1146,9 +1147,11 @@ async function runSigRank() {
 
 // ── HELP ─────────────────────────────────────────────────────────────────────
 
-function showHelp() {
+async function showHelp() {
+  const { createRequire } = await import('module')
+  const pkg = createRequire(import.meta.url)('./package.json')
   writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('CLI')}  ${dim('v0.8.6')}`)
+  writeln(`  ${gold('⊙ SigRank')} ${bold('CLI')}  ${dim('v' + pkg.version)}`)
   writeln()
   writeln(`  ${bold('Default (no args)')}`)
   writeln(`    ${cyan('sigrank-mcp')}              unified dashboard: cascade + token pillars + board`)
@@ -1224,15 +1227,18 @@ export async function runCli(argv) {
         refresh:  Number(flags.refresh) || 30,
       })
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
-      showHelp()
+      await showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
-      writeln("0.9.5")
+      const { createRequire } = await import('module')
+      const req = createRequire(import.meta.url)
+      const pkg = req('./package.json')
+      writeln(pkg.version)
     } else if (!cmd || cmd === 'start' || cmd === 'run') {
       // default: full unified view
       await runSigRank()
     } else {
       // unknown command: show help
-      showHelp()
+      await showHelp()
     }
   } catch (e) {
     write(SHOW_CURSOR)
