@@ -49,6 +49,7 @@ const bold   = (s) => paint(c.bold, s)
 const dim    = (s) => paint(c.dim, s)
 const gold   = (s) => paint(c.boldGold, s)
 const cyan   = (s) => paint(c.boldCyan, s)
+const hdr    = (s) => paint(c.boldCyan, s)  // table column-header label color (readability)
 const green  = (s) => paint(c.green, s)
 const red    = (s) => paint(c.red, s)
 
@@ -336,10 +337,20 @@ async function loadBoardData(window = '30d') {
 // ── TAB BAR ──────────────────────────────────────────────────────────────────
 const TABS = [
   { key: '1', label: 'Dashboard', short: 'D' },
-  { key: '2', label: 'Compare',   short: 'C' },
-  { key: '3', label: 'Board',     short: 'B' },
-  { key: '4', label: 'Watch',     short: 'W' },  // in-TUI landing panel; [Enter] launches the watcher
+  { key: '2', label: 'Trends',    short: 'T' },  // every metric across windows (sub-views: You/Platform/Field)
+  { key: '3', label: 'Compare',   short: 'C' },
+  { key: '4', label: 'Board',     short: 'B' },
+  { key: '5', label: 'Watch',     short: 'W' },  // in-TUI landing panel; [Enter] launches the watcher
 ]
+
+// Three Degrees of Leverage — reference values pulled from signalaf.com/wiki (2026-06-25).
+// base = AI avg (modeled 7:2:1 baseline) · field = SigRank avg (wild field median) · top = best operator.
+// STATIC for now; goes live (field/top computed from the board) once there's real user volume.
+const TD = {
+  base:  { yield: 1.57, snr: 0.33, vel: 0.50, lev: 3.2,   d10: 0.50 },
+  field: { yield: 1.51, snr: 0.07, vel: 0.08, lev: 22.3,  d10: 1.35 },
+  top:   { yield: 745.40, snr: 0.63, vel: 1.70, lev: 438.6, d10: 2.64 },
+}
 
 function renderTabBar(activeIdx) {
   const w = W()
@@ -379,6 +390,19 @@ function tokenBar(p, width = 40) {
   }
   const bar = seg(p.input, c.cyan) + seg(p.cacheCreate, c.blue) + seg(p.cacheRead, c.boldGold) + seg(p.output, c.green)
   return bar
+}
+
+// Generalized cascade-metric sparkline across windows (7d→30d→90d→all).
+// pick: (cas) => number · fmt: (v) => string. Used by the Trends tab for every metric.
+function metricSpark(d, pick, fmt) {
+  const wins = ['7d', '30d', '90d', 'all']
+  const vals = wins.map(w => {
+    const wd = d.windows?.find(x => x.window === w)
+    if (!wd) return null
+    const cas = cascadeFrom(wd.pillars)
+    return cas ? pick(cas, wd.pillars) : null   // pick gets (cascade, pillars)
+  })
+  return sparkline(vals) + `  ${wins.map((w, i) => vals[i] != null ? dim(w + ':') + fmt(vals[i]) : '').filter(Boolean).join('  ')}`
 }
 
 // Yield sparkline across windows
@@ -436,13 +460,13 @@ function renderDashboard(data, status = '') {
 
   // header (matches renderRow's responsive column set + gap)
   const CH = [
-    padEnd(dim('Platform'), 12), padEnd(dim('Win'), 5),
-    padStart(dim('Input'), 8), padStart(dim('Output'), 8),
-    padStart(dim('CacheW'), 8), padStart(dim('CacheR'), 9),
-    padStart(dim('Υ Yield'), 9), padStart(dim('SNR'), 7),
-    padStart(dim('Lev'), 7),
-    ...(narrow ? [] : [padStart(dim('Vel'), 6), padStart(dim('10x'), 6)]),
-    padEnd(dim('Class'), 13),
+    padEnd(hdr('Platform'), 12), padEnd(hdr('Win'), 5),
+    padStart(hdr('Input'), 8), padStart(hdr('Output'), 8),
+    padStart(hdr('CacheW'), 8), padStart(hdr('CacheR'), 9),
+    padStart(hdr('Υ Yield'), 9), padStart(hdr('SNR'), 7),
+    padStart(hdr('Lev'), 7),
+    ...(narrow ? [] : [padStart(hdr('Vel'), 6), padStart(hdr('10x'), 6)]),
+    padEnd(hdr('Class'), 13),
   ]
   emit(`    ${CH.join(gap)}`)
   emit(`  ${dim('·'.repeat(Math.max(0, Math.min(w - 4, narrow ? 96 : 114))))}`)
@@ -451,13 +475,15 @@ function renderDashboard(data, status = '') {
     emit(`  ${dim('  reading token logs… (takes ~4s on first load · press [R] to refresh)')}`)
   }
 
-  // Calculate how many cascade rows we can fit — reserve space for lower sections
+  // Calculate how many cascade rows we can fit — reserve space for lower sections.
+  // (Υ-trend section moved to the Trends tab; its old `sparkLines` reservation is gone,
+  // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length
-  const sparkLines = 3 + platformCount  // hr + header + platforms + blank
-  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0)  // hr + header + platforms + combined + note
-  const boardLines = 9  // hr + header + col header + sep + top 3 + blank + status
-  const sectionsBelow = sparkLines + barLines + boardLines
-  const maxCascadeRows = Math.max(4, budget - used - sectionsBelow)
+  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0)  // Token Composition: hr + header + platforms + combined + note
+  // Your Read (hr+header+~3 wins+1 gap = 6) + Three Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
+  const boardLines = 17
+  const sectionsBelow = barLines + boardLines
+  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow)
 
   let firstWin = {}
   let cascadeRowCount = 0
@@ -498,15 +524,7 @@ function renderDashboard(data, status = '') {
     emit()
   }
 
-  // ── Yield sparklines (skip if no room)
-  if (used < budget - barLines - boardLines) {
-    emit(`  ${hr()}`)
-    emit(`  ${bold('Υ Trend')}  ${dim('across windows (7d→all)')}`)
-    for (const d of active) {
-      if (used >= budget - barLines - boardLines) break
-      emit(`    ${padEnd(cyan(d.platform), 10)}  ${yieldSpark(d)}`)
-    }
-  }
+  // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
 
   // ── Token bar charts (skip if no room)
   if (used < budget - boardLines) {
@@ -530,31 +548,133 @@ function renderDashboard(data, status = '') {
     }
   }
 
-  // ── Mini board (top 3, compact)
-  if (used < budget - 4) {
-    emit(`  ${hr()}`)
-    emit(`  ${bold('Board')}  ${dim('top 3 · signalaf.com/leaderboard')}`)
-    const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? []
-    if (Array.isArray(entries) && entries.length > 0) {
-      const sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
-      const maxBoard = Math.min(3, sorted.length, budget - used - 1)
-      for (let idx = 0; idx < maxBoard; idx++) {
-        const e = sorted[idx]
-        const rk  = idx === 0 ? gold(`#${idx+1}`) : cyan(`#${idx+1}`)
-        const nm  = padEnd(trunc(e.codename ?? '—', 18), 18)
-        const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
-        const yld = padStart(e.yield_ != null ? (e.yield_ > 10000 ? gold(fmtY(e.yield_)) : fmtY(e.yield_)) : '—', 9)
-        emit(`    ${padStart(rk,3)}  ${nm}  ${cls}  ${yld}`)
-      }
-    } else {
-      emit(`  ${dim('  board unavailable')}`)
+  // ── Your insights + the Three Degrees panel (replaces the old top-3 mini board)
+  // The user's own cascade (the firstWin/combined row computed above) read against the
+  // Three Degrees reference so the Dashboard says "here's you, here's the field, here's the ceiling."
+  const you = (() => {
+    // Best available cascade for the user: prefer claude's first-window, else any computed row.
+    for (const d of active) {
+      const wk = firstWin[d.platform]
+      const wd = d.windows?.find((x) => x.window === wk)
+      const cas = wd && cascadeFrom(wd.pillars)
+      if (cas) return cas   // cascadeFrom already returns null for non-compounding rows
     }
+    return null
+  })()
+
+  if (used < budget - 8) {
+    // ── Custom insights — comparison vs the field + a concrete tip for the weakest metric
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Your Read')}  ${dim('how your cascade sits vs the field')}`)
+    if (you) {
+      const wins = [], gaps = []
+      const chk = (label, val, fieldAvg, top, fmt, tip) => {
+        if (val == null) return
+        if (val >= top * 0.9) wins.push(`${label} ${fmt(val)} — ${gold('top tier')}`)
+        else if (val >= fieldAvg) wins.push(`${label} ${fmt(val)} — above field avg`)
+        else gaps.push({ label, txt: `${label} ${fmt(val)} — below field (${fmt(fieldAvg)}): ${tip}`, val, fieldAvg })
+      }
+      chk('Υ Yield', you.yield, TD.field.yield, TD.top.yield, fmtY, 'compound more — reuse cache, raise output')
+      chk('SNR', you.snr, TD.field.snr, TD.top.snr, fmtSNR, 'tighten prompts — less input per unit output')
+      chk('Leverage', you.leverage, TD.field.lev, TD.top.lev, (v) => fmtLev(v) + '×', 'lean on cache-read — amplify prior context')
+      chk('Velocity', you.velocity, TD.field.vel, TD.top.vel, (v) => v.toFixed(2), 'more output per input token')
+      for (const w of wins.slice(0, 3)) emit(`    ${paint(c.green, '▲')} ${w}`)
+      // weakest gap gets the prescriptive tip
+      const weakest = gaps.sort((a, b) => (a.val / a.fieldAvg) - (b.val / b.fieldAvg))[0]
+      if (weakest) emit(`    ${paint(c.magenta, '▽')} ${dim(weakest.txt)}`)
+      if (!wins.length && !weakest) emit(`    ${dim('  building your read…')}`)
+    } else {
+      emit(`    ${dim('  reading your cascade… (press [R] to refresh)')}`)
+    }
+
+    // ── Three Degrees — AI avg · SigRank avg · Top (live values from signalaf.com)
+    emit()
+    emit(`  ${hr()}`)
+    emit(`  ${bold('Three Degrees')}  ${dim('AI avg · SigRank avg · top — signalaf.com/wiki')}`)
+    const tdHead = [padEnd(hdr('Metric'), 10), padStart(hdr('AI avg'), 9), padStart(hdr('SigRank avg'), 12), padStart(hdr('Top'), 9)]
+    emit(`    ${tdHead.join('  ')}`)
+    const white = (s) => paint(c.white, s)
+    const tdRow = (label, b, f, t, fmt) =>
+      emit(`    ${padEnd(label, 10)}  ${padStart(white(fmt(b)), 9)}  ${padStart(fmt(f), 12)}  ${padStart(gold(fmt(t)), 9)}`)
+    tdRow('Υ Yield', TD.base.yield, TD.field.yield, TD.top.yield, fmtY)
+    tdRow('SNR', TD.base.snr, TD.field.snr, TD.top.snr, fmtSNR)
+    tdRow('Velocity', TD.base.vel, TD.field.vel, TD.top.vel, (v) => v.toFixed(2))
+    tdRow('Leverage', TD.base.lev, TD.field.lev, TD.top.lev, (v) => fmtLev(v) + '×')
+    tdRow('10xDEV', TD.base.d10, TD.field.d10, TD.top.d10, (v) => v.toFixed(2))
+    emit(`    ${dim('reference values until live user volume calibrates SigRank avg')}`)
   }
 
   if (status && used < budget) emit(`  ${dim(status)}`)
 }
 
-// ── TAB 2: COMPARE ───────────────────────────────────────────────────────────
+// ── TAB 2: TRENDS ─────────────────────────────────────────────────────────────
+// Every cascade metric (+ rank) as a 7d→30d→90d→all sparkline. Three sub-tabs:
+//   You      — your own trajectory (+ rank trend, "calculating" until wired)
+//   Platform — per-platform (claude / codex / combined)
+//   Field    — board-wide trend (calculating until window-history materializes)
+// Switch sub-tabs with [T] (cycles) or [1/2/3]. Data: the same `active` the Dashboard loads.
+const TREND_SUBTABS = ['You', 'Platform', 'Field']
+// All leaderboard metrics. Most derive from the per-window cascade (pick takes the
+// cascade obj + its pillars); §IGNA (proprietary composite) and $/1M (needs cost data)
+// aren't computed client-side yet → rendered "calculating", same honest pattern as Rank.
+const AA_EFF_BASELINE = 4.0  // efficiency is measured vs the AA 4.0 baseline (per the wiki)
+const TREND_METRICS = [
+  { label: '∑ Total',  pick: (c, p) => (p.input ?? 0) + (p.output ?? 0) + (p.cacheCreate ?? 0) + (p.cacheRead ?? 0), fmt: fmtTok },
+  { label: 'Υ Yield',  pick: (c) => c.yield,     fmt: fmtY },
+  { label: 'SNR',      pick: (c) => c.snr,       fmt: fmtSNR },
+  { label: 'Velocity', pick: (c) => c.velocity,  fmt: (v) => v.toFixed(2) },
+  { label: 'Leverage', pick: (c) => c.leverage,  fmt: (v) => fmtLev(v) + '×' },
+  { label: '10xDEV',   pick: (c) => c.dev10x,    fmt: (v) => v.toFixed(2) },
+  { label: 'Eff',      pick: (c) => c.yield != null ? c.yield / AA_EFF_BASELINE : null, fmt: (v) => v.toFixed(1) + '×' },
+  { label: '§IGNA',    pick: () => null, fmt: () => '—', stub: 'composite calibrating (needs user volume)' },
+  { label: 'Op Ratio', pick: (c, p) => (p.input ?? 0) > 0 ? (p.cacheRead ?? 0) / p.input : null, fmt: (v) => `${v.toFixed(0)}:1` },
+  { label: '$/1M',     pick: () => null, fmt: () => '—', stub: 'cost data wires post-ingest' },
+]
+function renderTrends(data, subIdx = 0) {
+  const { active } = data
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
+  const sub = TREND_SUBTABS[subIdx] ?? 'You'
+
+  // sub-tab switcher row
+  const subBar = TREND_SUBTABS.map((t, i) =>
+    i === subIdx ? `${c.bgCyan}${c.boldCyan} ${t} ${c.reset}` : `${dim(` ${t} `)}`).join(' ')
+  emit()
+  emit(`  ${bold('Trends')}  ${dim('every metric across windows (7d → all)')}    ${subBar}`)
+  emit(`  ${dim('·'.repeat(Math.min(W() - 4, 70)))}`)
+  emit()
+
+  if (sub === 'You' || sub === 'Platform') {
+    const rows = sub === 'You'
+      ? (active.length ? [{ platform: 'you', windows: active[0]?.windows }] : [])  // primary cascade
+      : active
+    if (!rows.length) { emit(`  ${dim('  reading your cascade… (press [R] to refresh)')}`); }
+    for (const d of rows) {
+      if (used >= budget - 2) break
+      emit(`  ${bold(sub === 'You' ? 'Your trajectory' : cyan(d.platform))}`)
+      for (const m of TREND_METRICS) {
+        if (used >= budget - 2) break
+        if (m.stub) {
+          emit(`    ${padEnd(dim(m.label), 10)}  ${dim('▁▁▁▁  calculating… (' + m.stub + ')')}`)
+        } else {
+          emit(`    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`)
+        }
+      }
+      // rank trend — wired later; honest placeholder for now
+      if (used < budget - 1) emit(`    ${padEnd(dim('Rank'), 10)}  ${dim('▁▁▁▁  calculating… (rank history wires post-ingest)')}`)
+      emit()
+    }
+  } else { // Field
+    emit(`  ${dim('  Field-wide trends — calculating…')}`)
+    emit(`  ${dim('  (needs per-window board history; materializes once live ingest lands)')}`)
+  }
+
+  emit()
+  emit(`  ${dim('[T]')} switch view (You · Platform · Field)`)
+}
+
+// ── TAB 3: COMPARE ───────────────────────────────────────────────────────────
 function renderCompare(data) {
   const { tpData, cc, ts, td, platform } = data
   const WINS = ['7d', '30d', '90d', 'all']
@@ -627,7 +747,7 @@ function renderCompare(data) {
   if (used < budget - 4) {
     emit(`  ${hr()}`)
     emit(`  ${bold('Cascade Metrics')}  ${dim('all-time · computed from each source')}`)
-    const MCH = [padEnd(dim('Source'),12), padStart(dim('Υ Yield'),9), padStart(dim('SNR'),7), padStart(dim('Lev'),8), padStart(dim('Vel'),6), padStart(dim('10x'),6), padEnd(dim('Class'),13)]
+    const MCH = [padEnd(hdr('Source'),12), padStart(hdr('Υ Yield'),9), padStart(hdr('SNR'),7), padStart(hdr('Lev'),8), padStart(hdr('Vel'),6), padStart(hdr('10x'),6), padEnd(hdr('Class'),13)]
     emit(`    ${MCH.join('  ')}`)
     emit(`  ${dim('·'.repeat(Math.min(w-4, 72)))}`)
     for (const src of SOURCES) {
@@ -670,10 +790,28 @@ function renderBoard(boardData, window = '30d') {
 
   const sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
 
+  // Per-column top-3 "shadowbox": medal bg-tint (gold/silver/bronze) on the 1st/2nd/3rd
+  // best DISTINCT value in each metric column, mirroring the website's podium boxes.
+  const MEDAL_BG = { 1: 220, 2: 250, 3: 130 } // gold · silver · bronze (256-color)
+  const top3 = (pick) => {
+    const distinct = [...new Set(sorted.map(pick).filter((v) => v != null && isFinite(v)))].sort((a, b) => b - a)
+    const m = new Map(); distinct.slice(0, 3).forEach((v, i) => m.set(v, i + 1)); return m
+  }
+  const pods = {
+    yield: top3((e) => e.yield_), snr: top3((e) => e.snr ?? e.compression_ratio),
+    lev: top3((e) => e.leverage), vel: top3((e) => e.velocity), d10: top3((e) => e.dev10x),
+  }
+  // Wrap a padded cell in a medal bg-tint (dark fg on the medal color) when its value places top-3.
+  const medal = (map, val, padded) => {
+    const place = val == null ? null : map.get(val)
+    if (!place) return padded
+    return `${ESC}48;5;${MEDAL_BG[place]}m${ESC}38;5;232m${padded}${c.reset}`
+  }
+
   const BH = [
-    padStart(dim('#'), 4), padEnd(dim('Codename'), 22), padEnd(dim('Class'), 13),
-    padStart(dim('Υ Yield'), 9), padStart(dim('SNR'), 7), padStart(dim('Lev'), 7),
-    padStart(dim('Vel'), 6), padStart(dim('10x'), 6), padStart(dim('Pct'), 5), padStart(dim('7d↕'), 5),
+    padStart(hdr('#'), 4), padEnd(hdr('Codename'), 22), padEnd(hdr('Class'), 13),
+    padStart(hdr('Υ Yield'), 9), padStart(hdr('SNR'), 7), padStart(hdr('Lev'), 7),
+    padStart(hdr('Vel'), 6), padStart(hdr('10x'), 6), padStart(hdr('Pct'), 5), padStart(hdr('7d↕'), 5),
   ]
   emit(`    ${BH.join('  ')}`)
   emit(`  ${dim('·'.repeat(Math.min(w-4, 98)))}`)
@@ -684,11 +822,13 @@ function renderBoard(boardData, window = '30d') {
     const rk  = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
     const nm  = padEnd(trunc(e.codename ?? '—', 22), 22)
     const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
-    const yld = padStart(e.yield_ != null ? (e.yield_ > 10000 ? gold(fmtY(e.yield_)) : fmtY(e.yield_)) : '—', 9)
-    const snr = padStart(e.snr != null ? fmtSNR(e.snr) : (e.compression_ratio != null ? fmtSNR(e.compression_ratio) : '—'), 7)
-    const lev = padStart(e.leverage != null ? fmtLev(e.leverage)+'×' : '—', 7)
-    const vel = padStart(e.velocity != null ? e.velocity.toFixed(2) : '—', 6)
-    const d10 = padStart(e.dev10x  != null ? e.dev10x.toFixed(2) : '—', 6)
+    const snrVal = e.snr ?? e.compression_ratio
+    // value cells: pad first, then medal-wrap so the tint fills the whole column width
+    const yld = medal(pods.yield, e.yield_, padStart(e.yield_ != null ? fmtY(e.yield_) : '—', 9))
+    const snr = medal(pods.snr, snrVal, padStart(snrVal != null ? fmtSNR(snrVal) : '—', 7))
+    const lev = medal(pods.lev, e.leverage, padStart(e.leverage != null ? fmtLev(e.leverage)+'×' : '—', 7))
+    const vel = medal(pods.vel, e.velocity, padStart(e.velocity != null ? e.velocity.toFixed(2) : '—', 6))
+    const d10 = medal(pods.d10, e.dev10x, padStart(e.dev10x != null ? e.dev10x.toFixed(2) : '—', 6))
     const pct = padStart(e.percentile != null ? `${e.percentile}%` : '—', 5)
     const mv  = padStart(fmtMov(e.movement_7d), 5)
     emit(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${yld}  ${snr}  ${lev}  ${vel}  ${d10}  ${pct}  ${mv}`)
@@ -917,7 +1057,8 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   let boardWindow  = '30d'
   let watchPlatform = platform
   let watchWindow  = win
-  let watchRefresh = 30        // [4] Watch poll interval (seconds) — [+]/[-] adjust
+  let watchRefresh = 30        // [5] Watch poll interval (seconds) — [+]/[-] adjust
+  let trendSub     = 0         // [2] Trends sub-view index (You/Platform/Field) — [T] cycles
   let loading      = true
   let status       = 'loading…'
   let refreshTimer = null
@@ -927,31 +1068,38 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
     startBuffer()
     renderTabBar(activeTab)
 
-    const hint = `  ${dim('← → or 1-4')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
+    const hint = `  ${dim('← → or 1-5')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
     const submitHint = `   ${dim('[S]')} submit · ${dim('signalaf.com/login')} to sign in`
 
-    if (activeTab === 0) {
+    if (activeTab === 0) {                       // Dashboard
       if (!dashData) {
         writeln(`\n  ${dim('loading dashboard…')}`)
       } else {
         renderDashboard(dashData, status)
       }
       setFooter([`  ${hr()}`, `${hint}${submitHint}`])
-    } else if (activeTab === 1) {
+    } else if (activeTab === 1) {                // Trends
+      if (!dashData) {
+        writeln(`\n  ${dim('loading trends…')}`)
+      } else {
+        renderTrends(dashData, trendSub)
+      }
+      setFooter([`  ${hr()}`, `${hint}   ${dim('[T]')} view${submitHint}`])
+    } else if (activeTab === 2) {                // Compare
       if (!compareData) {
         writeln(`\n  ${dim(`loading compare (${platform})…`)}`)
       } else {
         renderCompare(compareData)
       }
       setFooter([`  ${hr()}`, `${hint}   ${dim('[P]')} switch platform${submitHint}`])
-    } else if (activeTab === 2) {
+    } else if (activeTab === 3) {                // Board
       if (!boardData) {
         writeln(`\n  ${dim(`loading board (${boardWindow})…`)}`)
       } else {
         renderBoard(boardData, boardWindow)
       }
       setFooter([`  ${hr()}`, `${hint}   ${dim('[W]')} window${submitHint}`])
-    } else if (activeTab === 3) {
+    } else if (activeTab === 4) {                // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
       setFooter([`  ${hr()}`, `${hint}${submitHint}`])
     }
@@ -983,7 +1131,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   const startAutoRefresh = () => {
     if (refreshTimer) clearInterval(refreshTimer)
     refreshTimer = setInterval(async () => {
-      if (activeTab === 2) {
+      if (activeTab === 3) {                     // Board tab (now index 3)
         boardData = await loadBoardData(boardWindow).catch(() => null)
         await redraw()
       }
@@ -1017,19 +1165,23 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
-      // tab switching (4 tabs: 0..3)
+      // tab switching (5 tabs: 0=Dashboard 1=Trends 2=Compare 3=Board 4=Watch)
       let switched = false
-      if (key === '\x1b[C') { activeTab = Math.min(3, activeTab + 1); switched = true }
+      if (key === '\x1b[C') { activeTab = Math.min(4, activeTab + 1); switched = true }
       if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); switched = true }
       if (k === '1') { activeTab = 0; switched = true }
       if (k === '2') { activeTab = 1; switched = true }
       if (k === '3') { activeTab = 2; switched = true }
-      if (k === '4') { activeTab = 3; switched = true }  // Watch = an in-TUI landing panel
+      if (k === '4') { activeTab = 3; switched = true }
+      if (k === '5') { activeTab = 4; switched = true }  // Watch = an in-TUI landing panel
+
+      // Trends tab: [T] cycles the sub-view (You · Platform · Field)
+      if (activeTab === 1 && k === 't') { trendSub = (trendSub + 1) % 3; await redraw(); return }
 
       // Watch tab: [+]/[-] tune the refresh interval (5–600s), [Enter] launches the watcher
-      if (activeTab === 3 && (k === '+' || k === '=' )) { watchRefresh = Math.min(600, watchRefresh + 5); await redraw(); return }
-      if (activeTab === 3 && (k === '-' || k === '_')) { watchRefresh = Math.max(5, watchRefresh - 5); await redraw(); return }
-      if (activeTab === 3 && (key === '\r' || key === '\n')) {
+      if (activeTab === 4 && (k === '+' || k === '=' )) { watchRefresh = Math.min(600, watchRefresh + 5); await redraw(); return }
+      if (activeTab === 4 && (k === '-' || k === '_')) { watchRefresh = Math.max(5, watchRefresh - 5); await redraw(); return }
+      if (activeTab === 4 && (key === '\r' || key === '\n')) {
         // Launch the live watcher in its own window, passing the chosen refresh interval.
         try {
           const watchCmd = `sigrank-mcp watch --platform ${watchPlatform} --window ${watchWindow} --refresh ${watchRefresh}`
@@ -1058,7 +1210,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
-      if (k === 'w' && activeTab === 2) {
+      if (k === 'w' && activeTab === 3) {        // Board tab (now index 3)
         const windows = ['7d', '30d', '90d', 'all']
         const idx = windows.indexOf(boardWindow)
         boardWindow = windows[(idx + 1) % windows.length]
