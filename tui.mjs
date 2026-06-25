@@ -1004,10 +1004,22 @@ function showSplash() {
   const mode = modes[Math.floor((Date.now() / 1000) % modes.length)]
   return new Promise((resolve) => {
     let paused = false
-    const hint = () => `${dim('  [P]')} ${paused ? 'resume' : 'pause'}    ${dim('[Enter]')} enter`
+    const interactive = !!process.stdin.isTTY   // can we read raw keypresses to dismiss?
+    const hint = () => interactive
+      ? `${dim('  [P]')} ${paused ? 'resume' : 'pause'}    ${dim('[Enter]')} enter`
+      : dim('  loading…')
     const paint = () => { write(CLEAR); write(splashFrame(mode)); write(`\n${ctr(hint())}`) }
     paint()
     let timer = setInterval(paint, 110)
+
+    // Non-interactive stdin (some IDE/integrated terminals): still SHOW the animated
+    // wordmark, but auto-advance after a short run instead of waiting for a key (which
+    // would never arrive → hang). ~2.2s of animation, then enter the TUI.
+    if (!interactive) {
+      setTimeout(() => { clearInterval(timer); write(CLEAR); resolve() }, 2200)
+      return
+    }
+
     process.stdin.setRawMode?.(true)
     process.stdin.resume()
     process.stdin.setEncoding('utf8')
@@ -1042,9 +1054,12 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   write(HIDE)
   write(CLEAR)
 
-  // Opening splash — animated SIGRANK wordmark, dismisses on any key.
-  // (Skippable with --no-splash for scripted/fast launches.)
-  if (!process.argv.includes('--no-splash') && process.stdin.isTTY) {
+  // Opening splash — animated SIGRANK wordmark.
+  // Gate on stdOUT.isTTY (can we draw the animation?), matching the launch guard —
+  // NOT stdin.isTTY, which was skipping the splash in terminals whose input isn't a
+  // raw TTY (some IDE/integrated terminals). showSplash() itself auto-advances when
+  // stdin can't be read raw, so it never hangs. (Skippable with --no-splash.)
+  if (!process.argv.includes('--no-splash') && process.stdout.isTTY) {
     await showSplash()
     write(CLEAR)
   }
