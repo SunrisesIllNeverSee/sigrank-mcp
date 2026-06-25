@@ -6,6 +6,8 @@ import { narrate } from './narrate.mjs'
 import { callTool } from './tools.mjs'
 import { tokenpull, tokenpullCodex, tokenpullAny, EXCLUDE_TOOLING, codexAdapter } from './tokenpull.mjs'
 import { ADAPTERS, ALL_PLATFORMS } from './adapters.mjs'
+import { generateIdentity } from './keystore.mjs'
+import { verifyPayload } from './sign.mjs'
 import assert from 'node:assert'
 
 const MOSES = '1251211 11296121 128196310 2555179769'
@@ -356,16 +358,85 @@ const watchResult = await callTool('watch_tokenpull', { window: '7d', interval_s
 assert.strictEqual(watchResult.window, '7d', 'watch_tokenpull: correct window')
 assert.ok(typeof watchResult.cascade.yield === 'number', 'watch_tokenpull: cascade.yield is a number')
 assert.strictEqual(watchResult.poll_interval_s, 30, 'watch_tokenpull: interval_s respected')
-assert.strictEqual(watchResult.auth_submit, null, 'watch_tokenpull: no auth_submit without codename')
+assert.strictEqual(watchResult.auth_submit, null, 'watch_tokenpull: no auth_submit without submit:true')
 
-// --- 29. watch_tokenpull: TODO(AUTH.WIRE) stub surfaces when codename supplied ---
-const watchWithCodename = await callTool('watch_tokenpull', { window: '7d', codename: 'TheSignalVault' }, { adapter: mockWatchAdapter, now: NOW })
-assert.ok(watchWithCodename.auth_submit !== null, 'watch_tokenpull: auth_submit present with codename')
-assert.match(watchWithCodename.auth_submit.status, /TODO\(AUTH\.WIRE\)/, 'watch_tokenpull: auth_submit status is TODO(AUTH.WIRE)')
-assert.strictEqual(watchWithCodename.auth_submit.codename, 'TheSignalVault', 'watch_tokenpull: codename carried in auth_submit')
+// --- 29. watch_tokenpull: submit:true → real signed submit (enrolled) / not_enrolled otherwise ---
+const watchEnrolledId = { ...generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' }), codename: 'TheSignalVault', operator_id: 'op_w' }
+let watchCap = null
+const watchFetch = async (url, init) => { watchCap = { url, init }; return { ok: true, status: 202, json: async () => ({ status: 'received', verification_tier: 'verified', persisted: true }) } }
+const watchSubmit = await callTool('watch_tokenpull', { window: '7d', submit: true }, { adapter: mockWatchAdapter, now: NOW, fetchImpl: watchFetch, identity: watchEnrolledId })
+assert.ok(watchSubmit.auth_submit !== null, 'watch_tokenpull: auth_submit present with submit:true')
+assert.strictEqual(watchSubmit.auth_submit.status, 'received', 'watch_tokenpull: submit:true + enrolled → signed submit received (no TODO stub)')
+assert.ok(watchCap.url.endsWith('/api/v1/snapshots'), 'watch_tokenpull: submits to the VERIFIED /api/v1/snapshots path')
+assert.ok(watchCap.init.headers['x-agent-signature'], 'watch_tokenpull: the submission is signed')
+// submit:true but NOT enrolled → not_enrolled, no POST
+let watchCap2 = null
+const watchFetch2 = async (url, init) => { watchCap2 = { url, init }; return { ok: true, status: 202, json: async () => ({}) } }
+const watchUnenrolled = await callTool('watch_tokenpull', { window: '7d', submit: true }, { adapter: mockWatchAdapter, now: NOW, fetchImpl: watchFetch2, identity: { ...generateIdentity(), codename: null, operator_id: null } })
+assert.strictEqual(watchUnenrolled.auth_submit.status, 'not_enrolled', 'watch_tokenpull: submit:true + unenrolled → not_enrolled')
+assert.strictEqual(watchCap2, null, 'watch_tokenpull: unenrolled never POSTs')
 
 console.log('\n✓ canon · card · submit_paste · tokenpull(claude) · tokenpull_submit · tokenpullCodex conversion')
 console.log('✓ hardening: div-by-zero guards · parsePillars warnings · fetch timeout · codex tooling filter · narrate safety')
 console.log('✓ adapters: registry (15 platforms) · amp · qwen · goose · gemini · opencode · droid · tokenpullAny routing')
 console.log('✓ rank_windows: 4-window paste scoring · partial input · no-network · canon Υ · source_tool · empty throws')
-console.log('✓ watch_tokenpull: cascade snapshot · interval_s · TODO(AUTH.WIRE) stub')
+// --- 30. enroll: posts the keystore IDENTITY (public key only) to /devices/enroll, maps the ack ---
+// Inject opts.identity so the tool skips keystore persistence + uses a fixed device_id.
+const testIdentity = generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' })
+let enrollCap = null
+const enrollFetch = async (url, init) => {
+  enrollCap = { url, init }
+  return { ok: true, status: 201, json: async () => ({ status: 'enrolled', codename: 'TransVaultOrigin', operator_id: 'op_123', trust_status: 'trusted' }) }
+}
+const enr = await callTool('enroll', { code: 'SIGR-7F3KQ-9QXM2-4HJ8R' }, { apiBase: 'http://test.local', fetchImpl: enrollFetch, identity: testIdentity })
+assert.ok(enrollCap.url.endsWith('/api/v1/devices/enroll'), 'enroll POSTs to /api/v1/devices/enroll')
+assert.strictEqual(enrollCap.init.method, 'POST', 'enroll uses POST')
+const enrollBody = JSON.parse(enrollCap.init.body)
+assert.strictEqual(enrollBody.device_id, testIdentity.device_id, 'enroll sends the keystore device_id')
+assert.strictEqual(enrollBody.public_key, testIdentity.public_key, 'enroll sends the PUBLIC key')
+assert.ok(enrollBody.public_key.startsWith('ed25519:'), 'public key carries the ed25519: prefix')
+assert.ok(!('private_key_pkcs8_b64' in enrollBody) && !JSON.stringify(enrollBody).includes(testIdentity.private_key_pkcs8_b64), 'enroll NEVER transmits the private key')
+assert.strictEqual(enr.status, 'enrolled', 'enroll maps a 201 to enrolled')
+assert.strictEqual(enr.codename, 'TransVaultOrigin', 'enroll surfaces the bound codename')
+// invalid code → mapped error, never throws
+const badFetch = async () => ({ ok: false, status: 410, json: async () => ({ reason: 'code_invalid' }) })
+const bad = await callTool('enroll', { code: 'SIGR-NOPE' }, { apiBase: 'http://test.local', fetchImpl: badFetch, identity: testIdentity })
+assert.strictEqual(bad.status, 'error', 'invalid code → error status (no throw)')
+assert.strictEqual(bad.reason, 'code_invalid', 'invalid-code reason surfaced')
+// empty code → throws at the tool boundary
+await assert.rejects(() => callTool('enroll', { code: '' }, { identity: testIdentity }), /requires a `code`/, 'enroll rejects empty code')
+
+console.log('✓ watch_tokenpull: cascade snapshot · interval_s · submit:true → signed /api/v1/snapshots · not_enrolled guard')
+// --- 31. submit_verified: signs a Schema 1.0 snapshot → POST /api/v1/snapshots (enrolled, no live write) ---
+const enrolledId = { ...generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' }), codename: 'TransVaultOrigin', operator_id: 'op_123' }
+let snapCap = null
+const snapFetch = async (url, init) => {
+  snapCap = { url, init }
+  return { ok: true, status: 202, json: async () => ({ status: 'received', verification_tier: 'verified', persisted: true }) }
+}
+const pub = await callTool('submit_verified', { window: 'all' }, { apiBase: 'http://test.local', fetchImpl: snapFetch, adapter: mockAdapter, identity: enrolledId, now: NOW })
+assert.ok(snapCap.url.endsWith('/api/v1/snapshots'), 'submit_verified POSTs to /api/v1/snapshots (not ingest-paste)')
+const sigHeader = snapCap.init.headers['x-agent-signature']
+assert.ok(sigHeader && sigHeader.length > 0, 'X-Agent-Signature header present')
+const snapBody = JSON.parse(snapCap.init.body)
+assert.strictEqual(snapBody.schema_version, '1.0', 'Schema 1.0 payload')
+assert.strictEqual(snapBody.codename, 'TransVaultOrigin', 'codename from the keystore identity')
+assert.strictEqual(snapBody.device_id, enrolledId.device_id, 'device_id from the keystore identity')
+assert.strictEqual(snapBody.agent.public_key, enrolledId.public_key, 'public key carried in agent block')
+assert.ok(snapBody.agent.snapshot_hash.startsWith('sha256:'), 'snapshot_hash computed')
+assert.ok(!JSON.stringify(snapBody).includes(enrolledId.private_key_pkcs8_b64), 'submit NEVER includes the private key')
+assert.strictEqual(snapBody.window.type, 'all_time', 'all → all_time window_type')
+assert.strictEqual(snapBody.raw_telemetry.tokens_input_fresh, 111, 'pillars carried into raw_telemetry (input)')
+assert.strictEqual(snapBody.raw_telemetry.tokens_total, 1110, 'tokens_total = Σ4 pillars (111+222+333+444)')
+// server-parity: the header signature must verify over this exact payload
+assert.ok(verifyPayload(snapBody, sigHeader, enrolledId.public_key), 'X-Agent-Signature verifies against the payload (server will accept)')
+// plausibility-clean (no reject, no flag → stays verified → ranks)
+assert.ok(snapBody.raw_telemetry.turns_total >= snapBody.raw_telemetry.sessions_count, 'turns >= sessions')
+assert.ok(snapBody.raw_telemetry.sessions_count >= 1, 'sessions >= 1 (tokens present)')
+assert.strictEqual(pub.windows[0].verification_tier, 'verified', 'server verification_tier surfaced')
+// not enrolled → no POST
+const notEnrolled = await callTool('submit_verified', {}, { adapter: mockAdapter, identity: { ...generateIdentity(), codename: null, operator_id: null } })
+assert.strictEqual(notEnrolled.status, 'not_enrolled', 'unenrolled identity → not_enrolled (no submit)')
+
+console.log('✓ enroll: posts identity (public key only) · hides private key · maps 201 enrolled + 410 code_invalid')
+console.log('✓ submit_verified: signs Schema 1.0 → POST /api/v1/snapshots · X-Agent-Signature · server-verifiable · plausibility-clean')

@@ -25,6 +25,8 @@
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { classify } from './cascade.mjs'
+import { ensureIdentity, keystorePath } from './keystore.mjs'
+import { submitSignedWindow } from './submit.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
@@ -683,9 +685,12 @@ async function runCompare({ platform = 'claude' } = {}) {
 
 // ── WATCH command ─────────────────────────────────────────────────────────────
 
-async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 } = {}) {
+async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30, submit = false } = {}) {
   let prev = null
   let lines = 0
+  let lastSubmit = null
+  const id = submit ? ensureIdentity() : null
+  const enrolled = !!(id && id.codename && id.operator_id && id.private_key_pkcs8_b64)
 
   write(HIDE_CURSOR)
 
@@ -700,6 +705,16 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
 
     const cas = result.cascade
     const changed = prev !== null && prev !== cas?.yield
+
+    // --submit (D7 §7): publish the verified window on first observation + whenever Υ changes.
+    if (submit && enrolled && (prev === null || changed)) {
+      try {
+        const r = await submitSignedWindow(win, result.pillars, result.messages, id, { platform: result.platform })
+        lastSubmit = r.status === 'received' ? green(`✓ submitted · tier=${r.verification_tier || '—'}`) : red(`✗ ${r.reason || r.status}`)
+      } catch (e) {
+        lastSubmit = red(`✗ ${e.message}`)
+      }
+    }
 
     if (lines > 0) write(CURSOR_UP(lines))
 
@@ -723,8 +738,11 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
     push(`  ${bold('10xDEV')}       ${cas?.dev10x != null ? cas.dev10x.toFixed(2) : '—'}`)
     push(`  ${bold('Class')}        ${colorClass(cas?.class ?? '—')}`)
     push()
+    if (submit) {
+      push(`  ${dim('submit:')} ${enrolled ? (lastSubmit || dim('waiting for a change…')) : red('not enrolled — run `npx sigrank-mcp enroll`')}`)
+    }
     push(`  ${dim('─'.repeat(w - 4))}`)
-    push(`  ${dim(`polling every ${refresh}s  ·  tokens stay on your machine  ·  ctrl+c to exit`)}`)
+    push(`  ${dim(`polling every ${refresh}s  ·  ${submit ? 'auto-submit ON  ·  ' : ''}tokens stay on your machine  ·  ctrl+c to exit`)}`)
     push()
 
     write(out.join('\n'))
@@ -1076,9 +1094,36 @@ async function runSigRank() {
           try { es('open https://signalaf.com', { stdio: 'ignore' }) } catch { }
           resolve()
         } else if (k === 's') {
+          const id = ensureIdentity()
+          const enrolled = !!(id.codename && id.operator_id && id.private_key_pkcs8_b64)
           process.stdin.setRawMode(false)
           write(SHOW_CURSOR)
-          process.stdout.write('\n  Codename: ')
+          if (enrolled) {
+            // VERIFIED path (D7 §7): signed submit from the enrolled device. No codename
+            // prompt — it comes from the keystore. Only signed submissions rank on the board.
+            writeln()
+            writeln(`  ${dim('Publishing verified runs for')} ${cyan(id.codename)}${dim('…')}`)
+            write(HIDE_CURSOR)
+            try {
+              for (const d of active) {
+                for (const ww of (d.windows ?? [])) {
+                  const r = await submitSignedWindow(ww.window, ww.pillars, ww.messages, id, { platform: d.platform })
+                  const ok = r.status === 'received'
+                  writeln(`    ${ok ? green('✓') : red('✗')}  ${d.platform}  ${ww.window}${ok ? dim(` tier=${r.verification_tier || '—'}`) : dim(` ${r.reason || r.status}`)}`)
+                }
+              }
+              writeln()
+              writeln(`  ${green('✓')} Published. Reload ${cyan(`signalaf.com/user/${id.codename}`)}`)
+            } catch (e) {
+              writeln(red(`  ✗ ${e.message}`))
+            }
+            resolve()
+            return
+          }
+          // NOT enrolled → the anonymous paste path (preview-only; does NOT rank) + a hint.
+          writeln()
+          writeln(`  ${dim('Not enrolled — run')} ${bold('npx sigrank-mcp enroll')} ${dim('to rank as a verified operator. Anonymous paste below:')}`)
+          process.stdout.write('  Codename: ')
           let codename = ''
           process.stdin.on('data', async function onData(chunk) {
             if (chunk === '\r' || chunk === '\n') {
@@ -1192,6 +1237,99 @@ async function showHelp() {
 
 // ── ENTRY POINT ───────────────────────────────────────────────────────────────
 
+// ── enroll: bind this device to your operator via a web connect code (D7 §4.5) ──
+async function runEnroll({ label } = {}) {
+  const id = ensureIdentity()
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Connect this device')}`)
+  writeln(`  ${dim(`device ${id.device_id}`)}`)
+  if (id.codename && id.operator_id) {
+    writeln(`  ${dim(`already enrolled as ${id.codename} — re-enrolling a bound device is rejected this slice.`)}`)
+  }
+  writeln(`  ${dim('Get a code at signalaf.com → Settings → Connect a device.')}`)
+  writeln()
+
+  const { createInterface } = await import('node:readline/promises')
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  let code
+  try {
+    code = (await rl.question('  Paste your connect code: ')).trim()
+  } finally {
+    rl.close()
+  }
+  if (!code) {
+    writeln(red('  ✗ No code entered.'))
+    process.exitCode = 1
+    return
+  }
+
+  let out
+  try {
+    out = await callTool('enroll', { code, device_label: typeof label === 'string' ? label : undefined })
+  } catch (e) {
+    writeln(red(`  ✗ ${e.message}`))
+    process.exitCode = 1
+    return
+  }
+
+  if (out.status === 'enrolled') {
+    writeln()
+    writeln(`  ${green('✓')} Enrolled as ${cyan(out.codename || '(operator)')}.`)
+    writeln(`  ${dim('Your runs now cascade to the board. Try ')}${bold('npx sigrank-mcp me')}${dim(' or ')}${bold('npx sigrank-mcp watch --submit')}${dim('.')}`)
+    writeln(`  ${dim(`identity: ${keystorePath()}`)}`)
+    return
+  }
+
+  const msg =
+    {
+      code_invalid: 'That code is invalid, expired, or already used — generate a fresh one.',
+      device_already_enrolled: 'This device is already enrolled. Revoke it in Settings to re-bind (key rotation lands later).',
+      bad_request: 'The code or device key was malformed.',
+      rate_limited: 'Too many attempts — wait a few minutes and retry.',
+      persistence_unavailable: 'Enrollment is temporarily unavailable — try again shortly.',
+    }[out.reason] || `Enrollment failed (${out.reason || 'unknown'}).`
+  writeln(red(`  ✗ ${msg}`))
+  process.exitCode = 1
+}
+
+// ── submit: publish your verified (signed) runs to the board (D7 §5/§8) ─────────
+async function runSubmit({ platform = 'claude', window } = {}) {
+  const id = ensureIdentity()
+  if (!id.codename || !id.operator_id) {
+    writeln(red('  ✗ This device is not enrolled. Run `npx sigrank-mcp enroll` first.'))
+    process.exitCode = 1
+    return
+  }
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Publishing verified runs')}  ${dim(`as ${id.codename}`)}`)
+  writeln(`  ${dim('reading local token logs + signing…')}`)
+
+  let out
+  try {
+    out = await callTool('submit_verified', { platform, window: typeof window === 'string' ? window : undefined })
+  } catch (e) {
+    writeln(red(`  ✗ ${e.message}`))
+    process.exitCode = 1
+    return
+  }
+  if (out.status === 'not_enrolled') {
+    writeln(red('  ✗ Not enrolled — run `npx sigrank-mcp enroll`.'))
+    process.exitCode = 1
+    return
+  }
+
+  writeln()
+  for (const w of out.windows || []) {
+    const label = String(w.window).padEnd(8)
+    if (w.status === 'received') {
+      writeln(`  ${green('✓')} ${bold(label)} ${dim(`tier=${w.verification_tier || '—'}${w.persisted ? ' · persisted' : ''}`)}`)
+    } else {
+      writeln(`  ${red('✗')} ${bold(label)} ${dim(w.reason || w.status || 'failed')}`)
+    }
+  }
+  writeln(`  ${dim(`Reload your board row: signalaf.com/user/${id.codename}`)}`)
+}
+
 export async function runCli(argv) {
   const args = argv.slice(2) // strip 'node' + script path
   const cmd  = args[0]
@@ -1225,7 +1363,12 @@ export async function runCli(argv) {
         platform: flags.platform ?? 'claude',
         window:   flags.window   ?? '7d',
         refresh:  Number(flags.refresh) || 30,
+        submit:   flags.submit === true || flags.submit === 'true',
       })
+    } else if (cmd === 'enroll') {
+      await runEnroll({ label: flags.label })
+    } else if (cmd === 'submit') {
+      await runSubmit({ platform: flags.platform ?? 'claude', window: flags.window })
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       await showHelp()
     } else if (cmd === '--version' || cmd === '-v') {
