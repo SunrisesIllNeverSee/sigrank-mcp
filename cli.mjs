@@ -1248,6 +1248,44 @@ async function runEnroll({ label } = {}) {
   process.exitCode = 1
 }
 
+// ── submit: publish your verified (signed) runs to the board (D7 §5/§8) ─────────
+async function runSubmit({ platform = 'claude', window } = {}) {
+  const id = ensureIdentity()
+  if (!id.codename || !id.operator_id) {
+    writeln(red('  ✗ This device is not enrolled. Run `npx sigrank-mcp enroll` first.'))
+    process.exitCode = 1
+    return
+  }
+  writeln()
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Publishing verified runs')}  ${dim(`as ${id.codename}`)}`)
+  writeln(`  ${dim('reading local token logs + signing…')}`)
+
+  let out
+  try {
+    out = await callTool('submit_verified', { platform, window: typeof window === 'string' ? window : undefined })
+  } catch (e) {
+    writeln(red(`  ✗ ${e.message}`))
+    process.exitCode = 1
+    return
+  }
+  if (out.status === 'not_enrolled') {
+    writeln(red('  ✗ Not enrolled — run `npx sigrank-mcp enroll`.'))
+    process.exitCode = 1
+    return
+  }
+
+  writeln()
+  for (const w of out.windows || []) {
+    const label = String(w.window).padEnd(8)
+    if (w.status === 'received') {
+      writeln(`  ${green('✓')} ${bold(label)} ${dim(`tier=${w.verification_tier || '—'}${w.persisted ? ' · persisted' : ''}`)}`)
+    } else {
+      writeln(`  ${red('✗')} ${bold(label)} ${dim(w.reason || w.status || 'failed')}`)
+    }
+  }
+  writeln(`  ${dim(`Reload your board row: signalaf.com/user/${id.codename}`)}`)
+}
+
 export async function runCli(argv) {
   const args = argv.slice(2) // strip 'node' + script path
   const cmd  = args[0]
@@ -1284,6 +1322,8 @@ export async function runCli(argv) {
       })
     } else if (cmd === 'enroll') {
       await runEnroll({ label: flags.label })
+    } else if (cmd === 'submit') {
+      await runSubmit({ platform: flags.platform ?? 'claude', window: flags.window })
     } else if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
       await showHelp()
     } else if (cmd === '--version' || cmd === '-v') {

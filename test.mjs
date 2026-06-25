@@ -7,6 +7,7 @@ import { callTool } from './tools.mjs'
 import { tokenpull, tokenpullCodex, tokenpullAny, EXCLUDE_TOOLING, codexAdapter } from './tokenpull.mjs'
 import { ADAPTERS, ALL_PLATFORMS } from './adapters.mjs'
 import { generateIdentity } from './keystore.mjs'
+import { verifyPayload } from './sign.mjs'
 import assert from 'node:assert'
 
 const MOSES = '1251211 11296121 128196310 2555179769'
@@ -396,4 +397,36 @@ assert.strictEqual(bad.reason, 'code_invalid', 'invalid-code reason surfaced')
 await assert.rejects(() => callTool('enroll', { code: '' }, { identity: testIdentity }), /requires a `code`/, 'enroll rejects empty code')
 
 console.log('✓ watch_tokenpull: cascade snapshot · interval_s · TODO(AUTH.WIRE) stub')
+// --- 31. submit_verified: signs a Schema 1.0 snapshot → POST /api/v1/snapshots (enrolled, no live write) ---
+const enrolledId = { ...generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' }), codename: 'TransVaultOrigin', operator_id: 'op_123' }
+let snapCap = null
+const snapFetch = async (url, init) => {
+  snapCap = { url, init }
+  return { ok: true, status: 202, json: async () => ({ status: 'received', verification_tier: 'verified', persisted: true }) }
+}
+const pub = await callTool('submit_verified', { window: 'all' }, { apiBase: 'http://test.local', fetchImpl: snapFetch, adapter: mockAdapter, identity: enrolledId, now: NOW })
+assert.ok(snapCap.url.endsWith('/api/v1/snapshots'), 'submit_verified POSTs to /api/v1/snapshots (not ingest-paste)')
+const sigHeader = snapCap.init.headers['x-agent-signature']
+assert.ok(sigHeader && sigHeader.length > 0, 'X-Agent-Signature header present')
+const snapBody = JSON.parse(snapCap.init.body)
+assert.strictEqual(snapBody.schema_version, '1.0', 'Schema 1.0 payload')
+assert.strictEqual(snapBody.codename, 'TransVaultOrigin', 'codename from the keystore identity')
+assert.strictEqual(snapBody.device_id, enrolledId.device_id, 'device_id from the keystore identity')
+assert.strictEqual(snapBody.agent.public_key, enrolledId.public_key, 'public key carried in agent block')
+assert.ok(snapBody.agent.snapshot_hash.startsWith('sha256:'), 'snapshot_hash computed')
+assert.ok(!JSON.stringify(snapBody).includes(enrolledId.private_key_pkcs8_b64), 'submit NEVER includes the private key')
+assert.strictEqual(snapBody.window.type, 'all_time', 'all → all_time window_type')
+assert.strictEqual(snapBody.raw_telemetry.tokens_input_fresh, 111, 'pillars carried into raw_telemetry (input)')
+assert.strictEqual(snapBody.raw_telemetry.tokens_total, 1110, 'tokens_total = Σ4 pillars (111+222+333+444)')
+// server-parity: the header signature must verify over this exact payload
+assert.ok(verifyPayload(snapBody, sigHeader, enrolledId.public_key), 'X-Agent-Signature verifies against the payload (server will accept)')
+// plausibility-clean (no reject, no flag → stays verified → ranks)
+assert.ok(snapBody.raw_telemetry.turns_total >= snapBody.raw_telemetry.sessions_count, 'turns >= sessions')
+assert.ok(snapBody.raw_telemetry.sessions_count >= 1, 'sessions >= 1 (tokens present)')
+assert.strictEqual(pub.windows[0].verification_tier, 'verified', 'server verification_tier surfaced')
+// not enrolled → no POST
+const notEnrolled = await callTool('submit_verified', {}, { adapter: mockAdapter, identity: { ...generateIdentity(), codename: null, operator_id: null } })
+assert.strictEqual(notEnrolled.status, 'not_enrolled', 'unenrolled identity → not_enrolled (no submit)')
+
 console.log('✓ enroll: posts identity (public key only) · hides private key · maps 201 enrolled + 410 code_invalid')
+console.log('✓ submit_verified: signs Schema 1.0 → POST /api/v1/snapshots · X-Agent-Signature · server-verifiable · plausibility-clean')

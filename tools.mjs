@@ -13,6 +13,7 @@ import { narrate } from './narrate.mjs'
 import { tokenpull as pullLocal, tokenpullCodex as pullCodex, tokenpullAny } from './tokenpull.mjs'
 import { ALL_PLATFORMS } from './adapters.mjs'
 import { ensureIdentity, recordEnrollment } from './keystore.mjs'
+import { submitSignedWindow } from './submit.mjs'
 import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -228,6 +229,18 @@ export const TOOLS = [
       required: ['code'],
     },
   },
+  {
+    name: 'submit_verified',
+    description:
+      'Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        window: { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
+        platform: { type: 'string', enum: ALL_PLATFORMS, description: 'source platform (default: claude)' },
+      },
+    },
+  },
 ]
 
 // tokenpull window key → the board's window_type enum.
@@ -307,6 +320,28 @@ export async function callTool(name, args, opts = {}) {
       }
     }
     return { status: 'error', httpStatus: res.status, reason: ack.reason || ack.status || `http_${res.status}`, detail: ack.detail ?? null }
+  }
+
+  if (name === 'submit_verified') {
+    // The enrolled, signed publish path → /api/v1/snapshots (only verified rows rank).
+    const id = opts.identity || ensureIdentity()
+    if (!id.codename || !id.operator_id) {
+      return { status: 'not_enrolled', detail: 'Run `npx sigrank-mcp enroll` to bind this device first.' }
+    }
+    const platform = args?.platform || 'claude'
+    const pulled = await pullByPlatform(platform, opts)
+    const targets = args?.window ? pulled.windows.filter((w) => w.window === args.window) : pulled.windows
+    const out = []
+    for (const w of targets) {
+      const r = await submitSignedWindow(w.window, w.pillars, w.messages, id, {
+        apiBase,
+        fetchImpl: doFetch,
+        platform: pulled.platform,
+        now: opts.now,
+      })
+      out.push({ window: w.window, pillars: w.pillars, ...r })
+    }
+    return { platform: pulled.platform, codename: id.codename, operator_id: id.operator_id, generatedAt: pulled.generatedAt, windows: out }
   }
 
   if (name === 'submit_paste') {

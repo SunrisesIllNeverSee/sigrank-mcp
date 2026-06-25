@@ -34,6 +34,7 @@
     "adapters.mjs",
     "sign.mjs",
     "keystore.mjs",
+    "submit.mjs",
     "README.md"
   ],
   "dependencies": {
