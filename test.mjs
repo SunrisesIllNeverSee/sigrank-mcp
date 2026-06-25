@@ -358,13 +358,23 @@ const watchResult = await callTool('watch_tokenpull', { window: '7d', interval_s
 assert.strictEqual(watchResult.window, '7d', 'watch_tokenpull: correct window')
 assert.ok(typeof watchResult.cascade.yield === 'number', 'watch_tokenpull: cascade.yield is a number')
 assert.strictEqual(watchResult.poll_interval_s, 30, 'watch_tokenpull: interval_s respected')
-assert.strictEqual(watchResult.auth_submit, null, 'watch_tokenpull: no auth_submit without codename')
+assert.strictEqual(watchResult.auth_submit, null, 'watch_tokenpull: no auth_submit without submit:true')
 
-// --- 29. watch_tokenpull: TODO(AUTH.WIRE) stub surfaces when codename supplied ---
-const watchWithCodename = await callTool('watch_tokenpull', { window: '7d', codename: 'TheSignalVault' }, { adapter: mockWatchAdapter, now: NOW })
-assert.ok(watchWithCodename.auth_submit !== null, 'watch_tokenpull: auth_submit present with codename')
-assert.match(watchWithCodename.auth_submit.status, /TODO\(AUTH\.WIRE\)/, 'watch_tokenpull: auth_submit status is TODO(AUTH.WIRE)')
-assert.strictEqual(watchWithCodename.auth_submit.codename, 'TheSignalVault', 'watch_tokenpull: codename carried in auth_submit')
+// --- 29. watch_tokenpull: submit:true → real signed submit (enrolled) / not_enrolled otherwise ---
+const watchEnrolledId = { ...generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' }), codename: 'TheSignalVault', operator_id: 'op_w' }
+let watchCap = null
+const watchFetch = async (url, init) => { watchCap = { url, init }; return { ok: true, status: 202, json: async () => ({ status: 'received', verification_tier: 'verified', persisted: true }) } }
+const watchSubmit = await callTool('watch_tokenpull', { window: '7d', submit: true }, { adapter: mockWatchAdapter, now: NOW, fetchImpl: watchFetch, identity: watchEnrolledId })
+assert.ok(watchSubmit.auth_submit !== null, 'watch_tokenpull: auth_submit present with submit:true')
+assert.strictEqual(watchSubmit.auth_submit.status, 'received', 'watch_tokenpull: submit:true + enrolled → signed submit received (no TODO stub)')
+assert.ok(watchCap.url.endsWith('/api/v1/snapshots'), 'watch_tokenpull: submits to the VERIFIED /api/v1/snapshots path')
+assert.ok(watchCap.init.headers['x-agent-signature'], 'watch_tokenpull: the submission is signed')
+// submit:true but NOT enrolled → not_enrolled, no POST
+let watchCap2 = null
+const watchFetch2 = async (url, init) => { watchCap2 = { url, init }; return { ok: true, status: 202, json: async () => ({}) } }
+const watchUnenrolled = await callTool('watch_tokenpull', { window: '7d', submit: true }, { adapter: mockWatchAdapter, now: NOW, fetchImpl: watchFetch2, identity: { ...generateIdentity(), codename: null, operator_id: null } })
+assert.strictEqual(watchUnenrolled.auth_submit.status, 'not_enrolled', 'watch_tokenpull: submit:true + unenrolled → not_enrolled')
+assert.strictEqual(watchCap2, null, 'watch_tokenpull: unenrolled never POSTs')
 
 console.log('\n✓ canon · card · submit_paste · tokenpull(claude) · tokenpull_submit · tokenpullCodex conversion')
 console.log('✓ hardening: div-by-zero guards · parsePillars warnings · fetch timeout · codex tooling filter · narrate safety')
@@ -396,7 +406,7 @@ assert.strictEqual(bad.reason, 'code_invalid', 'invalid-code reason surfaced')
 // empty code → throws at the tool boundary
 await assert.rejects(() => callTool('enroll', { code: '' }, { identity: testIdentity }), /requires a `code`/, 'enroll rejects empty code')
 
-console.log('✓ watch_tokenpull: cascade snapshot · interval_s · TODO(AUTH.WIRE) stub')
+console.log('✓ watch_tokenpull: cascade snapshot · interval_s · submit:true → signed /api/v1/snapshots · not_enrolled guard')
 // --- 31. submit_verified: signs a Schema 1.0 snapshot → POST /api/v1/snapshots (enrolled, no live write) ---
 const enrolledId = { ...generateIdentity({ device_id: '1f0c9a4e-2b6d-4a1c-9e3f-7d5b2a8c4e10' }), codename: 'TransVaultOrigin', operator_id: 'op_123' }
 let snapCap = null

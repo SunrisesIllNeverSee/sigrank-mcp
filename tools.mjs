@@ -190,14 +190,14 @@ export const TOOLS = [
   {
     name: 'watch_tokenpull',
     description:
-      'Watch your local token logs and re-derive your cascade whenever new sessions are written — a live tune meter. Polls at a configurable interval (default 60s), diffs against the last snapshot, and returns the updated cascade when something changes. The push-to-board step is TODO(AUTH.WIRE) — currently returns the diff locally so you can see your score move in real time without submitting.',
+      'Watch your local token logs and re-derive your cascade whenever new sessions are written — a live tune meter. Polls at a configurable interval (default 60s) and returns the updated cascade. With submit:true (and an enrolled device) it also signs + publishes the watched window to the board each poll; default is preview-only (no submit).',
     inputSchema: {
       type: 'object',
       properties: {
         platform:    { type: 'string', enum: ALL_PLATFORMS, description: 'platform to watch (default: claude)' },
         interval_s:  { type: 'number', description: 'poll interval in seconds (default: 60, min: 10)' },
         window:      { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'which window to watch (default: 7d — most sensitive to recent activity)' },
-        codename:    { type: 'string', description: 'TODO(AUTH.WIRE): when set, will auto-submit on change once auth is live' },
+        submit:      { type: 'boolean', description: 'auto-submit the watched window to the board as a VERIFIED operator each poll (requires `enroll`; default false = preview only)' },
       },
     },
   },
@@ -450,9 +450,8 @@ export async function callTool(name, args, opts = {}) {
     // is responsible for re-calling at the desired cadence (MCP tools are stateless;
     // a persistent background watcher lives outside the tool boundary).
     //
-    // TODO(AUTH.WIRE): when codename is supplied and auth is live, auto-submit the
-    // updated snapshot to the board on every detected change. For now, returns the
-    // local cascade only.
+    // With submit:true + an enrolled device, this also signs + POSTs the watched window
+    // to the verified ingest path each poll (the server dedups identical re-submits).
     const platform = args?.platform || 'claude'
     const watchWindow = args?.window || '7d'
     const intervalS = Math.max(10, Number(args?.interval_s) || 60)
@@ -464,8 +463,23 @@ export async function callTool(name, args, opts = {}) {
     const c = cascade(win.pillars)
     const card = narrate(c, `${watchWindow} ${platform}`)
 
-    // TODO(AUTH.WIRE): if args?.codename, submit to board here once auth + device
-    // enrollment are live (SECURE_INGEST.md Phase 4).
+    // AUTH.WIRE (D7 §7): when submit is on AND the device is enrolled, sign + POST the
+    // watched window to the verified ingest path. Default OFF = preview only. The server
+    // dedups identical re-submits (exact snapshot_hash → 422), so re-calling is safe.
+    let auth_submit = null
+    if (args?.submit === true) {
+      const id = opts.identity || ensureIdentity()
+      if (id.codename && id.operator_id && id.private_key_pkcs8_b64) {
+        auth_submit = await submitSignedWindow(watchWindow, win.pillars, win.messages, id, {
+          apiBase,
+          fetchImpl: doFetch,
+          platform: pulled.platform,
+          now: opts.now,
+        })
+      } else {
+        auth_submit = { status: 'not_enrolled', detail: 'Run `npx sigrank-mcp enroll` to auto-submit verified runs.' }
+      }
+    }
     return {
       platform: pulled.platform,
       window: watchWindow,
@@ -475,9 +489,7 @@ export async function callTool(name, args, opts = {}) {
       card,
       generatedAt: pulled.generatedAt,
       poll_interval_s: intervalS,
-      auth_submit: args?.codename
-        ? { status: 'TODO(AUTH.WIRE)', codename: args.codename, detail: 'Auto-submit on change will activate once device enrollment is live (SECURE_INGEST.md).' }
-        : null,
+      auth_submit,
       note: 'One snapshot per call — re-call at your poll interval to detect changes.',
     }
   }

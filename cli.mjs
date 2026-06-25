@@ -26,6 +26,7 @@
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { classify } from './cascade.mjs'
 import { ensureIdentity, keystorePath } from './keystore.mjs'
+import { submitSignedWindow } from './submit.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
@@ -684,9 +685,12 @@ async function runCompare({ platform = 'claude' } = {}) {
 
 // ── WATCH command ─────────────────────────────────────────────────────────────
 
-async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 } = {}) {
+async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30, submit = false } = {}) {
   let prev = null
   let lines = 0
+  let lastSubmit = null
+  const id = submit ? ensureIdentity() : null
+  const enrolled = !!(id && id.codename && id.operator_id && id.private_key_pkcs8_b64)
 
   write(HIDE_CURSOR)
 
@@ -701,6 +705,16 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
 
     const cas = result.cascade
     const changed = prev !== null && prev !== cas?.yield
+
+    // --submit (D7 §7): publish the verified window on first observation + whenever Υ changes.
+    if (submit && enrolled && (prev === null || changed)) {
+      try {
+        const r = await submitSignedWindow(win, result.pillars, result.messages, id, { platform: result.platform })
+        lastSubmit = r.status === 'received' ? green(`✓ submitted · tier=${r.verification_tier || '—'}`) : red(`✗ ${r.reason || r.status}`)
+      } catch (e) {
+        lastSubmit = red(`✗ ${e.message}`)
+      }
+    }
 
     if (lines > 0) write(CURSOR_UP(lines))
 
@@ -724,8 +738,11 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30 
     push(`  ${bold('10xDEV')}       ${cas?.dev10x != null ? cas.dev10x.toFixed(2) : '—'}`)
     push(`  ${bold('Class')}        ${colorClass(cas?.class ?? '—')}`)
     push()
+    if (submit) {
+      push(`  ${dim('submit:')} ${enrolled ? (lastSubmit || dim('waiting for a change…')) : red('not enrolled — run `npx sigrank-mcp enroll`')}`)
+    }
     push(`  ${dim('─'.repeat(w - 4))}`)
-    push(`  ${dim(`polling every ${refresh}s  ·  tokens stay on your machine  ·  ctrl+c to exit`)}`)
+    push(`  ${dim(`polling every ${refresh}s  ·  ${submit ? 'auto-submit ON  ·  ' : ''}tokens stay on your machine  ·  ctrl+c to exit`)}`)
     push()
 
     write(out.join('\n'))
@@ -1077,9 +1094,36 @@ async function runSigRank() {
           try { es('open https://signalaf.com', { stdio: 'ignore' }) } catch { }
           resolve()
         } else if (k === 's') {
+          const id = ensureIdentity()
+          const enrolled = !!(id.codename && id.operator_id && id.private_key_pkcs8_b64)
           process.stdin.setRawMode(false)
           write(SHOW_CURSOR)
-          process.stdout.write('\n  Codename: ')
+          if (enrolled) {
+            // VERIFIED path (D7 §7): signed submit from the enrolled device. No codename
+            // prompt — it comes from the keystore. Only signed submissions rank on the board.
+            writeln()
+            writeln(`  ${dim('Publishing verified runs for')} ${cyan(id.codename)}${dim('…')}`)
+            write(HIDE_CURSOR)
+            try {
+              for (const d of active) {
+                for (const ww of (d.windows ?? [])) {
+                  const r = await submitSignedWindow(ww.window, ww.pillars, ww.messages, id, { platform: d.platform })
+                  const ok = r.status === 'received'
+                  writeln(`    ${ok ? green('✓') : red('✗')}  ${d.platform}  ${ww.window}${ok ? dim(` tier=${r.verification_tier || '—'}`) : dim(` ${r.reason || r.status}`)}`)
+                }
+              }
+              writeln()
+              writeln(`  ${green('✓')} Published. Reload ${cyan(`signalaf.com/user/${id.codename}`)}`)
+            } catch (e) {
+              writeln(red(`  ✗ ${e.message}`))
+            }
+            resolve()
+            return
+          }
+          // NOT enrolled → the anonymous paste path (preview-only; does NOT rank) + a hint.
+          writeln()
+          writeln(`  ${dim('Not enrolled — run')} ${bold('npx sigrank-mcp enroll')} ${dim('to rank as a verified operator. Anonymous paste below:')}`)
+          process.stdout.write('  Codename: ')
           let codename = ''
           process.stdin.on('data', async function onData(chunk) {
             if (chunk === '\r' || chunk === '\n') {
@@ -1319,6 +1363,7 @@ export async function runCli(argv) {
         platform: flags.platform ?? 'claude',
         window:   flags.window   ?? '7d',
         refresh:  Number(flags.refresh) || 30,
+        submit:   flags.submit === true || flags.submit === 'true',
       })
     } else if (cmd === 'enroll') {
       await runEnroll({ label: flags.label })
