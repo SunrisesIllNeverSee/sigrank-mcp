@@ -13,7 +13,7 @@ import { snapshotHash, signPayload } from './sign.mjs'
 
 const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
 const WINDOW_SPAN_DAYS = { '7d': 7, '30d': 30, '90d': 90, all_time: 3650 }
-const PLATFORM_ENUM = new Set(['claude', 'chatgpt', 'gemini', 'pi', 'multi', 'other'])
+const PLATFORM_ENUM = new Set(['claude', 'chatgpt', 'gemini', 'pi', 'codex', 'multi', 'other'])
 // Provenance tag only — the board ranks by Υ (no RS.xx weights, §0.1).
 const RULESET_VERSION = 'sigrank-token-1'
 const DAY_MS = 86_400_000
