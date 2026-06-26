@@ -219,11 +219,11 @@ export const TOOLS = [
   {
     name: 'enroll',
     description:
-      'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the single-use connect code from signalaf.com → Settings → Connect a device. On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. One binding per device (revoke + re-enroll from Settings).',
+      'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the key from signalaf.com → Settings → "New key" (or "Generate connect code"). On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
     inputSchema: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: 'the connect code (SIGR-XXXXX-XXXXX-XXXXX) from Settings → Connect a device' },
+        code: { type: 'string', description: 'the key / connect code (SIGR-XXXXX-XXXXX-XXXXX) from Settings → New key (or Generate connect code)' },
         device_label: { type: 'string', description: 'optional label for this device (default: hostname · agent version)' },
       },
       required: ['code'],

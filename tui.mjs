@@ -931,18 +931,18 @@ function renderConnect(id, codeBuf = '', msg = '') {
     writeln()
     writeln(`  ${dim('Press')} ${bold('[S]')} ${dim('from any read tab to submit your runs to the board.')}`)
     writeln()
-    writeln(`  ${dim('Switch device? Paste a new connect code, then')} ${bold('[Enter]')}${dim('.')}`)
-    writeln(`  ${dim('Signed in on the wrong device, or revoked on the site?')} ${bold('[X]')} ${dim('signs out — next enroll provisions a fresh device.')}`)
+    writeln(`  ${dim('Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.')}`)
+    writeln(`  ${dim('Signed in on the wrong device, or want a fresh start?')} ${bold('[X]')} ${dim('signs out — next paste provisions a fresh device.')}`)
   } else {
     writeln(`  ${bold('Log in to submit to board')}`)
     writeln(`  ${hr()}`)
     writeln(`  ${dim('status:')} ${red('not signed in')}`)
     writeln()
-    writeln(`  ${dim('Paste your connect code, then')} ${bold('[Enter]')}${dim(':')}`)
+    writeln(`  ${dim('Paste your key, then')} ${bold('[Enter]')}${dim(':')}`)
   }
   writeln(`    ${cyan('>')} ${codeBuf}${dim('▏')}`)
   writeln()
-  writeln(`  ${dim('Get a code at signalaf.com → Settings → Connect a device.')}`)
+  writeln(`  ${dim('Get a key at signalaf.com → Settings → "New key" (or "Generate connect code").')}`)
   if (msg) { writeln(); writeln(`  ${msg}`) }
 }
 
@@ -1364,7 +1364,7 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
             } else {
               const reasons = {
                 code_invalid: 'that code is invalid, expired, or already used — generate a fresh one.',
-                device_already_enrolled: 'this device is already signed in. Revoke it in Settings to re-bind.',
+                device_already_enrolled: 'this device is already signed in. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
                 bad_request: 'the code or device key was malformed.',
                 rate_limited: 'too many attempts — wait a few minutes and retry.',
                 persistence_unavailable: 'sign-in is temporarily unavailable — try again shortly.',

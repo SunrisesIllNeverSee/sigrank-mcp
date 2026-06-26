@@ -1286,7 +1286,7 @@ async function runEnroll({ label } = {}) {
   const msg =
     {
       code_invalid: 'That code is invalid, expired, or already used — generate a fresh one.',
-      device_already_enrolled: 'This device is already enrolled. Revoke it in Settings to re-bind (key rotation lands later).',
+      device_already_enrolled: 'This device is already enrolled. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
       bad_request: 'The code or device key was malformed.',
       rate_limited: 'Too many attempts — wait a few minutes and retry.',
       persistence_unavailable: 'Enrollment is temporarily unavailable — try again shortly.',
