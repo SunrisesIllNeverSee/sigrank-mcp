@@ -114,7 +114,16 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
   }
 
   const apiBase = opts.apiBase || process.env.SIGRANK_API_BASE || 'https://signalaf.com'
-  const fetchImpl = opts.fetchImpl || fetch
+  // FIX M: default a 15s AbortController timeout when the caller doesn't inject a
+  // fetchImpl. The TUI path already wraps fetch (callTool → doFetch, 10s), but the
+  // legacy CLI `watch --submit` + the CLI default-view [S] call submitSignedWindow
+  // with no fetchImpl → bare fetch → a hung POST blocks forever. This default fixes
+  // it everywhere at once. (15s is generous for a signed POST to /api/v1/snapshots.)
+  const fetchImpl = opts.fetchImpl || ((url, init = {}) => {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 15_000)
+    return fetch(url, { ...init, signal: init.signal || ctrl.signal }).finally(() => clearTimeout(timer))
+  })
   const payload = buildPayload(windowKey, pillars, messages, identity, opts.platform || 'claude', opts)
   const signature = signPayload(payload, identity.private_key_pkcs8_b64)
 
