@@ -35,7 +35,8 @@
     "sign.mjs",
     "keystore.mjs",
     "submit.mjs",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0"

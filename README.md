@@ -1,12 +1,28 @@
----
-type: Reference
-title: SigRank MCP — CLI + Server
-description: SigRank MCP exposes the leaderboard as tools any agent can call and provides a unified CLI dashboard. Token-only, no auth, no transcript content.
-tags: [sigrank, mcp, tokenpull, cli, dashboard, agent, ingest, reference]
-timestamp: 2026-07-23
----
+<div align="center">
+
+```
+ ███████ ██  ██████  ██████   █████  ███    ██ ██   ██
+ ██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██
+ ███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████
+      ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██
+ ███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██
+```
 
 # SigRank MCP
+
+**The yield cascade + live leaderboard as MCP tools any agent can call.**
+
+Token-only. No auth. No transcript content. Privacy-preserving by design.
+
+[![npm version](https://img.shields.io/npm/v/sigrank-mcp.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/sigrank-mcp.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/sigrank-mcp)
+[![license](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
+[![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
+[![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
+
+</div>
+
+---
 
 Dual-mode package: **interactive CLI dashboard** for operators, **MCP stdio server** for AI clients.
 
@@ -15,12 +31,15 @@ npm install -g sigrank-mcp
 sigrank-mcp          # launches the full tabbed TUI (TTY detected automatically)
 ```
 
-## Install from GitHub
-
-Until npm publish is live, install directly from the repo:
+Or one-shot without installing:
 
 ```bash
-# Clone + install
+npx sigrank-mcp board --once
+```
+
+## Install from GitHub
+
+```bash
 git clone https://github.com/SunrisesIllNeverSee/sigrank-mcp.git
 cd sigrank-mcp
 npm install
@@ -36,7 +55,7 @@ sigrank-mcp
 
 **Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
 **Site:** [signalaf.com](https://signalaf.com)
-**Version:** 0.9.12
+**npm:** [sigrank-mcp](https://www.npmjs.com/package/sigrank-mcp)
 
 ---
 
