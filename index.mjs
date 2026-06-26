@@ -26,6 +26,18 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { TOOLS, callTool } from './tools.mjs'
 import { runCli } from './cli.mjs'
+import { readFileSync } from 'node:fs'
+
+// FIX K: read the version from package.json (was hardcoded '0.7.0' — drifted from
+// 0.11.0). The MCP server identity now tracks the published package version.
+function serverVersion() {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+    return pkg.version || '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
 
 // Prevent silent crashes — log to stderr (MCP clients read stdout; stderr is safe for
 // diagnostics). The process exits so the client can respawn with a clean slate rather
@@ -40,7 +52,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 async function startMcpServer() {
-  const server = new Server({ name: 'sigrank', version: '0.7.0' }, { capabilities: { tools: {} } })
+  const server = new Server({ name: 'sigrank', version: serverVersion() }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     try {
