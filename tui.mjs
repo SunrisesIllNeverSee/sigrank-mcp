@@ -873,7 +873,11 @@ function renderBoard(boardData, window = '30d', filterCodename = null, highlight
     const isYou = highlightCodename && (e.codename ?? '').toLowerCase() === highlightCodename.toLowerCase()
     const rk  = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
     const nmRaw = trunc(e.codename ?? '—', 22)
-    const nm  = padEnd(isYou ? `${c.bgCyan}${c.boldCyan} ${nmRaw} ${c.reset}` : nmRaw, 22)
+    // FIX I2: pad the visible content INSIDE the ANSI codes so the cyan bg fills
+    // the full column width (padEnd after reset would leave uncolored trailing spaces).
+    const nm  = isYou
+      ? `${c.bgCyan}${c.boldCyan}${padEnd(` ${nmRaw} `, 22)}${c.reset}`
+      : padEnd(nmRaw, 22)
     const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
     const snrVal = e.snr ?? e.compression_ratio
     // value cells: pad first, then medal-wrap so the tint fills the whole column width
