@@ -1,12 +1,20 @@
 <div align="center">
 
-<img src="https://ghrb.waren.build/banner?header=SigRank%20MCP&subheader=yield%20cascade%20%2B%20leaderboard%20as%20MCP%20tools&bg=0a0a0a-1a1a1a&color=e0b240&subheadercolor=96c896" alt="SigRank MCP" width="640">
+```
+ ███████ ██  ██████  ██████   █████  ███    ██ ██   ██
+ ██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██
+ ███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████
+      ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██
+ ███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██
+```
+
+◈ ─────────────────────────────────────────── ◈
 
 # SigRank MCP
 
 **The yield cascade + live leaderboard as MCP tools any agent can call.**
 
-Token-only. No auth. No transcript content. Privacy-preserving by design.
+For all builders, burners and 10xers.
 
 [![npm version](https://img.shields.io/npm/v/sigrank-mcp.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/sigrank-mcp.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/sigrank-mcp)
@@ -18,6 +26,8 @@ Token-only. No auth. No transcript content. Privacy-preserving by design.
 </div>
 
 ---
+
+Token-only. No auth. No transcript content. Privacy-preserving by design.
 
 Dual-mode package: **interactive CLI dashboard** for operators, **MCP stdio server** for AI clients.
 
