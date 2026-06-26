@@ -1111,6 +1111,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   let refreshTimer = null
   let codeBuf      = ''        // [6] Connect tab in-place code field buffer
   let connectMsg   = ''        // [6] Connect last-action message (signed in / invalid code)
+  let submitMsg    = ''        // [S] in-place submit result, shown in the read-tab footer
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
@@ -1119,6 +1120,10 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
 
     const hint = `  ${dim('← → or 1-5')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
     const submitHint = `   ${dim('[S]')} submit · ${dim('signalaf.com/login')} to sign in`
+    // Read-tab footer: hr + hint, plus the in-place submit result line when present.
+    const readFooter = (hintLine) => submitMsg
+      ? [`  ${hr()}`, hintLine, `  ${submitMsg}`]
+      : [`  ${hr()}`, hintLine]
 
     if (activeTab === 0) {                       // Dashboard
       if (!dashData) {
@@ -1126,31 +1131,31 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       } else {
         renderDashboard(dashData, status)
       }
-      setFooter([`  ${hr()}`, `${hint}${submitHint}`])
+      setFooter(readFooter(`${hint}${submitHint}`))
     } else if (activeTab === 1) {                // Trends
       if (!dashData) {
         writeln(`\n  ${dim('loading trends…')}`)
       } else {
         renderTrends(dashData, trendSub)
       }
-      setFooter([`  ${hr()}`, `${hint}   ${dim('[T]')} view${submitHint}`])
+      setFooter(readFooter(`${hint}   ${dim('[T]')} view${submitHint}`))
     } else if (activeTab === 2) {                // Compare
       if (!compareData) {
         writeln(`\n  ${dim(`loading compare (${platform})…`)}`)
       } else {
         renderCompare(compareData)
       }
-      setFooter([`  ${hr()}`, `${hint}   ${dim('[P]')} switch platform${submitHint}`])
+      setFooter(readFooter(`${hint}   ${dim('[P]')} switch platform${submitHint}`))
     } else if (activeTab === 3) {                // Board
       if (!boardData) {
         writeln(`\n  ${dim(`loading board (${boardWindow})…`)}`)
       } else {
         renderBoard(boardData, boardWindow)
       }
-      setFooter([`  ${hr()}`, `${hint}   ${dim('[W]')} window${submitHint}`])
+      setFooter(readFooter(`${hint}   ${dim('[W]')} window${submitHint}`))
     } else if (activeTab === 4) {                // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
-      setFooter([`  ${hr()}`, `${hint}${submitHint}`])
+      setFooter(readFooter(`${hint}${submitHint}`))
     } else if (activeTab === 5) {                // Connect
       renderConnect(loadIdentity(), codeBuf, connectMsg)
       setFooter([`  ${hr()}`, `  ${dim('[Enter]')} sign in   ${dim('[Esc]')} clear/back   ${dim('← →')} tabs   ${dim('[Q]')} quit`])
@@ -1302,14 +1307,36 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
-      if (k === 's' && activeTab === 0) {
-        // submit flow — exit alt screen, hand off to CLI submit path
-        const { runCli } = await import('./cli.mjs')
-        if (refreshTimer) clearInterval(refreshTimer)
-        write(SHOW)
-        write(EXIT_ALT)
-        await runCli(['node', 'cli.mjs', '--submit'])
-        resolve()
+      if (k === 's' && activeTab !== 5) {
+        // submit IN-PLACE — sign + POST the verified window via the existing core,
+        // show the result in the footer, stay in the alt screen (no exit-to-CLI).
+        // (On the Connect tab, 's' is a code char handled by the focused field above.)
+        const id = loadIdentity()
+        if (!isSignedIn(id)) {                     // not signed in → open Connect, never error
+          activeTab = 5
+          connectMsg = dim('sign in to submit to board')
+          await redraw()
+          return
+        }
+        submitMsg = dim('submitting…')
+        await redraw()
+        try {
+          const out = await callTool('submit_verified', { platform })
+          const ws = out.windows || []
+          const ok = ws.filter(w => w.status === 'received')
+          if (out.status === 'not_enrolled') {
+            submitMsg = `${red('✗')} sign in to submit`
+          } else if (ok.length) {
+            const tier = ok[0].verification_tier || '—'
+            submitMsg = `${green('✓')} submitted · ${ok.length} window${ok.length > 1 ? 's' : ''} · tier=${tier}`
+          } else {
+            const why = ws[0]?.reason || out.status || 'failed'
+            submitMsg = `${red('✗')} submit: ${why}`
+          }
+        } catch (e) {
+          submitMsg = `${red('✗')} submit: ${e.message}`
+        }
+        await redraw()
         return
       }
 
@@ -1320,6 +1347,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         boardData = await loadBoardData(boardWindow).catch(() => null)
       }
 
+      if (switched) submitMsg = ''   // submit result is tied to the tab it was sent from
       if (switched || k === 'w') await redraw()
     })
   })
