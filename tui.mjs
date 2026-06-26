@@ -1214,6 +1214,51 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
+      // ── Connect tab is a FOCUSED code field (the one modal tab). Printable code
+      // chars feed the buffer; Enter signs in; Esc clears or leaves; arrows switch.
+      // Sits AFTER the quit block (so Q/Ctrl-C always escape) and BEFORE everything
+      // else (so single-letter hotkeys don't fire while you're typing a code).
+      if (activeTab === 5) {
+        if (key === '\r' || key === '\n') {                 // [Enter] → sign in
+          const code = codeBuf.trim()
+          if (!code) { connectMsg = dim('paste a connect code first'); await redraw(); return }
+          connectMsg = dim('signing in…'); await redraw()
+          try {
+            const out = await callTool('enroll', { code })
+            if (out.status === 'enrolled') {
+              connectMsg = `${green('✓')} signed in as ${cyan(out.codename || '(operator)')}`
+              codeBuf = ''
+            } else {
+              const reasons = {
+                code_invalid: 'that code is invalid, expired, or already used — generate a fresh one.',
+                device_already_enrolled: 'this device is already signed in. Revoke it in Settings to re-bind.',
+                bad_request: 'the code or device key was malformed.',
+                rate_limited: 'too many attempts — wait a few minutes and retry.',
+                persistence_unavailable: 'sign-in is temporarily unavailable — try again shortly.',
+              }
+              connectMsg = `${red('✗')} ${reasons[out.reason] || `sign-in failed (${out.reason || 'unknown'}).`}`
+            }
+          } catch (e) {
+            connectMsg = `${red('✗')} ${e.message}`
+          }
+          await redraw(); return
+        }
+        if (key === '\x1b') {                                // [Esc] → clear, or leave when empty
+          if (codeBuf) { codeBuf = ''; connectMsg = '' } else { activeTab = 0 }
+          await redraw(); return
+        }
+        if (key === '\x1b[C') { activeTab = Math.min(5, activeTab + 1); await redraw(); return }  // → tab
+        if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); await redraw(); return }  // ← tab
+        if (key === '\x7f' || key === '\b') { codeBuf = codeBuf.slice(0, -1); await redraw(); return }  // backspace
+        // A typed code char (len 1) or a pasted code (one multi-char chunk). Exclude any
+        // escape sequence (↑/↓/etc.) so stray control bytes never pollute the buffer.
+        if (!key.startsWith('\x1b') && (key.length > 1 || isCodeChar(key))) {
+          codeBuf += key.split('').filter(isCodeChar).join('')
+          await redraw(); return
+        }
+        return  // swallow any other key while focused (never falls through to global hotkeys)
+      }
+
       // ESC → go back to Dashboard from any tab
       if (key === '\x1b' && activeTab !== 0) {
         activeTab = 0
@@ -1231,6 +1276,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       if (k === '4') { activeTab = 3; switched = true }
       if (k === '5') { activeTab = 4; switched = true }  // Watch = an in-TUI landing panel
       if (k === '6') { activeTab = 5; switched = true }  // Connect = sign in / switch device
+      if (k === 'c' && activeTab !== 5) { activeTab = 5; switched = true }  // [C] → Connect from any read tab
 
       // Trends tab: [T] cycles the sub-view (You · Platform · Field)
       if (activeTab === 1 && k === 't') { trendSub = (trendSub + 1) % 3; await redraw(); return }
