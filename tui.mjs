@@ -1418,7 +1418,7 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
           // FIX I1: submit every active platform (data already loaded for the Dashboard).
           // Each platform is a separate submit_verified call → its own (platform, window) slot.
           const platforms = (dashData?.active ?? []).map(d => d.platform)
-          let totalVerified = 0, totalReceived = 0, hadFail = false
+          let totalVerified = 0, totalReceived = 0, hadFail = false, didMulti = false
           for (const p of platforms) {
             try {
               const out = await callTool('submit_verified', { platform: p })
@@ -1430,8 +1430,22 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
               if (received.length > 0 && verified.length < received.length) hadFail = true
             } catch { hadFail = true }
           }
+          // MULTI: the combined cross-platform cascade (claude+codex+… summed). Only
+          // meaningful with 2+ active platforms; submit_verified('multi') aggregates them.
+          if (platforms.length >= 2) {
+            try {
+              const out = await callTool('submit_verified', { platform: 'multi' })
+              const ws = out.windows || []
+              const received = ws.filter(w => w.status === 'received')
+              const verified = received.filter(w => w.verification_tier === 'verified')
+              totalReceived += received.length
+              totalVerified += verified.length
+              if (received.length > 0 && verified.length < received.length) hadFail = true
+              if (received.length > 0) didMulti = true
+            } catch { hadFail = true }
+          }
           if (totalReceived && !hadFail && totalVerified === totalReceived) {
-            submitMsg = `${green('✓')} submitted · ${totalVerified} window${totalVerified > 1 ? 's' : ''} across ${platforms.length} platform${platforms.length > 1 ? 's' : ''} · verified`
+            submitMsg = `${green('✓')} submitted · ${totalVerified} window${totalVerified > 1 ? 's' : ''} across ${platforms.length} platform${platforms.length > 1 ? 's' : ''}${didMulti ? ' + combined' : ''} · verified`
           } else if (hadFail && totalReceived) {
             submitMsg = `${red('✗')} device not verified — sign in again ([C])`
           } else if (totalReceived === 0) {

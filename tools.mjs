@@ -329,6 +329,50 @@ export async function callTool(name, args, opts = {}) {
       return { status: 'not_enrolled', detail: 'Run `npx sigrank-mcp enroll` to bind this device first.' }
     }
     const platform = args?.platform || 'claude'
+
+    // MULTI: the combined cross-platform cascade. The dashboard already SUMS every
+    // active platform's pillars (a "claude+codex" row) but never submitted it — this
+    // is that missing submission. Aggregate every locally-detected platform's pillars
+    // per window and publish as platform='multi' = the operator's TOTAL usage. Empty
+    // windows are skipped so a no-activity window never lands as a degenerate row.
+    if (platform === 'multi') {
+      const detected = []
+      for (const p of ALL_PLATFORMS) {
+        const r = await pullByPlatform(p, opts).catch(() => null)
+        const live = r && (r.windows || []).some(
+          (w) => (w.pillars.input + w.pillars.output + w.pillars.cacheCreate + w.pillars.cacheRead) > 0,
+        )
+        if (live) detected.push(r)
+      }
+      if (detected.length < 2) {
+        return {
+          platform: 'multi', codename: id.codename, operator_id: id.operator_id,
+          status: 'skipped', reason: 'need_2_platforms',
+          detail: `multi needs 2+ active platforms; found ${detected.length} (${detected.map((d) => d.platform).join(', ') || 'none'}).`,
+          windows: [],
+        }
+      }
+      const winKeys = args?.window ? [args.window] : ['7d', '30d', '90d', 'all']
+      const out = []
+      for (const wk of winKeys) {
+        const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 }
+        let msgs = 0
+        for (const d of detected) {
+          const w = (d.windows || []).find((x) => x.window === wk)
+          if (!w) continue
+          sum.input += w.pillars.input || 0
+          sum.output += w.pillars.output || 0
+          sum.cacheCreate += w.pillars.cacheCreate || 0
+          sum.cacheRead += w.pillars.cacheRead || 0
+          msgs += w.messages || 0
+        }
+        if (sum.input + sum.output + sum.cacheCreate + sum.cacheRead <= 0) continue // skip empty window
+        const r = await submitSignedWindow(wk, sum, msgs, id, { apiBase, fetchImpl: doFetch, platform: 'multi', now: opts.now })
+        out.push({ window: wk, pillars: sum, ...r })
+      }
+      return { platform: 'multi', codename: id.codename, operator_id: id.operator_id, sources: detected.map((d) => d.platform), windows: out }
+    }
+
     const pulled = await pullByPlatform(platform, opts)
     const targets = args?.window ? pulled.windows.filter((w) => w.window === args.window) : pulled.windows
     const out = []
