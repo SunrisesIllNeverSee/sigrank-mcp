@@ -1,25 +1,6 @@
 <div align="center">
 
-```
-  ◈  ───────────────────────────────────────────  ◈
-
-  ███████ ██  ██████  ██████   █████  ███    ██ ██   ██
-  ██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██
-  ███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████
-       ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██
-  ███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██
-
-  ◈  ───────────────────────────────────────────  ◈
-
-        For all builders, burners and 10xers
-                    signalaf
-
-             powered by  MO§ES™
-              $ npx sigrank-mcp
-
-              ▸ press any key ◂
-          [P] pause    [Enter] enter
-```
+<img src="assets/sigrank-splash.svg" alt="SigRank MCP — TUI splash">
 
 # SigRank MCP
 

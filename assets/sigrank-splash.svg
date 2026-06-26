@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#050605" rx="8"/>
+  <g font-family="Menlo, Monaco, 'Courier New', monospace" text-anchor="middle">
+    <text x="320" y="28" font-size="11" fill="#6e966e">◈  ───────────────────────────────────────────  ◈</text>
+    <text x="320" y="62" font-size="15" fill="#e0b240">███████ ██  ██████  ██████   █████  ███    ██ ██   ██</text>
+    <text x="320" y="84" font-size="15" fill="#f0c862">██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██ </text>
+    <text x="320" y="106" font-size="15" fill="#e8a0d0">███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████  </text>
+    <text x="320" y="128" font-size="15" fill="#f08c3c">     ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██ </text>
+    <text x="320" y="150" font-size="15" fill="#f0d878">███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██</text>
+    <text x="320" y="178" font-size="11" fill="#6e966e">◈  ───────────────────────────────────────────  ◈</text>
+    <text x="320" y="210" font-size="14" fill="#dee6d2" font-weight="bold">For all builders, burners and 10xers</text>
+    <text x="320" y="232" font-size="12" fill="#6e966e">signalaf</text>
+    <text x="320" y="258" font-size="12" fill="#6e966e">powered by  <tspan fill="#e0b240" font-weight="bold">MO§ES™</tspan></text>
+    <text x="320" y="282" font-size="13" fill="#e0b240">$ npx sigrank-mcp</text>
+    <text x="320" y="312" font-size="12" fill="#e0b240">▸ <tspan fill="#6e966e">press any key</tspan> ◂</text>
+    <text x="320" y="334" font-size="11" fill="#6e966e">[P] pause    [Enter] enter</text>
+  </g>
+</svg>
