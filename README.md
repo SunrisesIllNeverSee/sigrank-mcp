@@ -1,12 +1,6 @@
 <div align="center">
 
-```
- ███████ ██  ██████  ██████   █████  ███    ██ ██   ██
- ██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██
- ███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████
-      ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██
- ███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██
-```
+<img src="https://ghrb.waren.build/banner?header=SigRank%20MCP&subheader=yield%20cascade%20%2B%20leaderboard%20as%20MCP%20tools&bg=0a0a0a-1a1a1a&color=e0b240&subheadercolor=96c896" alt="SigRank MCP" width="640">
 
 # SigRank MCP
 
@@ -16,6 +10,7 @@ Token-only. No auth. No transcript content. Privacy-preserving by design.
 
 [![npm version](https://img.shields.io/npm/v/sigrank-mcp.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/sigrank-mcp.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/sigrank-mcp)
+[![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
 [![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
 [![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
