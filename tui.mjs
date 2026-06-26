@@ -13,6 +13,8 @@
  */
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { isSignedIn, isCodeChar } from './connect.mjs'
+import { loadIdentity } from './keystore.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import os from 'os'
@@ -341,6 +343,7 @@ const TABS = [
   { key: '3', label: 'Compare',   short: 'C' },
   { key: '4', label: 'Board',     short: 'B' },
   { key: '5', label: 'Watch',     short: 'W' },  // in-TUI landing panel; [Enter] launches the watcher
+  { key: '6', label: 'Connect',   short: 'N' },  // sign in / switch device — the whole app is the TUI
 ]
 
 // Three Degrees of Leverage — reference values pulled from signalaf.com/wiki (2026-06-25).
@@ -859,6 +862,34 @@ function renderWatchInfo(platform, win, refresh) {
   writeln()
 }
 
+// ── TAB 6: CONNECT ───────────────────────────────────────────────────────────
+// Sign in (paste a connect code) / show signed-in status. The whole app lives in
+// the TUI; this replaces every "go run the CLI to enroll" hint. Uses only helpers
+// already defined above (bold/dim/cyan/green/red/hr/writeln).
+function renderConnect(id, codeBuf = '', msg = '') {
+  writeln()
+  if (isSignedIn(id)) {
+    writeln(`  ${bold('Connect')}  ${dim('your account')}`)
+    writeln(`  ${hr()}`)
+    writeln(`  ${green('✓')} Signed in as ${cyan(id.codename)}`)
+    writeln(`  ${dim(`device ${id.device_id}`)}`)
+    writeln()
+    writeln(`  ${dim('Press')} ${bold('[S]')} ${dim('from any read tab to submit your runs to the board.')}`)
+    writeln()
+    writeln(`  ${dim('Switch device? Paste a new connect code, then')} ${bold('[Enter]')}${dim(':')}`)
+  } else {
+    writeln(`  ${bold('Log in to submit to board')}`)
+    writeln(`  ${hr()}`)
+    writeln(`  ${dim('status:')} ${red('not signed in')}`)
+    writeln()
+    writeln(`  ${dim('Paste your connect code, then')} ${bold('[Enter]')}${dim(':')}`)
+  }
+  writeln(`    ${cyan('>')} ${codeBuf}${dim('▏')}`)
+  writeln()
+  writeln(`  ${dim('Get a code at signalaf.com → Settings → Connect a device.')}`)
+  if (msg) { writeln(); writeln(`  ${msg}`) }
+}
+
 // ── TAB 4: WATCH ─────────────────────────────────────────────────────────────
 async function renderWatch(platform = 'claude', win = '7d') {
   const { tokenpullAny } = await import('./tokenpull.mjs')
@@ -944,6 +975,7 @@ async function renderOnce(tabIdx = 0) {
   if (tabIdx === 0) renderDashboard(data, 'debug')
   else if (tabIdx === 1) renderCompare(data)
   else if (tabIdx === 2) renderBoard(data, '30d')
+  else if (tabIdx === 5) renderConnect(loadIdentity(), '', '')
   const lines = _screenBuf || []
   _screenBuf = null; _footerBuf = null
   process.stdout.write(`\n=== WIDTH AUDIT (terminal w=${w}) — lines exceeding w wrap/overflow ===\n`)
@@ -1077,6 +1109,8 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   let loading      = true
   let status       = 'loading…'
   let refreshTimer = null
+  let codeBuf      = ''        // [6] Connect tab in-place code field buffer
+  let connectMsg   = ''        // [6] Connect last-action message (signed in / invalid code)
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
@@ -1117,6 +1151,9 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
     } else if (activeTab === 4) {                // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
       setFooter([`  ${hr()}`, `${hint}${submitHint}`])
+    } else if (activeTab === 5) {                // Connect
+      renderConnect(loadIdentity(), codeBuf, connectMsg)
+      setFooter([`  ${hr()}`, `  ${dim('[Enter]')} sign in   ${dim('[Esc]')} clear/back   ${dim('← →')} tabs   ${dim('[Q]')} quit`])
     }
     flushScreen()
   }
@@ -1137,6 +1174,10 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   const cleanup = () => { write(SHOW); write(EXIT_ALT); process.exit(0) }
   process.once('SIGINT',  cleanup)
   process.once('SIGTERM', cleanup)
+
+  // Soft-landing: if not signed in, open on the Connect tab (a prompt, not a gate —
+  // the user can still tab away to read Board/Dashboard while signed out).
+  if (!isSignedIn(loadIdentity())) activeTab = 5
 
   // Draw loading state immediately so user sees tab bar + border
   await redraw()
@@ -1182,13 +1223,14 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
 
       // tab switching (5 tabs: 0=Dashboard 1=Trends 2=Compare 3=Board 4=Watch)
       let switched = false
-      if (key === '\x1b[C') { activeTab = Math.min(4, activeTab + 1); switched = true }
+      if (key === '\x1b[C') { activeTab = Math.min(5, activeTab + 1); switched = true }
       if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); switched = true }
       if (k === '1') { activeTab = 0; switched = true }
       if (k === '2') { activeTab = 1; switched = true }
       if (k === '3') { activeTab = 2; switched = true }
       if (k === '4') { activeTab = 3; switched = true }
       if (k === '5') { activeTab = 4; switched = true }  // Watch = an in-TUI landing panel
+      if (k === '6') { activeTab = 5; switched = true }  // Connect = sign in / switch device
 
       // Trends tab: [T] cycles the sub-view (You · Platform · Field)
       if (activeTab === 1 && k === 't') { trendSub = (trendSub + 1) % 3; await redraw(); return }
