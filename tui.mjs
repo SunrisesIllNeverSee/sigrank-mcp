@@ -808,15 +808,20 @@ function renderCompare(data) {
 }
 
 // ── TAB 3: BOARD ─────────────────────────────────────────────────────────────
-function renderBoard(boardData, window = '30d') {
+// FIX I2: hybrid board model. `filterCodename` (non-null = "just me" mode) shows
+// ONLY the signed-in operator's rows. `highlightCodename` (non-null = global mode)
+// highlights the signed-in operator's row in the global board. Both come from the
+// signed-in identity's codename; the [Y] key toggles between the two modes.
+function renderBoard(boardData, window = '30d', filterCodename = null, highlightCodename = null) {
   const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? []
   const w = W()
   const budget = H() - 4
   let used = 0
   const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
+  const modeLabel = filterCodename ? `${dim(' · just you')}` : highlightCodename ? `${dim(' · you highlighted')}` : ''
   emit()
-  emit(`  ${bold('Leaderboard')}  ${dim(`window: ${window}  ·  sorted by Υ Yield  ·  signalaf.com/leaderboard`)}`)
+  emit(`  ${bold('Leaderboard')}  ${dim(`window: ${window}  ·  sorted by Υ Yield  ·  signalaf.com/leaderboard`)}${modeLabel}`)
   emit()
 
   if (!Array.isArray(entries) || entries.length === 0) {
@@ -824,7 +829,16 @@ function renderBoard(boardData, window = '30d') {
     return
   }
 
-  const sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
+  // FIX I2: "just me" mode — filter to the signed-in operator's rows only.
+  let sorted = [...entries].sort((a, b) => (b.yield_ ?? 0) - (a.yield_ ?? 0))
+  if (filterCodename) {
+    sorted = sorted.filter(e => (e.codename ?? '').toLowerCase() === filterCodename.toLowerCase())
+    if (sorted.length === 0) {
+      emit(`  ${dim(`  you have no ranked rows in the ${window} window yet`)}`)
+      emit(`  ${dim('  press [S] from a read tab to submit your cascade')}`)
+      return
+    }
+  }
 
   // Per-column top-3 "shadowbox": medal bg-tint (gold/silver/bronze) on the 1st/2nd/3rd
   // best DISTINCT value in each metric column, mirroring the website's podium boxes.
@@ -855,8 +869,11 @@ function renderBoard(boardData, window = '30d') {
   for (let idx = 0; idx < sorted.length; idx++) {
     if (used >= budget) break
     const e   = sorted[idx]
+    // FIX I2: highlight the signed-in operator's row (global mode) with a cyan bg-tint.
+    const isYou = highlightCodename && (e.codename ?? '').toLowerCase() === highlightCodename.toLowerCase()
     const rk  = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
-    const nm  = padEnd(trunc(e.codename ?? '—', 22), 22)
+    const nmRaw = trunc(e.codename ?? '—', 22)
+    const nm  = padEnd(isYou ? `${c.bgCyan}${c.boldCyan} ${nmRaw} ${c.reset}` : nmRaw, 22)
     const cls = padEnd(colorCls(e.class_tier ?? '—'), 13)
     const snrVal = e.snr ?? e.compression_ratio
     // value cells: pad first, then medal-wrap so the tint fills the whole column width
@@ -867,7 +884,8 @@ function renderBoard(boardData, window = '30d') {
     const d10 = medal(pods.d10, e.dev10x, padStart(e.dev10x != null ? e.dev10x.toFixed(2) : '—', 6))
     const pct = padStart(e.percentile != null ? `${e.percentile}%` : '—', 5)
     const mv  = padStart(fmtMov(e.movement_7d), 5)
-    emit(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${yld}  ${snr}  ${lev}  ${vel}  ${d10}  ${pct}  ${mv}`)
+    const youMark = isYou ? ` ${c.bgCyan}${c.boldCyan}YOU${c.reset}` : ''
+    emit(`    ${padStart(rk,4)}  ${nm}  ${cls}  ${yld}  ${snr}  ${lev}  ${vel}  ${d10}  ${pct}  ${mv}${youMark}`)
   }
 }
 
@@ -992,6 +1010,45 @@ async function renderWatch(platform = 'claude', win = '7d') {
   writeln()
   writeln(`    ${yieldSpark(d)}`)
   writeln()
+}
+
+// ── SUBMIT PREVIEW (FIX I1 / FIX E) — see→confirm→send ───────────────────────
+// Renders a platform × window grid of what submit_verified WOULD send, using the
+// already-loaded dashData. [Enter] confirms → fires submit_verified per platform;
+// [Esc] cancels → back to the read tab. Mirrors the Connect focused-field pattern.
+function renderSubmitPreview(dashData, id) {
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
+  const WINS = ['7d', '30d', '90d', 'all']
+  const COL_W = 14
+
+  emit()
+  emit(`  ${bold('Submit Preview')}  ${dim('what will publish to the board')}`)
+  emit(`  ${dim(`signed in as ${id?.codename ?? '—'} · device ${id?.device_id?.slice(0,8) ?? '—'}…`)}`)
+  emit()
+  // header row: platform | 7d | 30d | 90d | all
+  const hcols = [padEnd(hdr('Platform'), 12), ...WINS.map(w => padStart(hdr(w), COL_W))]
+  emit(`    ${hcols.join('  ')}`)
+  emit(`  ${dim('·'.repeat(Math.min(W() - 4, 12 + WINS.length * (COL_W + 2))))}`)
+
+  const active = dashData?.active ?? []
+  for (const d of active) {
+    if (used >= budget - 3) break
+    const cells = WINS.map(w => {
+      const wd = d.windows?.find(x => x.window === w)
+      if (!wd || (wd.pillars.input + wd.pillars.output) === 0) return padStart(dim('—'), COL_W)
+      const cas = cascadeFrom(wd.pillars)
+      if (!cas) return padStart(dim('—'), COL_W)
+      return padStart(gold(fmtY(cas.yield)), COL_W)
+    })
+    emit(`    ${padEnd(cyan(d.platform), 12)}  ${cells.join('  ')}`)
+  }
+  if (active.length === 0) {
+    emit(`  ${dim('  no platforms with data — press [R] to refresh')}`)
+  }
+  emit()
+  emit(`  ${dim('[Enter]')} confirm + submit all platforms   ${dim('[Esc]')} cancel`)
 }
 
 // ── DEBUG: render a tab once (no TTY/alt-screen) + audit each line's visible
@@ -1150,6 +1207,8 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
   let codeBuf      = ''        // [6] Connect tab in-place code field buffer
   let connectMsg   = ''        // [6] Connect last-action message (signed in / invalid code)
   let submitMsg    = ''        // [S] in-place submit result, shown in the read-tab footer
+  let submitPreview = false    // FIX I1: [S] opens a preview grid before sending (see→confirm→send)
+  let boardYouOnly = false     // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
@@ -1162,6 +1221,15 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
     const readFooter = (hintLine) => submitMsg
       ? [`  ${hr()}`, hintLine, `  ${submitMsg}`]
       : [`  ${hr()}`, hintLine]
+
+    // FIX I1: submit preview is a focused overlay — renders INSTEAD of the tab
+    // content, with its own footer. [Enter] sends, [Esc] cancels.
+    if (submitPreview) {
+      renderSubmitPreview(dashData, loadIdentity())
+      setFooter([`  ${hr()}`, `  ${dim('[Enter]')} submit all platforms   ${dim('[Esc]')} cancel   ${dim('[Q]')} quit`])
+      flushScreen()
+      return
+    }
 
     if (activeTab === 0) {                       // Dashboard
       if (!dashData) {
@@ -1188,9 +1256,14 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       if (!boardData) {
         writeln(`\n  ${dim(`loading board (${boardWindow})…`)}`)
       } else {
-        renderBoard(boardData, boardWindow)
+        // FIX I2: hybrid board model — global board + your row highlighted, [Y]
+        // toggles "just me" (your placements only). Pass the signed-in codename so
+        // renderBoard can highlight/filter.
+        const id = loadIdentity()
+        renderBoard(boardData, boardWindow, boardYouOnly ? id?.codename : null, id?.codename ?? null)
       }
-      setFooter(readFooter(`${hint}   ${dim('[W]')} window${submitHint}`))
+      const youHint = isSignedIn(loadIdentity()) ? `   ${dim('[Y]')} ${boardYouOnly ? 'all' : 'just me'}` : ''
+      setFooter(readFooter(`${hint}   ${dim('[W]')} window${youHint}${submitHint}`))
     } else if (activeTab === 4) {                // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
       setFooter(readFooter(`${hint}${submitHint}`))
@@ -1325,6 +1398,52 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
         return  // swallow any other key while focused (never falls through to global hotkeys)
       }
 
+      // FIX I1: submit preview is a focused overlay (like Connect). [Enter] sends
+      // all platforms, [Esc] cancels. Intercepts keys BEFORE the tab/ESC handlers.
+      if (submitPreview) {
+        if (key === '\r' || key === '\n') {           // [Enter] → confirm + submit all platforms
+          submitPreview = false
+          submitMsg = dim('submitting…')
+          await redraw()
+          const id = loadIdentity()
+          if (!isSignedIn(id)) {
+            submitMsg = `${red('✗')} sign in to submit`
+            activeTab = 5
+            await redraw(); return
+          }
+          // FIX I1: submit every active platform (data already loaded for the Dashboard).
+          // Each platform is a separate submit_verified call → its own (platform, window) slot.
+          const platforms = (dashData?.active ?? []).map(d => d.platform)
+          let totalVerified = 0, totalReceived = 0, hadFail = false
+          for (const p of platforms) {
+            try {
+              const out = await callTool('submit_verified', { platform: p })
+              const ws = out.windows || []
+              const received = ws.filter(w => w.status === 'received')
+              const verified = received.filter(w => w.verification_tier === 'verified')
+              totalReceived += received.length
+              totalVerified += verified.length
+              if (received.length > 0 && verified.length < received.length) hadFail = true
+            } catch { hadFail = true }
+          }
+          if (totalReceived && !hadFail && totalVerified === totalReceived) {
+            submitMsg = `${green('✓')} submitted · ${totalVerified} window${totalVerified > 1 ? 's' : ''} across ${platforms.length} platform${platforms.length > 1 ? 's' : ''} · verified`
+          } else if (hadFail && totalReceived) {
+            submitMsg = `${red('✗')} device not verified — sign in again ([C])`
+          } else if (totalReceived === 0) {
+            submitMsg = `${red('✗')} nothing to submit — no windows with data`
+          } else {
+            submitMsg = `${red('✗')} submit failed`
+          }
+          await redraw(); return
+        }
+        if (key === '\x1b') {                         // [Esc] → cancel
+          submitPreview = false
+          await redraw(); return
+        }
+        return  // swallow all other keys while the preview is open
+      }
+
       // ESC → go back to Dashboard from any tab
       if (key === '\x1b' && activeTab !== 0) {
         activeTab = 0
@@ -1398,9 +1517,10 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       }
 
       if (k === 's' && activeTab !== 5) {
-        // submit IN-PLACE — sign + POST the verified window via the existing core,
-        // show the result in the footer, stay in the alt screen (no exit-to-CLI).
-        // (On the Connect tab, 's' is a code char handled by the focused field above.)
+        // FIX I1/E: [S] opens a submit PREVIEW (see→confirm→send) instead of firing
+        // blind. The preview shows a platform × window grid of what will publish;
+        // [Enter] sends all platforms, [Esc] cancels. (On the Connect tab, 's' is a
+        // code char handled by the focused field above.)
         const id = loadIdentity()
         if (!isSignedIn(id)) {                     // not signed in → open Connect, never error
           activeTab = 5
@@ -1408,33 +1528,17 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
           await redraw()
           return
         }
-        submitMsg = dim('submitting…')
-        await redraw()
-        try {
-          const out = await callTool('submit_verified', { platform })
-          const ws = out.windows || []
-          const received = ws.filter(w => w.status === 'received')
-          const verified = received.filter(w => w.verification_tier === 'verified')
-          if (out.status === 'not_enrolled') {
-            submitMsg = `${red('✗')} sign in to submit`
-          } else if (received.length && verified.length === received.length) {
-            // FIX B: green ✓ ONLY when every received window is `verified` (ranks).
-            submitMsg = `${green('✓')} submitted · ${verified.length} window${verified.length > 1 ? 's' : ''} · verified`
-          } else if (received.length) {
-            // FIX B: a received window whose tier !== 'verified' (unverified OR flagged)
-            // is a SILENT FAILURE — the server accepts it (status:'received', HTTP 202)
-            // but never ranks it (audit-row only). Show a visible fail + route to re-sign-in
-            // instead of the old fake green ✓ that keyed on status==='received' alone.
-            submitMsg = `${red('✗')} device not verified — sign in again ([C])`
-          } else {
-            const why = ws[0]?.reason || out.status || 'failed'
-            submitMsg = `${red('✗')} submit: ${why}`
-          }
-        } catch (e) {
-          submitMsg = `${red('✗')} submit: ${e.message}`
-        }
+        submitPreview = true
+        submitMsg = ''
         await redraw()
         return
+      }
+
+      // FIX I2: [Y] toggles the Board between global+highlighted and "just me"
+      // (hybrid model — owner decision 2026-06-26). Only when signed in.
+      if (k === 'y' && activeTab === 3 && isSignedIn(loadIdentity())) {
+        boardYouOnly = !boardYouOnly
+        await redraw(); return
       }
 
       if (k === 'w' && activeTab === 3) {        // Board tab (now index 3)
