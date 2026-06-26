@@ -6,7 +6,7 @@ import { narrate } from './narrate.mjs'
 import { callTool } from './tools.mjs'
 import { tokenpull, tokenpullCodex, tokenpullAny, EXCLUDE_TOOLING, codexAdapter } from './tokenpull.mjs'
 import { ADAPTERS, ALL_PLATFORMS } from './adapters.mjs'
-import { generateIdentity } from './keystore.mjs'
+import { generateIdentity, bindingForFreshIdentity, clearIdentity } from './keystore.mjs'
 import { verifyPayload } from './sign.mjs'
 import { isSignedIn, isCodeChar } from './connect.mjs'
 import assert from 'node:assert'
@@ -451,3 +451,37 @@ assert.equal(isSignedIn({ codename: 'x', operator_id: 'o' }), true, 'isSignedIn(
 for (const ch of ['A', 'z', '0', '9', '-']) assert.equal(isCodeChar(ch), true, `isCodeChar(${ch})`)
 for (const ch of [' ', '\r', '\x1b', 'ab', '', '_', '/']) assert.equal(isCodeChar(ch), false, `!isCodeChar(${JSON.stringify(ch)})`)
 console.log('✓ connect: isSignedIn + isCodeChar')
+
+// --- FIX A-REAL: keystore binding invalidation when device_id changes (no Frankenstein identity) ---
+// The root cause of "stuck signed in / unverified / data won't go": a re-enroll after a
+// revoke used to PRESERVE the old codename/operator_id onto a NEW device_id → the server
+// sees a mismatch → tags submissions `unverified` → never ranks, yet isSignedIn reads the
+// local codename as present. bindingForFreshIdentity is the pure decision: drop the binding
+// when device_id changes, keep it only when the same device_id is reused. (Pure — no fs, so
+// the owner's live ~/.sigrank-mcp/identity.json is never touched by this test.)
+const oldDevice = generateIdentity({ device_id: 'dev-old-uuid' })
+oldDevice.codename = 'signal-old'; oldDevice.operator_id = 'op-old'; oldDevice.enrolled_at = '2026-01-01T00:00:00Z'
+// new device_id → binding DROPPED (the Frankenstein case)
+const newFresh = generateIdentity({ device_id: 'dev-new-uuid' })
+const dropped = bindingForFreshIdentity(oldDevice, newFresh)
+assert.strictEqual(dropped.codename, null, 'A-REAL: new device_id → old codename DROPPED (no Frankenstein)')
+assert.strictEqual(dropped.operator_id, null, 'A-REAL: new device_id → old operator_id DROPPED')
+assert.strictEqual(dropped.enrolled_at, null, 'A-REAL: new device_id → old enrolled_at DROPPED')
+// same device_id reused → binding KEPT (a key rotation on the same device keeps its operator)
+const sameFresh = generateIdentity({ device_id: 'dev-old-uuid' })
+const kept = bindingForFreshIdentity(oldDevice, sameFresh)
+assert.strictEqual(kept.codename, 'signal-old', 'A-REAL: same device_id → codename preserved')
+assert.strictEqual(kept.operator_id, 'op-old', 'A-REAL: same device_id → operator_id preserved')
+assert.strictEqual(kept.enrolled_at, '2026-01-01T00:00:00Z', 'A-REAL: same device_id → enrolled_at preserved')
+// no existing record → null binding (fresh device, never enrolled)
+const noExisting = bindingForFreshIdentity(null, newFresh)
+assert.strictEqual(noExisting.codename, null, 'A-REAL: no existing record → null binding')
+assert.strictEqual(noExisting.operator_id, null, 'A-REAL: no existing record → null operator')
+// existing with no device_id → treated as a different device (binding dropped, no carryover)
+const partialNoId = { codename: 'stale', operator_id: 'op-stale', enrolled_at: '2025-12-01' }
+const fromPartial = bindingForFreshIdentity(partialNoId, newFresh)
+assert.strictEqual(fromPartial.codename, null, 'A-REAL: existing w/o device_id → stale codename NOT carried onto new device')
+assert.strictEqual(fromPartial.operator_id, null, 'A-REAL: existing w/o device_id → stale operator NOT carried')
+// clearIdentity is exported (the Connect [X] sign-out escape hatch)
+assert.strictEqual(typeof clearIdentity, 'function', 'clearIdentity is exported (FIX A sign-out)')
+console.log('✓ A-REAL: binding invalidation on device_id change · clearIdentity exported')

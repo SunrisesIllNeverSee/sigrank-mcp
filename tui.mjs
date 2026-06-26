@@ -14,7 +14,7 @@
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { isSignedIn, isCodeChar } from './connect.mjs'
-import { loadIdentity } from './keystore.mjs'
+import { loadIdentity, clearIdentity } from './keystore.mjs'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import os from 'os'
@@ -65,7 +65,9 @@ const ERLINE     = `${ESC}2K`
 const GOTO       = (r, col = 1) => `${ESC}${r};${col}H`   // absolute cursor position
 
 const W      = () => process.stdout.columns || 100
-const H      = () => process.stdout.rows    || 40
+// FIX 0b: safe default 24 (not 40) when rows is undefined (non-TTY / IDE terminals).
+// A 40-row assumption into a 24-row window scrolls the alt-screen → footer smears off.
+const H      = () => process.stdout.rows    || 24
 
 // ── Screen buffer: collect lines, then paint only what fits ─────────────
 // Render functions call write/writeln as before; the buffer captures them.
@@ -86,11 +88,13 @@ function flushScreen() {
   _footerBuf = null
   const h = H()
   const w = W()
-  // Footer FLOWS right after content (not pinned to the terminal bottom). This
-  // avoids both the tall-terminal gap and the short-terminal cutoff the pinned
-  // layout caused. Content + footer are clamped together to the terminal height
-  // so a frame never scrolls the alt-screen (which would smear old rows).
-  const frame = [...lines, ...footer]
+  // FIX 0b: footer is SACROSANCT. Clamp CONTENT to h - footer.length first, then
+  // always append every footer line. The footer must NEVER be the thing dropped
+  // (it was — footer painted last, clamp cut the tail = footer first → lost hints
+  // + lost lower cascade rows, together, because they're the same tail of the frame).
+  const contentRows = Math.max(0, h - footer.length)
+  const content = lines.slice(0, contentRows)
+  const frame = [...content, ...footer]
   const maxRows = Math.min(frame.length, h)
   let out = ''
   for (let i = 0; i < maxRows; i++) {
@@ -293,31 +297,49 @@ async function loadDashboardData() {
     new Promise(r => setTimeout(() => r(null), 5000)),
   ])
 
-  // All platforms scan in parallel. tokenpullAny handles each platform's
-  // canonical conversion (Codex ioRatio, reasoning→output, etc.) internally.
-  const [allResults, tdPillars] = await Promise.all([
-    Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
+  // FIX 0: progressive load — render the primary platform (claude) FAST first,
+  // then fill the other 13 as they resolve. The caller passes an onFirst callback
+  // that fires when claude is ready so the user sees their cascade within ~1 read,
+  // not after a 14-platform barrier.
+  const [claudeResult] = await Promise.all([
+    tokenpullAny('claude').catch(() => null),
     Promise.resolve(tokenDashPillars()),
   ])
+
+  const active = []
+  if (claudeResult) {
+    const all = claudeResult.windows?.find(w => w.window === 'all')
+    if (all && (all.pillars.input ?? 0) + (all.pillars.output ?? 0) > 0) active.push(claudeResult)
+  }
 
   const verifierMap = {}
   for (const platform of ALL_PLATFORMS) {
     verifierMap[platform] = { cc: ccusagePillars(platform), ts: tokscalePillars(platform) }
   }
 
-  const active = []
-  for (let i = 0; i < ALL_PLATFORMS.length; i++) {
-    const r = allResults[i]
+  const boardData = await boardPromise
+  return { active, verifierMap, tdPillars: tokenDashPillars(), boardData, _loading: true, _remaining: ALL_PLATFORMS.slice(1) }
+}
+
+/** FIX 0: fill the remaining platforms after the primary render. Mutates dashData.active. */
+async function fillDashboardRest(dashData) {
+  if (!dashData?._remaining) return false
+  const { tokenpullAny } = await import('./tokenpull.mjs')
+  const rest = await Promise.allSettled(dashData._remaining.map(p => tokenpullAny(p)))
+  for (const r of rest) {
     if (r.status !== 'fulfilled') continue
     const d = r.value
     const all = d.windows?.find(w => w.window === 'all')
     if (!all) continue
     if ((all.pillars.input ?? 0) + (all.pillars.output ?? 0) === 0) continue
-    active.push(d)
+    if (!dashData.active.find(a => a.platform === d.platform)) dashData.active.push(d)
   }
-
-  const boardData = await boardPromise
-  return { active, verifierMap, tdPillars, boardData }
+  // sort active by ALL_PLATFORMS order for stable display
+  const order = ['claude','codex','amp','gemini','kimi','qwen','goose','kilo','hermes','droid','codebuff','copilot','openclaw','pi']
+  dashData.active.sort((a, b) => order.indexOf(a.platform) - order.indexOf(b.platform))
+  dashData._loading = false
+  dashData._remaining = null
+  return true
 }
 
 async function loadCompareData(platform = 'claude') {
@@ -397,27 +419,38 @@ function tokenBar(p, width = 40) {
 
 // Generalized cascade-metric sparkline across windows (7d→30d→90d→all).
 // pick: (cas) => number · fmt: (v) => string. Used by the Trends tab for every metric.
+// FIX G1: window headers are rendered once at the top of each metric block (mirror
+// renderCompare's column layout). metricSpark/yieldSpark now return sparkline + RIGHT-
+// ALIGNED values in fixed COL_W columns — NO per-value `w:` prefix (the header row
+// carries the window labels). Null windows render a dim `—` (columns stay aligned).
+const TREND_COL_W = 10
+const TREND_WINS = ['7d', '30d', '90d', 'all']
+
+function trendHeader() {
+  return padEnd(dim(''), 12) + TREND_WINS.map(w => padStart(dim(w), TREND_COL_W)).join('  ')
+}
+
 function metricSpark(d, pick, fmt) {
-  const wins = ['7d', '30d', '90d', 'all']
-  const vals = wins.map(w => {
+  const vals = TREND_WINS.map(w => {
     const wd = d.windows?.find(x => x.window === w)
     if (!wd) return null
     const cas = cascadeFrom(wd.pillars)
     return cas ? pick(cas, wd.pillars) : null   // pick gets (cascade, pillars)
   })
-  return sparkline(vals) + `  ${wins.map((w, i) => vals[i] != null ? dim(w + ':') + fmt(vals[i]) : '').filter(Boolean).join('  ')}`
+  const cols = vals.map(v => v != null ? padStart(fmt(v), TREND_COL_W) : padStart(dim('—'), TREND_COL_W))
+  return sparkline(vals) + `  ${cols.join('  ')}`
 }
 
 // Yield sparkline across windows
 function yieldSpark(d) {
-  const wins = ['7d', '30d', '90d', 'all']
-  const vals = wins.map(w => {
+  const vals = TREND_WINS.map(w => {
     const wd = d.windows?.find(x => x.window === w)
     if (!wd) return null
     const cas = cascadeFrom(wd.pillars)
     return cas?.yield ?? null
   })
-  return sparkline(vals) + `  ${wins.map((w, i) => vals[i] != null ? dim(w + ':') + fmtY(vals[i]) : '').filter(Boolean).join('  ')}`
+  const cols = vals.map(v => v != null ? padStart(fmtY(v), TREND_COL_W) : padStart(dim('—'), TREND_COL_W))
+  return sparkline(vals) + `  ${cols.join('  ')}`
 }
 
 // ── TAB 1: DASHBOARD ─────────────────────────────────────────────────────────
@@ -475,7 +508,7 @@ function renderDashboard(data, status = '') {
   emit(`  ${dim('·'.repeat(Math.max(0, Math.min(w - 4, narrow ? 96 : 114))))}`)
 
   if (active.length === 0) {
-    emit(`  ${dim('  reading token logs… (takes ~4s on first load · press [R] to refresh)')}`)
+    emit(`  ${dim('  reading token logs… (14 platforms, ~5s · press [R] to refresh)')}`)
   }
 
   // Calculate how many cascade rows we can fit — reserve space for lower sections.
@@ -615,7 +648,7 @@ function renderDashboard(data, status = '') {
 //   You      — your own trajectory (+ rank trend, "calculating" until wired)
 //   Platform — per-platform (claude / codex / combined)
 //   Field    — board-wide trend (calculating until window-history materializes)
-// Switch sub-tabs with [T] (cycles) or [1/2/3]. Data: the same `active` the Dashboard loads.
+// Switch sub-tabs with [T] (cycles You · Platform · Field). Data: the same `active` the Dashboard loads.
 const TREND_SUBTABS = ['You', 'Platform', 'Field']
 // All leaderboard metrics. Most derive from the per-window cascade (pick takes the
 // cascade obj + its pillars); §IGNA (proprietary composite) and $/1M (needs cost data)
@@ -630,7 +663,7 @@ const TREND_METRICS = [
   { label: '10xDEV',   pick: (c) => c.dev10x,    fmt: (v) => v.toFixed(2) },
   { label: 'Eff',      pick: (c) => c.yield != null ? c.yield / AA_EFF_BASELINE : null, fmt: (v) => v.toFixed(1) + '×' },
   { label: '§IGNA',    pick: () => null, fmt: () => '—', stub: 'composite calibrating (needs user volume)' },
-  { label: 'Op Ratio', pick: (c, p) => (p.input ?? 0) > 0 ? (p.cacheRead ?? 0) / p.input : null, fmt: (v) => `${v.toFixed(0)}:1` },
+  { label: 'Op Ratio', pick: (c, p) => (p.input ?? 0) > 0 ? { cacheRead: p.cacheRead ?? 0, input: p.input ?? 0, output: p.output ?? 0 } : null, fmt: (v) => `${fmtTok(v.cacheRead)}:${fmtTok(v.input)}:${fmtTok(v.output)}` },
   { label: '$/1M',     pick: () => null, fmt: () => '—', stub: 'cost data wires post-ingest' },
 ]
 function renderTrends(data, subIdx = 0) {
@@ -656,6 +689,9 @@ function renderTrends(data, subIdx = 0) {
     for (const d of rows) {
       if (used >= budget - 2) break
       emit(`  ${bold(sub === 'You' ? 'Your trajectory' : cyan(d.platform))}`)
+      // FIX G1: window column headers (mirror renderCompare) — one header row, then
+      // values in fixed-width columns below. No per-value `w:` prefix.
+      emit(`    ${trendHeader()}`)
       for (const m of TREND_METRICS) {
         if (used >= budget - 2) break
         if (m.stub) {
@@ -672,9 +708,6 @@ function renderTrends(data, subIdx = 0) {
     emit(`  ${dim('  Field-wide trends — calculating…')}`)
     emit(`  ${dim('  (needs per-window board history; materializes once live ingest lands)')}`)
   }
-
-  emit()
-  emit(`  ${dim('[T]')} switch view (You · Platform · Field)`)
 }
 
 // ── TAB 3: COMPARE ───────────────────────────────────────────────────────────
@@ -876,7 +909,8 @@ function renderConnect(id, codeBuf = '', msg = '') {
     writeln()
     writeln(`  ${dim('Press')} ${bold('[S]')} ${dim('from any read tab to submit your runs to the board.')}`)
     writeln()
-    writeln(`  ${dim('Switch device? Paste a new connect code, then')} ${bold('[Enter]')}${dim(':')}`)
+    writeln(`  ${dim('Switch device? Paste a new connect code, then')} ${bold('[Enter]')}${dim('.')}`)
+    writeln(`  ${dim('Signed in on the wrong device, or revoked on the site?')} ${bold('[X]')} ${dim('signs out — next enroll provisions a fresh device.')}`)
   } else {
     writeln(`  ${bold('Log in to submit to board')}`)
     writeln(`  ${hr()}`)
@@ -1073,7 +1107,11 @@ function showSplash() {
 }
 
 // ── MAIN TUI LOOP ─────────────────────────────────────────────────────────────
-export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
+export async function runTui({ platform: initPlatform = 'claude', window: win = '7d' } = {}) {
+  // FIX J: platform is mutable — [P] cycles it on Compare + Watch tabs. Was a const
+  // param (permanently locked to 'claude'); now a let so the user can switch + [S]
+  // submits the selected platform (needed for Phase 4 multi-platform submit).
+  let platform = initPlatform
   // Debug render mode — non-interactive, dumps a tab + width audit, then exits.
   const ri = process.argv.indexOf('--render')
   if (ri !== -1) {
@@ -1118,7 +1156,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
     startBuffer()
     renderTabBar(activeTab)
 
-    const hint = `  ${dim('← → or 1-5')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
+    const hint = `  ${dim('← → or 1-6')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
     const submitHint = `   ${dim('[S]')} submit to board · ${dim('[C]')} sign in`
     // Read-tab footer: hr + hint, plus the in-place submit result line when present.
     const readFooter = (hintLine) => submitMsg
@@ -1157,8 +1195,10 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh)
       setFooter(readFooter(`${hint}${submitHint}`))
     } else if (activeTab === 5) {                // Connect
-      renderConnect(loadIdentity(), codeBuf, connectMsg)
-      setFooter([`  ${hr()}`, `  ${dim('[Enter]')} sign in   ${dim('[Esc]')} clear/back   ${dim('← →')} tabs   ${dim('[Q]')} quit`])
+      const connectId = loadIdentity()
+      renderConnect(connectId, codeBuf, connectMsg)
+      const signOutHint = isSignedIn(connectId) ? `   ${dim('[X]')} sign out` : ''
+      setFooter([`  ${hr()}`, `  ${dim('[Enter]')} sign in   ${dim('[Esc]')} clear/back${signOutHint}   ${dim('← →')} tabs   ${dim('[Q]')} quit`])
     }
     flushScreen()
   }
@@ -1166,19 +1206,30 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
   // ── Initial data load
   const loadAll = async () => {
     status = 'loading…'
-    ;[dashData, compareData, boardData] = await Promise.all([
-      loadDashboardData().catch(e => { status = `dashboard error: ${e.message}`; return null }),
+    // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
+    // the other 13 platforms in the background + redraw. The user sees their cascade
+    // within ~1 read instead of a 7s blank "loading dashboard…".
+    dashData = await loadDashboardData().catch(e => { status = `dashboard error: ${e.message}`; return null })
+    status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+    await redraw()
+    // Kick off the rest + compare/board in parallel
+    ;[compareData, boardData] = await Promise.all([
       loadCompareData(platform).catch(() => null),
       loadBoardData(boardWindow).catch(() => null),
     ])
-    status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
-    await redraw()
+    if (dashData?._remaining) {
+      await fillDashboardRest(dashData)
+      await redraw()
+    }
   }
 
   // Always restore terminal on unexpected exit
   const cleanup = () => { write(SHOW); write(EXIT_ALT); process.exit(0) }
   process.once('SIGINT',  cleanup)
   process.once('SIGTERM', cleanup)
+
+  // FIX 0b: re-render on terminal resize so the frame refits the new dimensions.
+  process.stdout.on('resize', () => { redraw().catch(() => {}) })
 
   // Soft-landing: if not signed in, open on the Connect tab (a prompt, not a gate —
   // the user can still tab away to read Board/Dashboard while signed out).
@@ -1255,6 +1306,16 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         if (key === '\x1b[C') { activeTab = Math.min(5, activeTab + 1); await redraw(); return }  // → tab
         if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); await redraw(); return }  // ← tab
         if (key === '\x7f' || key === '\b') { codeBuf = codeBuf.slice(0, -1); await redraw(); return }  // backspace
+        // [X] sign out / reset — only when signed in AND the code field is empty (so an
+        // 'x' typed mid-code still feeds the buffer). Drops the stale local credential so
+        // a server-revoked device stops reading as "signed in" + the next enroll provisions
+        // a fresh device_id (escapes the Frankenstein-identity / 409-re-enroll deadlock).
+        if (k === 'x' && !codeBuf && isSignedIn(loadIdentity())) {
+          clearIdentity()
+          codeBuf = ''
+          connectMsg = `${green('✓')} signed out — paste a new code to sign in`
+          await redraw(); return
+        }
         // A typed code char (len 1) or a pasted code (one multi-char chunk). Exclude any
         // escape sequence (↑/↓/etc.) so stray control bytes never pollute the buffer.
         if (!key.startsWith('\x1b') && (key.length > 1 || isCodeChar(key))) {
@@ -1271,7 +1332,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         return
       }
 
-      // tab switching (5 tabs: 0=Dashboard 1=Trends 2=Compare 3=Board 4=Watch)
+      // tab switching (6 tabs: 0=Dashboard 1=Trends 2=Compare 3=Board 4=Watch 5=Connect)
       let switched = false
       if (key === '\x1b[C') { activeTab = Math.min(5, activeTab + 1); switched = true }
       if (key === '\x1b[D') { activeTab = Math.max(0, activeTab - 1); switched = true }
@@ -1289,6 +1350,35 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
       // Watch tab: [+]/[-] tune the refresh interval (5–600s), [Enter] launches the watcher
       if (activeTab === 4 && (k === '+' || k === '=' )) { watchRefresh = Math.min(600, watchRefresh + 5); await redraw(); return }
       if (activeTab === 4 && (k === '-' || k === '_')) { watchRefresh = Math.max(5, watchRefresh - 5); await redraw(); return }
+
+      // FIX J: [P] cycles platform on Compare + Watch tabs (was a dead hinted key).
+      // Compare reloads compareData for the new platform; Watch just re-renders.
+      const CYCLE_PLATFORMS = ['claude','codex','amp','gemini','kimi','qwen','goose','kilo','hermes','droid','codebuff','copilot','openclaw','pi']
+      if (k === 'p' && (activeTab === 2 || activeTab === 4)) {
+        const cur = activeTab === 2 ? platform : watchPlatform
+        const idx = CYCLE_PLATFORMS.indexOf(cur)
+        const next = CYCLE_PLATFORMS[(idx + 1) % CYCLE_PLATFORMS.length]
+        if (activeTab === 2) {
+          platform = next
+          status = `loading ${platform}…`
+          await redraw()
+          compareData = await loadCompareData(platform).catch(() => null)
+          status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+        } else {
+          watchPlatform = next
+        }
+        await redraw(); return
+      }
+
+      // FIX J: [W] cycles window on Watch tab (was a dead hinted key). Board tab's
+      // [W] (activeTab === 3) is handled below — it reloads boardData.
+      if (k === 'w' && activeTab === 4) {
+        const windows = ['7d', '30d', '90d', 'all']
+        const idx = windows.indexOf(watchWindow)
+        watchWindow = windows[(idx + 1) % windows.length]
+        await redraw(); return
+      }
+
       if (activeTab === 4 && (key === '\r' || key === '\n')) {
         // Launch the live watcher in its own window, passing the chosen refresh interval.
         try {
@@ -1323,12 +1413,19 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
         try {
           const out = await callTool('submit_verified', { platform })
           const ws = out.windows || []
-          const ok = ws.filter(w => w.status === 'received')
+          const received = ws.filter(w => w.status === 'received')
+          const verified = received.filter(w => w.verification_tier === 'verified')
           if (out.status === 'not_enrolled') {
             submitMsg = `${red('✗')} sign in to submit`
-          } else if (ok.length) {
-            const tier = ok[0].verification_tier || '—'
-            submitMsg = `${green('✓')} submitted · ${ok.length} window${ok.length > 1 ? 's' : ''} · tier=${tier}`
+          } else if (received.length && verified.length === received.length) {
+            // FIX B: green ✓ ONLY when every received window is `verified` (ranks).
+            submitMsg = `${green('✓')} submitted · ${verified.length} window${verified.length > 1 ? 's' : ''} · verified`
+          } else if (received.length) {
+            // FIX B: a received window whose tier !== 'verified' (unverified OR flagged)
+            // is a SILENT FAILURE — the server accepts it (status:'received', HTTP 202)
+            // but never ranks it (audit-row only). Show a visible fail + route to re-sign-in
+            // instead of the old fake green ✓ that keyed on status==='received' alone.
+            submitMsg = `${red('✗')} device not verified — sign in again ([C])`
           } else {
             const why = ws[0]?.reason || out.status || 'failed'
             submitMsg = `${red('✗')} submit: ${why}`

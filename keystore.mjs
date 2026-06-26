@@ -12,7 +12,7 @@
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync, unlinkSync } from 'node:fs'
 import { generateKeyPairSync, randomUUID } from 'node:crypto'
 
 const DIR = join(homedir(), '.sigrank-mcp')
@@ -80,6 +80,30 @@ export function generateIdentity({ device_id } = {}) {
 }
 
 /**
+ * Decide the binding (codename/operator_id/enrolled_at) to carry onto a freshly
+ * generated identity. The binding is tied to device_id: if device_id is CHANGING
+ * (a new device, e.g. after a reset/re-enroll where the old file was deleted), the
+ * old binding is INVALIDATED — never preserve a stale codename/operator onto a
+ * different device. That mismatch is the "Frankenstein identity" root cause: a new
+ * device_id + an old codename → the server sees a mismatch → tags submissions
+ * `unverified` → never ranks, yet `isSignedIn` reads the local codename as present.
+ * Only reuse the binding when the SAME device_id is being kept. Pure — exposed for
+ * tests (no fs, so the owner's live identity is never at risk during a test run).
+ */
+export function bindingForFreshIdentity(existing, fresh) {
+  if (!existing) return { codename: null, operator_id: null, enrolled_at: null }
+  if (existing.device_id && fresh.device_id === existing.device_id) {
+    return {
+      codename: existing.codename ?? null,
+      operator_id: existing.operator_id ?? null,
+      enrolled_at: existing.enrolled_at ?? null,
+    }
+  }
+  // device_id changed → the old binding belongs to a different device; drop it.
+  return { codename: null, operator_id: null, enrolled_at: null }
+}
+
+/**
  * Load the existing identity, or generate + persist a fresh one. Idempotent: a
  * complete existing identity is returned untouched (never rotates a live key).
  */
@@ -88,21 +112,31 @@ export function ensureIdentity() {
   if (existing?.private_key_pkcs8_b64 && existing?.public_key && existing?.device_id) {
     return existing
   }
-  // Preserve any partial fields (e.g. a device_id) across a regeneration.
+  // Regeneration path: a partial/corrupt record. The binding is tied to device_id —
+  // if a new device_id is generated, the old codename/operator MUST NOT carry over
+  // (bindingForFreshIdentity drops them). Only a reused device_id keeps its binding.
   const fresh = generateIdentity({ device_id: existing?.device_id })
-  if (existing) {
-    fresh.codename = existing.codename ?? null
-    fresh.operator_id = existing.operator_id ?? null
-    fresh.enrolled_at = existing.enrolled_at ?? null
-  }
+  const binding = bindingForFreshIdentity(existing, fresh)
+  fresh.codename = binding.codename
+  fresh.operator_id = binding.operator_id
+  fresh.enrolled_at = binding.enrolled_at
   return persistIdentity(fresh)
 }
 
 /** Record a successful enrollment (codename/operator_id + enrolled_at) into the keystore. */
 export function recordEnrollment({ codename, operator_id }) {
   const id = ensureIdentity()
-  id.codename = codename ?? id.codename
-  id.operator_id = operator_id ?? id.operator_id
+  // OVERWRITE from the server's enroll response — a new enroll is a new binding, full
+  // stop. Never `??`-preserve a stale codename/operator onto this device (the other
+  // half of the Frankenstein bug: a re-enroll used to keep the old codename when the
+  // new one was absent). A 201 enrolled always carries both.
+  id.codename = codename ?? null
+  id.operator_id = operator_id ?? null
   id.enrolled_at = new Date().toISOString()
   return persistIdentity(id)
+}
+
+/** Clear the local identity (sign out). Next enroll provisions a fresh device_id. */
+export function clearIdentity() {
+  try { if (existsSync(PATH)) unlinkSync(PATH) } catch { /* best-effort */ }
 }
