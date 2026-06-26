@@ -71,7 +71,10 @@ export function buildPayload(windowKey, pillars, messages, identity, platform, o
       prompt_complexity: round(clamp(sessionDepth, 0, 100), 2),
       cross_thread_score: clamp(Math.round(cacheRead / Math.max(cacheCreate, 1)), 0, 100000),
       session_depth_avg: round(Math.max(0, sessionDepth), 2),
-      token_throughput: tokensTotal,
+      // M.05 token_throughput muted 2026-06-26 — word-era metric the web already
+      // mutes (RS01 tt→0) + strips. Send null (RPC p_token_throughput is nullable
+      // DEFAULT NULL). raw_telemetry.tokens_total still carries the raw count.
+      token_throughput: null,
     },
     background_metrics: {
       message_volume: msgs,
