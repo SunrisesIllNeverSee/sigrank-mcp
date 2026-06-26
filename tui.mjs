@@ -1119,7 +1119,7 @@ export async function runTui({ platform = 'claude', window: win = '7d' } = {}) {
     renderTabBar(activeTab)
 
     const hint = `  ${dim('← → or 1-5')} switch tabs   ${dim('[R]')} refresh   ${dim('[Q]')} quit`
-    const submitHint = `   ${dim('[S]')} submit · ${dim('signalaf.com/login')} to sign in`
+    const submitHint = `   ${dim('[S]')} submit to board · ${dim('[C]')} sign in`
     // Read-tab footer: hr + hint, plus the in-place submit result line when present.
     const readFooter = (hintLine) => submitMsg
       ? [`  ${hr()}`, hintLine, `  ${submitMsg}`]
