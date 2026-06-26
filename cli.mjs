@@ -388,7 +388,7 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
   writeln()
 
   // submit hint
-  writeln(`  ${dim('to publish:')}  ${cyan('npx sigrank-mcp board')}  ${dim('after')}  ${cyan('tokenpull_submit')}  ${dim('via your MCP client')}`)
+  writeln(`  ${dim('to publish:')}  ${cyan('npx sigrank-mcp submit')}  ${dim('(sign in first:')}  ${cyan('npx sigrank-mcp enroll')}${dim(' — get a code at signalaf.com → Settings)')}`)
   writeln()
   write(SHOW_CURSOR)
 }
@@ -1202,6 +1202,8 @@ async function showHelp() {
   writeln(`    ${cyan('sigrank-mcp')}              unified dashboard: cascade + token pillars + board`)
   writeln()
   writeln(`  ${bold('Commands')}`)
+  writeln(`    ${cyan('enroll')}                   sign in: paste a connect code (get one at signalaf.com → Settings)`)
+  writeln(`    ${cyan('submit')}                   publish your verified runs to the board (sign in first)`)
   writeln(`    ${cyan('board')}                    live leaderboard (refreshes every 30s)`)
   writeln(`    ${cyan('board --window 7d')}        board for a specific window (7d, 30d, 90d, all)`)
   writeln(`    ${cyan('board --once')}             print once and exit`)
@@ -1220,9 +1222,10 @@ async function showHelp() {
   writeln(`    ${dim('--refresh')}   poll interval in seconds (default: 30)`)
   writeln(`    ${dim('--once')}      print once and exit (board only)`)
   writeln()
-  writeln(`  ${bold('MCP server mode')}`)
-  writeln(`    ${dim('sigrank-mcp')} in a piped/non-TTY context starts the MCP stdio server`)
-  writeln(`    ${dim('(Claude, Cursor, and other AI clients use this automatically)')}`)
+  writeln(`  ${bold('For AI clients (not typeable)')}`)
+  writeln(`    ${dim('In a piped/non-TTY context, sigrank-mcp is an MCP stdio server.')}`)
+  writeln(`    ${dim('AI clients (Claude, Cursor, …) call its tools automatically — these are')}`)
+  writeln(`    ${dim('NOT shell commands. Humans use the commands above.')}`)
   writeln()
   writeln(`  ${bold('Examples')}`)
   writeln(`    ${dim('sigrank-mcp')}                        # unified dashboard`)
@@ -1274,8 +1277,8 @@ async function runEnroll({ label } = {}) {
 
   if (out.status === 'enrolled') {
     writeln()
-    writeln(`  ${green('✓')} Enrolled as ${cyan(out.codename || '(operator)')}.`)
-    writeln(`  ${dim('Your runs now cascade to the board. Try ')}${bold('npx sigrank-mcp me')}${dim(' or ')}${bold('npx sigrank-mcp watch --submit')}${dim('.')}`)
+    writeln(`  ${green('✓')} Signed in as ${cyan(out.codename || '(operator)')}.`)
+    writeln(`  ${dim('Your runs now cascade to the board. Publish with ')}${bold('npx sigrank-mcp submit')}${dim(' (one-shot) or ')}${bold('npx sigrank-mcp watch --submit')}${dim(' (continuous).')}`)
     writeln(`  ${dim(`identity: ${keystorePath()}`)}`)
     return
   }

@@ -2,29 +2,23 @@
 /**
  * SigRank MCP server + CLI entry point.
  *
- * Default (no args, TTY):
- *   npx sigrank-mcp                 launches the full tabbed TUI
- *                                   tabs: Dashboard / Compare / Board / Watch
- *                                   keys: 1-4 or ← → switch · R refresh · Q quit
+ * The TUI is the whole app. Launch it and sign in inside it:
+ *   npx sigrank-mcp                 full tabbed TUI (Dashboard / Trends / Compare /
+ *                                   Board / Watch / Connect). Sign in on the Connect
+ *                                   tab (paste a connect code), then [S] submits.
  *
- * CLI commands:
- *   npx sigrank-mcp tui             same as default — explicit TUI launch
- *   npx sigrank-mcp board           live leaderboard (auto-refresh)
- *   npx sigrank-mcp me              your local cascade across 4 windows
- *   npx sigrank-mcp compare         source audit: tokenpull vs ccusage vs token-dash vs tokscale
- *   npx sigrank-mcp watch           RT tune meter, re-reads local logs
- *   npx sigrank-mcp --help          full command reference
+ * CLI shortcuts (optional — the TUI never needs them):
+ *   npx sigrank-mcp enroll          sign in: redeem a connect code from signalaf.com
+ *   npx sigrank-mcp submit          publish your verified runs to the board
+ *   npx sigrank-mcp board | me | compare | watch    read / publish helpers
+ *   npx sigrank-mcp --help          full reference
  *
- * MCP server mode — triggered when no args + non-TTY (AI client default):
- *   npx sigrank-mcp                 starts the MCP stdio server (piped mode)
- *
- * Tools exposed in MCP mode (see ./tools.mjs):
- *   rank_paste · get_leaderboard · get_operator · submit_paste
- *   tokenpull  · tokenpull_submit · rank_windows · watch_tokenpull
+ * For AI clients (NOT human commands): in a piped/non-TTY context this starts an MCP
+ * stdio server; AI clients call its tools automatically. See ./tools.mjs.
  *
  * Pure cascade math: ./cascade.mjs  |  narration card: ./narrate.mjs
- * Tool table + dispatcher: ./tools.mjs  |  Terminal UI: ./cli.mjs
- * Token-only — no transcript content, no auth.
+ * Tool table + dispatcher: ./tools.mjs  |  Terminal UI: ./cli.mjs + ./tui.mjs
+ * Token-only — no transcript content.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
