@@ -8,6 +8,7 @@ import { tokenpull, tokenpullCodex, tokenpullAny, EXCLUDE_TOOLING, codexAdapter 
 import { ADAPTERS, ALL_PLATFORMS } from './adapters.mjs'
 import { generateIdentity } from './keystore.mjs'
 import { verifyPayload } from './sign.mjs'
+import { isSignedIn, isCodeChar } from './connect.mjs'
 import assert from 'node:assert'
 
 const MOSES = '1251211 11296121 128196310 2555179769'
@@ -440,3 +441,13 @@ assert.strictEqual(notEnrolled.status, 'not_enrolled', 'unenrolled identity → 
 
 console.log('✓ enroll: posts identity (public key only) · hides private key · maps 201 enrolled + 410 code_invalid')
 console.log('✓ submit_verified: signs Schema 1.0 → POST /api/v1/snapshots · X-Agent-Signature · server-verifiable · plausibility-clean')
+
+// --- connect.mjs pure helpers (consolidation) ---
+assert.equal(isSignedIn(null), false, 'isSignedIn(null)')
+assert.equal(isSignedIn({}), false, 'isSignedIn({})')
+assert.equal(isSignedIn({ codename: 'x' }), false, 'isSignedIn needs operator_id too')
+assert.equal(isSignedIn({ operator_id: 'o' }), false, 'isSignedIn needs codename too')
+assert.equal(isSignedIn({ codename: 'x', operator_id: 'o' }), true, 'isSignedIn(full)')
+for (const ch of ['A', 'z', '0', '9', '-']) assert.equal(isCodeChar(ch), true, `isCodeChar(${ch})`)
+for (const ch of [' ', '\r', '\x1b', 'ab', '', '_', '/']) assert.equal(isCodeChar(ch), false, `!isCodeChar(${JSON.stringify(ch)})`)
+console.log('✓ connect: isSignedIn + isCodeChar')
