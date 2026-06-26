@@ -64,62 +64,77 @@ sigrank-mcp
 
 ---
 
-## CLI — Commands
+## Commands
 
-### Default (no args) — full tabbed TUI
-```bash
-sigrank-mcp
-sigrank-mcp tui                        # explicit — same thing
-sigrank-mcp tui --platform codex       # default platform for Watch tab
 ```
-Launches the full tabbed TUI. Keys: `1`-`4` or `←` `→` to switch tabs · `R` refresh · `Q` quit.
+⊙ SigRank CLI  v0.11.2
+
+Default (no args)
+  sigrank-mcp              unified dashboard: cascade + token pillars + board
+
+Commands
+  enroll                   sign in: paste a connect code (get one at signalaf.com → Settings)
+  submit                   publish your verified runs to the board (sign in first)
+  board                    live leaderboard (refreshes every 30s)
+  board --window 7d        board for a specific window (7d, 30d, 90d, all)
+  board --once             print once and exit
+  me                       single-platform cascade (claude by default)
+  me --platform codex      use a different platform adapter
+  compare                  raw pillar audit: tokenpull vs ccusage vs token-dash vs tokscale
+  compare --platform codex compare for a specific platform
+  tui                      full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect
+  tui --platform codex     TUI with a different default platform
+  watch                    live tune meter — re-reads local logs every 30s
+  watch --window 7d        watch a specific window
+
+Options
+  --window    7d · 30d · 90d · all  (default: 30d for board, 7d for watch)
+  --platform  claude · codex · amp · gemini · opencode · goose · …
+  --refresh   poll interval in seconds (default: 30)
+  --once      print once and exit (board only)
+
+For AI clients (not typeable)
+  In a piped/non-TTY context, sigrank-mcp is an MCP stdio server.
+  AI clients (Claude, Cursor, …) call its tools automatically — these are
+  NOT shell commands. Humans use the commands above.
+
+Examples
+  sigrank-mcp                        # unified dashboard
+  sigrank-mcp board                  # live leaderboard
+  sigrank-mcp compare                # pillar audit (claude)
+  sigrank-mcp compare --platform codex
+  sigrank-mcp me --platform codex
+  sigrank-mcp watch --window 7d --refresh 60
+  sigrank-mcp board --window all --once
+```
+
+### The TUI is the whole app
+
+Launch it and sign in inside it:
+
+```
+npx sigrank-mcp
+```
+
+Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
 
 | Tab | Key | Content |
 |---|---|---|
 | **Dashboard** | `1` | Cascade table (all platforms × windows + combined) · Υ sparklines · token composition bars · mini board |
-| **Compare** | `2` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
-| **Board** | `3` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all) |
-| **Watch** | `4` | Live cascade: big numbers + pillar bars + Υ trend · auto-refreshes 30s |
+| **Trends** | `2` | Every metric across windows — sub-views: You / Platform / Field |
+| **Compare** | `3` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
+| **Board** | `4` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all) |
+| **Watch** | `5` | In-TUI landing panel · `[Enter]` launches the live watcher (big numbers + pillar bars + Υ trend, auto-refreshes 30s) |
+| **Connect** | `6` | Sign in / switch device — paste a connect code from signalaf.com → Settings. Then `[S]` submits. |
 
-### `board`
+### Sign in + submit
+
 ```bash
-sigrank-mcp board                      # live leaderboard, auto-refreshes every 30s
-sigrank-mcp board --window 7d          # specific window: 7d · 30d · 90d · all
-sigrank-mcp board --once               # print once and exit
-sigrank-mcp board --window all --once
+sigrank-mcp enroll          # sign in: paste a connect code (get one at signalaf.com → Settings)
+sigrank-mcp submit          # publish your verified runs to the board (sign in first)
 ```
-Full leaderboard view with all board metrics. Columns: `#` / Codename / Class / Υ Yield / SNR / Depth / Tokens / Force / Pct / 7d↕. Sorted by Υ Yield (the token cascade).
 
-### `me`
-```bash
-sigrank-mcp me                         # claude cascade across all 4 windows
-sigrank-mcp me --platform codex        # different platform
-sigrank-mcp me --compare               # includes raw pillar comparison inline
-```
-Single-platform cascade view with narration card.
-
-### `compare`
-```bash
-sigrank-mcp compare                    # claude — tokenpull vs ccusage vs token-dash vs tokscale
-sigrank-mcp compare --platform codex   # codex verification
-```
-Raw pillar audit across all 4 sources and all 4 windows. Useful for verifying your numbers before submitting. Shows deltas between sources.
-
-### `watch`
-```bash
-sigrank-mcp watch                      # live tune meter, re-reads logs every 30s
-sigrank-mcp watch --window 7d          # specific window
-sigrank-mcp watch --refresh 60         # custom poll interval (seconds)
-```
-Real-time cascade updater — reads local logs on each tick and shows your current metrics.
-
-### Options
-| Flag | Default | Description |
-|---|---|---|
-| `--window` | `30d` (board) · `7d` (watch) | Time window: `7d` · `30d` · `90d` · `all` |
-| `--platform` | `claude` | Platform adapter to use |
-| `--refresh` | `30` | Poll interval in seconds |
-| `--once` | false | Print once and exit (board only) |
+Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit.
 
 ---
 
@@ -272,10 +287,15 @@ Tests verify (29 assertions):
 | File | Responsibility |
 |---|---|
 | `index.mjs` | Entry point — TTY detection, routes to CLI or MCP server |
-| `cli.mjs` | All terminal UI: dashboard, board, me, compare, watch, help |
+| `cli.mjs` | CLI commands: board, me, compare, watch, enroll, submit, help |
+| `tui.mjs` | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
 | `cascade.mjs` | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class) |
 | `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform |
 | `adapters.mjs` | Platform adapter registry (15+ platforms) |
 | `tools.mjs` | MCP tool table + dispatcher |
+| `connect.mjs` | Connect-code enrollment + device identity |
+| `keystore.mjs` | Local key management (paste-keys, not API keys) |
+| `submit.mjs` | Verified submit flow (signs + POSTs to board) |
+| `sign.mjs` | Schema 1.0 signing (X-Agent-Signature) |
 | `narrate.mjs` | Deterministic prose narration card |
 | `test.mjs` | Unit tests (no external deps) |
