@@ -1275,7 +1275,19 @@ function showSplash() {
     const hint = () => interactive
       ? `${dim('  [P]')} ${paused ? 'resume' : 'pause'}    ${dim('[Enter]')} enter`
       : dim('  loading…')
-    const paint = () => { write(CLEAR); write(splashFrame(mode)); write(`\n${ctr(hint())}`) }
+    // FIXED-WINDOW FIX (2026-06-27): paint the splash via the buffered flushScreen
+    // path (GOTO positioning), NOT raw write('\n'). Raw \n scrolls the alt-screen
+    // buffer, creating scrollback above the TUI — that's why you could scroll up
+    // to see what was above it. flushScreen uses absolute cursor positioning so
+    // nothing ever scrolls the buffer. This matches how tokscale renders its frame.
+    const paint = () => {
+      startBuffer()
+      const lines = splashFrame(mode).split('\n')
+      lines.forEach((ln) => writeln(ln))
+      writeln(ctr(hint()))
+      setFooter([])
+      flushScreen()
+    }
     paint()
     let timer = setInterval(paint, 110)
 
