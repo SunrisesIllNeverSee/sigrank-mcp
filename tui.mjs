@@ -13,6 +13,7 @@
  */
 
 import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { freshVerifierPillars } from './tokenpull.mjs'
 import { isSignedIn, isCodeChar } from './connect.mjs'
 import { loadIdentity, clearIdentity } from './keystore.mjs'
 import { execSync } from 'child_process'
@@ -339,20 +340,42 @@ async function fillDashboardRest(dashData) {
   return true
 }
 
+// #9 / C1 (2026-06-27): Compare pulls the three external verifier sources FRESH + on-demand
+// (ccusage + tokscale models + a token-dashboard rescan), via tokenpull.freshVerifierPillars —
+// NOT the old stale snapshot readers (static tokscale_report.json / 3-day-old db). This runs ONLY
+// when the Compare tab opens (it's a 5–60s scan), never on the Dashboard load path. Scoped to the
+// current platform. tokenpull (the canonical board/cascade source) stays the fast/fresh tpData.
 async function loadCompareData(platform = 'claude') {
   const tpData = await callTool('tokenpull', { platform }).catch(() => null)
-  const cc = ccusagePillars(platform)
-  const ts = tokscalePillars(platform)
-  const td = platform === 'claude' ? tokenDashPillars() : null
-  return { tpData, cc, ts, td, platform }
+  // Fresh pull — { ccusage, tokscale, tokendash }, each null or window-keyed pillars.
+  const fresh = await freshVerifierPillars(platform).catch(() => ({ ccusage: null, tokscale: null, tokendash: null }))
+  return { tpData, cc: fresh.ccusage, ts: fresh.tokscale, td: fresh.tokendash, platform }
 }
 
+// #8 (2026-06-27): the Board tab shows ALL SUBMISSIONS ranked (raw submission rows), not operator
+// aggregates. Try the NEW GET /api/v1/submissions first; if it's not deployed yet (non-200 / 404),
+// FALL BACK to the existing /api/v1/leaderboard so nothing breaks pre-deploy. The return is tagged
+// with `_source` ('submissions' | 'leaderboard') so renderBoard picks the right column layout.
 async function loadBoardData(window = '30d') {
-  const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`, {
-    headers: { accept: 'application/json' }
-  })
-  if (!res.ok) return null
-  return res.json()
+  // Primary: submissions endpoint (ranked submission rows).
+  try {
+    const res = await fetch(`${DEFAULT_API_BASE}/api/v1/submissions?window=${window}&metric=yield_`, {
+      headers: { accept: 'application/json' },
+    })
+    if (res.ok) {
+      const data = await res.json()
+      return { ...data, _source: 'submissions' }
+    }
+  } catch { /* fall through to leaderboard */ }
+  // Fallback: existing leaderboard endpoint + current render (pre-deploy safety).
+  try {
+    const res = await fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`, {
+      headers: { accept: 'application/json' },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return { ...data, _source: 'leaderboard' }
+  } catch { return null }
 }
 
 // ── TAB BAR ──────────────────────────────────────────────────────────────────
@@ -452,12 +475,25 @@ function yieldSpark(d) {
 
 // ── TAB 1: DASHBOARD ─────────────────────────────────────────────────────────
 function renderDashboard(data, status = '') {
-  const { active, verifierMap, tdPillars, boardData } = data
   const w = W()
   const budget = H() - 4  // 2 tab bar + 2 footer
   const WINS = ['7d', '30d', '90d', 'all']
   let used = 0
   const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
+
+  // A2 (2026-06-27): tolerate null/empty dashData so the FIRST paint can happen BEFORE the
+  // initial load resolves (loadAll renders an empty frame + "reading your cascade…" immediately,
+  // then re-renders with real data). Guard the destructure: no data → header + status + return.
+  if (!data || !Array.isArray(data.active)) {
+    emit()
+    emit(`  ${bold('Your Cascade')}  ${dim('all platforms · all windows')}`)
+    emit()
+    emit(`  ${dim('  reading token logs… (press [R] to refresh)')}`)
+    if (status && used < budget) emit(`  ${dim(status)}`)
+    return
+  }
+
+  const { active } = data
 
   // Responsive: the full 12-col table is ~124 wide. On terminals narrower than
   // that, drop the two derived columns (Vel, 10x) and tighten the inter-column
@@ -518,6 +554,15 @@ function renderDashboard(data, status = '') {
   const sectionsBelow = barLines + boardLines
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow)
 
+  // A3 (2026-06-27): count the cascade rows we WANT to show (every window with data across all
+  // active platforms) so we can tell the user how many were dropped by the height budget, instead
+  // of silently truncating them. (Fit logic below is unchanged — this is observation only.)
+  const totalCascadeRowsWanted = active.reduce((n, d) =>
+    n + WINS.filter(wk => {
+      const wd = d.windows?.find(x => x.window === wk)
+      return wd && (wd.pillars.input + wd.pillars.output) > 0
+    }).length, 0)
+
   let firstWin = {}
   let cascadeRowCount = 0
   for (const d of active) {
@@ -534,6 +579,10 @@ function renderDashboard(data, status = '') {
     }
     emit()
   }
+
+  // A3: if any cascade rows were dropped (height budget / row cap), say so instead of hiding them.
+  const cascadeDropped = totalCascadeRowsWanted - cascadeRowCount
+  if (cascadeDropped > 0) emit(`  ${dim(`  +${cascadeDropped} more — resize / scroll`)}`)
 
   // combined
   if (active.length > 1 && used < budget - sectionsBelow) {
@@ -667,7 +716,7 @@ const TREND_METRICS = [
   { label: '$/1M',     pick: () => null, fmt: () => '—', stub: 'cost data wires post-ingest' },
 ]
 function renderTrends(data, subIdx = 0) {
-  const { active } = data
+  const { active } = data ?? {}
   const budget = H() - 4
   let used = 0
   const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
@@ -683,16 +732,23 @@ function renderTrends(data, subIdx = 0) {
 
   if (sub === 'You' || sub === 'Platform') {
     const rows = sub === 'You'
-      ? (active.length ? [{ platform: 'you', windows: active[0]?.windows }] : [])  // primary cascade
-      : active
+      ? ((active?.length) ? [{ platform: 'you', windows: active[0]?.windows }] : [])  // primary cascade
+      : (active ?? [])
     if (!rows.length) { emit(`  ${dim('  reading your cascade… (press [R] to refresh)')}`); }
-    for (const d of rows) {
-      if (used >= budget - 2) break
+    // A3 (2026-06-27): count metric/rank rows dropped by the height budget so we can show a
+    // "+N more — resize / scroll" note instead of silently truncating. Each rendered block wants
+    // TREND_METRICS.length metric rows + 1 rank row. (Fit logic below unchanged — observe only.)
+    let trendsDropped = 0
+    for (let ri = 0; ri < rows.length; ri++) {
+      const d = rows[ri]
+      if (used >= budget - 2) { trendsDropped += (rows.length - ri) * (TREND_METRICS.length + 1); break }
       emit(`  ${bold(sub === 'You' ? 'Your trajectory' : cyan(d.platform))}`)
       // FIX G1: window column headers (mirror renderCompare) — one header row, then
       // values in fixed-width columns below. No per-value `w:` prefix.
       emit(`    ${trendHeader()}`)
-      for (const m of TREND_METRICS) {
+      let mi = 0
+      for (; mi < TREND_METRICS.length; mi++) {
+        const m = TREND_METRICS[mi]
         if (used >= budget - 2) break
         if (m.stub) {
           emit(`    ${padEnd(dim(m.label), 10)}  ${dim('▁▁▁▁  calculating… (' + m.stub + ')')}`)
@@ -700,10 +756,14 @@ function renderTrends(data, subIdx = 0) {
           emit(`    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`)
         }
       }
+      trendsDropped += (TREND_METRICS.length - mi)   // metrics this block couldn't fit
       // rank trend — wired later; honest placeholder for now
       if (used < budget - 1) emit(`    ${padEnd(dim('Rank'), 10)}  ${dim('▁▁▁▁  calculating… (rank history wires post-ingest)')}`)
+      else trendsDropped += 1
       emit()
     }
+    // A3: surface the dropped count instead of hiding it.
+    if (trendsDropped > 0) emit(`  ${dim(`  +${trendsDropped} more — resize / scroll`)}`)
   } else { // Field
     emit(`  ${dim('  Field-wide trends — calculating…')}`)
     emit(`  ${dim('  (needs per-window board history; materializes once live ingest lands)')}`)
@@ -807,12 +867,95 @@ function renderCompare(data) {
   }
 }
 
+// ── TAB 3: BOARD — submissions view (#8) ──────────────────────────────────────
+// Renders ALL submissions ranked (raw submission rows from GET /api/v1/submissions), not operator
+// aggregates. Columns: rank · codename · platform · window · Υ Yield · op_ratio · class · tokens.
+// Field names are read defensively (the endpoint is new) so a slightly different server shape still
+// renders. [Y] "just me" filtering + the you-highlight carry over from the leaderboard view.
+function renderSubmissions(boardData, window = '30d', filterCodename = null, highlightCodename = null) {
+  const rows = boardData?.submissions ?? boardData?.entries ?? boardData?.rows ??
+    (Array.isArray(boardData) ? boardData : [])
+  const w = W()
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
+
+  // Defensive field readers (server shape is new / not yet pinned).
+  const gName = (e) => e.codename ?? e.operator_codename ?? '—'
+  const gPlat = (e) => e.platform ?? e.platform_primary ?? '—'
+  const gWin  = (e) => e.window ?? e.window_type ?? '—'
+  const gYield = (e) => e.yield_ ?? e.yield ?? e.y ?? null
+  const gOpRatio = (e) => e.op_ratio ?? e.operating_ratio ?? e.opRatio ?? null
+  const gClass = (e) => e.class_tier ?? e.class ?? e.class_ ?? '—'
+  const gTokens = (e) => e.tokens ?? e.total_tokens ?? e.token_total ?? null
+
+  const modeLabel = filterCodename ? `${dim(' · just you')}` : highlightCodename ? `${dim(' · you highlighted')}` : ''
+  emit()
+  emit(`  ${bold('Submissions')}  ${dim(`window: ${window}  ·  all submissions ranked by Υ Yield  ·  signalaf.com`)}${modeLabel}`)
+  emit()
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    emit(`  ${dim('  no submissions for this window')}`)
+    return
+  }
+
+  let sorted = [...rows].sort((a, b) => (gYield(b) ?? 0) - (gYield(a) ?? 0))
+  if (filterCodename) {
+    sorted = sorted.filter(e => (gName(e) ?? '').toLowerCase() === filterCodename.toLowerCase())
+    if (sorted.length === 0) {
+      emit(`  ${dim(`  you have no submissions in the ${window} window yet`)}`)
+      emit(`  ${dim('  press [S] from a read tab to submit your cascade')}`)
+      return
+    }
+  }
+
+  // op_ratio may arrive as a preformatted string ("3.5 : 1 : 0.50") or a number — render either.
+  const fmtOp = (v) => v == null ? '—' : (typeof v === 'string' ? v : (typeof v === 'number' ? v.toFixed(2) : String(v)))
+
+  const SH = [
+    padStart(hdr('#'), 4), padEnd(hdr('Codename'), 20), padEnd(hdr('Platform'), 10),
+    padEnd(hdr('Win'), 6), padStart(hdr('Υ Yield'), 9), padEnd(hdr('Op Ratio'), 18),
+    padEnd(hdr('Class'), 12), padStart(hdr('Tokens'), 9),
+  ]
+  emit(`    ${SH.join('  ')}`)
+  emit(`  ${dim('·'.repeat(Math.min(w - 4, 100)))}`)
+
+  let shown = 0
+  for (let idx = 0; idx < sorted.length; idx++) {
+    if (used >= budget) break
+    const e = sorted[idx]
+    const isYou = highlightCodename && (gName(e) ?? '').toLowerCase() === highlightCodename.toLowerCase()
+    const rk = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
+    const nmRaw = trunc(gName(e), 20)
+    const nm = isYou
+      ? `${c.bgCyan}${c.boldCyan}${padEnd(` ${trunc(gName(e), 18)} `, 20)}${c.reset}`
+      : padEnd(nmRaw, 20)
+    const yv = gYield(e)
+    const yld = padStart(yv != null ? (yv > 10000 ? gold(fmtY(yv)) : fmtY(yv)) : '—', 9)
+    const cls = padEnd(colorCls(gClass(e)), 12)
+    const tk = gTokens(e)
+    const youMark = isYou ? ` ${c.bgCyan}${c.boldCyan}YOU${c.reset}` : ''
+    emit(`    ${padStart(rk, 4)}  ${nm}  ${padEnd(cyan(trunc(gPlat(e), 10)), 10)}  ${padEnd(dim(trunc(gWin(e), 6)), 6)}  ${yld}  ${padEnd(dim(fmtOp(gOpRatio(e))), 18)}  ${cls}  ${padStart(tk != null ? fmtTok(tk) : '—', 9)}${youMark}`)
+    shown++
+  }
+  // A3-style: if the height budget dropped rows, say so instead of silently truncating.
+  const dropped = sorted.length - shown
+  if (dropped > 0 && used < budget) emit(`  ${dim(`  +${dropped} more — resize / scroll`)}`)
+}
+
 // ── TAB 3: BOARD ─────────────────────────────────────────────────────────────
 // FIX I2: hybrid board model. `filterCodename` (non-null = "just me" mode) shows
 // ONLY the signed-in operator's rows. `highlightCodename` (non-null = global mode)
 // highlights the signed-in operator's row in the global board. Both come from the
 // signed-in identity's codename; the [Y] key toggles between the two modes.
 function renderBoard(boardData, window = '30d', filterCodename = null, highlightCodename = null) {
+  // #8 (2026-06-27): when the data came from the NEW /api/v1/submissions endpoint, render ALL
+  // submissions ranked (raw rows). Otherwise fall through to the existing leaderboard render
+  // (pre-deploy fallback). loadBoardData tags the payload with `_source`.
+  if (boardData?._source === 'submissions') {
+    renderSubmissions(boardData, window, filterCodename, highlightCodename)
+    return
+  }
   const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? []
   const w = W()
   const budget = H() - 4
@@ -897,13 +1040,20 @@ function renderBoard(boardData, window = '30d', filterCodename = null, highlight
 // Explains what the live watcher does and why it's the point of the agent: it
 // re-reads your local logs on an interval and feeds your verified cascade to the
 // leaderboard. Launched (in its own window) with [Enter]; interval is tunable.
+// A5 (2026-06-27): Watch defaults to ALL active platforms × ALL windows (mirror the cli.mjs watch
+// change). `platform`/`win` are OPTIONAL focus filters — null/'all' means "everything". [P]/[W]
+// cycle the focus (including back to "all"); the spawned watcher + this copy show everything by default.
 function renderWatchInfo(platform, win, refresh) {
+  const platLabel = (!platform || platform === 'all') ? 'all active platforms' : platform
+  const winLabel  = (!win || win === 'all-windows') ? 'all windows' : win
+  const allDefault = platLabel === 'all active platforms' && winLabel === 'all windows'
   writeln()
   writeln(`  ${bold('Live Watch')}  ${dim('the agent that keeps your rank current')}`)
   writeln()
   writeln(`  ${dim('What it does')}`)
-  writeln(`    Re-reads your local ${cyan(platform)} token logs every ${gold(refresh + 's')} and recomputes`)
-  writeln(`    your cascade (Υ Yield · SNR · Leverage · class) live, on this machine.`)
+  writeln(`    Re-reads your local token logs for ${cyan(platLabel)} across ${cyan(winLabel)} every`)
+  writeln(`    ${gold(refresh + 's')} and recomputes each cascade (Υ Yield · SNR · Leverage · class) live, on`)
+  writeln(`    this machine. ${dim('By default it watches everything — every platform you actually use.')}`)
   writeln()
   writeln(`  ${dim('Why it matters')}`)
   writeln(`    Watch is how the board stays ${bold('current')}: each refresh submits your latest`)
@@ -911,9 +1061,10 @@ function renderWatchInfo(platform, win, refresh) {
   writeln(`    no manual re-submit. Tokens never leave your machine; only the metrics post.`)
   writeln()
   writeln(`  ${dim('Settings')}`)
-  writeln(`    ${dim('Platform')}  ${cyan(platform)}     ${dim('Window')}  ${cyan(win)}     ${dim('Refresh')}  ${gold(refresh + 's')}`)
+  writeln(`    ${dim('Platform')}  ${cyan(platLabel)}     ${dim('Window')}  ${cyan(winLabel)}     ${dim('Refresh')}  ${gold(refresh + 's')}`)
+  writeln(`    ${dim(allDefault ? 'watching everything (default)' : 'focused — press [P]/[W] to widen back to all')}`)
   writeln()
-  writeln(`    ${dim('[Enter]')} launch watcher (new window)   ${dim('[+]/[-]')} refresh ±5s   ${dim('[P]')} platform   ${dim('[W]')} window`)
+  writeln(`    ${dim('[Enter]')} launch watcher (new window)   ${dim('[+]/[-]')} refresh ±5s   ${dim('[P]')} platform focus   ${dim('[W]')} window focus`)
   writeln()
 }
 
@@ -946,74 +1097,66 @@ function renderConnect(id, codeBuf = '', msg = '') {
   if (msg) { writeln(); writeln(`  ${msg}`) }
 }
 
-// ── TAB 4: WATCH ─────────────────────────────────────────────────────────────
-async function renderWatch(platform = 'claude', win = '7d') {
+// ── TAB 4: WATCH (live grid) ──────────────────────────────────────────────────
+// A5 (2026-06-27): renders ALL active platforms × ALL windows by default (mirror the cli.mjs
+// watch grid), instead of a single platform/window. `platform`/`win` are OPTIONAL focus filters —
+// null/'all'/'all-windows' means "everything". Each row is a (platform, window) cascade cell:
+// Υ Yield + SNR/Lev/Vel/class. Iterates active platforms (input+output > 0 in any window).
+async function renderWatch(platform = 'all', win = 'all-windows') {
   const { tokenpullAny } = await import('./tokenpull.mjs')
-  const d = await tokenpullAny(platform).catch(() => null)
-  if (!d) { writeln(`  ${dim(`no data for ${platform}`)}`); return }
-
-  const wdata = d.windows?.find(x => x.window === win)
-  if (!wdata) { writeln(`  ${dim(`no data for ${win} window`)}`); return }
-
-  const p   = wdata.pillars
-  const cas = cascadeFrom(p)
-  const w   = W()
-
-  writeln()
-  writeln(`  ${bold('Live Watch')}  ${dim(`${platform} · ${win} window · ${d.files} files · ${wdata.messages?.toLocaleString()} msgs`)}`)
-  writeln()
-
-  if (!cas) { writeln(`  ${dim('  insufficient data to compute cascade')}`); return }
-
-  const clsFn = CLS[cas.class] ?? ((s) => s)
-
-  // big numbers
-  const metrics = [
-    { label: 'Υ Yield',   val: fmtY(cas.yield),           color: cas.yield > 1000 ? c.boldGold : c.boldCyan },
-    { label: 'Class',     val: cas.class,                  color: CLS[cas.class] ? c.boldGold : c.reset },
-    { label: 'SNR',       val: fmtSNR(cas.snr),           color: c.green },
-    { label: 'Leverage',  val: fmtLev(cas.leverage)+'×',  color: c.cyan },
-    { label: 'Velocity',  val: cas.velocity?.toFixed(2),   color: c.white },
-    { label: '10xDEV',    val: cas.dev10x?.toFixed(2),     color: c.magenta },
+  const ALL_PLATFORMS = [
+    'claude','codex','amp','gemini','kimi','qwen','goose','kilo',
+    'hermes','droid','codebuff','copilot','openclaw','pi',
   ]
+  const platFilter = (platform && platform !== 'all') ? platform : null
+  const winFilter  = (win && win !== 'all-windows') ? win : null
+  const WINS = winFilter ? [winFilter] : ['7d', '30d', '90d', 'all']
+  const w = W()
+  const budget = H() - 4
+  let used = 0
+  const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
-  for (const m of metrics) {
-    writeln(`    ${padEnd(dim(m.label), 12)}  ${paint(m.color, m.val ?? '—')}`)
+  // Detect active platforms (any window with input+output > 0), respecting an optional [P] focus.
+  const candidates = platFilter ? [platFilter] : ALL_PLATFORMS
+  const settled = await Promise.allSettled(candidates.map(p => tokenpullAny(p)))
+  const active = []
+  for (const r of settled) {
+    if (r.status !== 'fulfilled' || !r.value) continue
+    const d = r.value
+    if ((d.windows || []).some(ww => (ww.pillars.input + ww.pillars.output) > 0)) active.push(d)
   }
-  writeln()
+  // stable display order
+  active.sort((a, b) => ALL_PLATFORMS.indexOf(a.platform) - ALL_PLATFORMS.indexOf(b.platform))
 
-  // token pillars
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Token Pillars')}  ${dim(`${win} window`)}`)
-  writeln()
+  const scopeLabel = (platFilter || 'all active platforms') + ' · ' + (winFilter ? `${winFilter} window` : 'all windows')
+  emit()
+  emit(`  ${bold('Live Watch')}  ${dim(scopeLabel)}`)
+  emit(`  ${dim('·'.repeat(Math.min(w - 4, 80)))}`)
 
-  const pillarsData = [
-    { label: 'Input',       val: p.input,       color: c.cyan,    est: d.estimated },
-    { label: 'Output',      val: p.output,      color: c.green,   est: false },
-    { label: 'Cache Write', val: p.cacheCreate, color: c.blue,    est: d.estimated },
-    { label: 'Cache Read',  val: p.cacheRead,   color: c.boldGold,est: false },
-  ]
-  // Log scale: token pillars span 2–3 orders of magnitude (input ~8M, cacheRead ~1.9B).
-  // Linear scale crushes input/output bars to near-invisible. Log10 gives equal visual
-  // weight per order-of-magnitude step.
-  const maxLog = Math.log10(Math.max(...pillarsData.map(x => x.val ?? 0), 10))
-  for (const item of pillarsData) {
-    const v   = item.val ?? 0
-    const { bar } = logBar(v, maxLog, 40, item.color)
-    const est = item.est ? dim('~') : ''
-    writeln(`    ${padEnd(dim(item.label), 12)}  ${padEnd(bar, 40)}  ${est}${fmtTok(v)}`)
+  if (active.length === 0) {
+    emit()
+    emit(`  ${dim('  no active platforms detected — run some sessions, this picks them up automatically')}`)
+    return
   }
-  writeln(`  ${dim('log₁₀ scale — each step = 10× · absolute values right')}`)
-  writeln()
 
-  // trend across windows
-  writeln(`  ${hr()}`)
-  writeln()
-  writeln(`  ${bold('Υ Trend')}  ${dim('7d → 30d → 90d → all')}`)
-  writeln()
-  writeln(`    ${yieldSpark(d)}`)
-  writeln()
+  for (const d of active) {
+    if (used >= budget - 1) break
+    const byWin = {}
+    for (const ww of (d.windows || [])) byWin[ww.window] = ww
+    emit()
+    emit(`  ${cyan(d.platform)}${d.estimated ? dim(' (est)') : ''}`)
+    for (const wk of WINS) {
+      if (used >= budget - 1) break
+      const ww  = byWin[wk]
+      const cas = ww ? cascadeFrom(ww.pillars) : null
+      const winLabel = wk === 'all' ? 'all-time' : wk
+      if (!cas) { emit(`    ${padEnd(dim(winLabel), 9)}  ${dim('no data')}`); continue }
+      const clsFn = CLS[cas.class] ?? ((s) => s)
+      const yDisplay = cas.yield > 1000 ? gold(fmtY(cas.yield)) : cyan(fmtY(cas.yield))
+      const metrics = `${dim('SNR')} ${fmtSNR(cas.snr)}  ${dim('Lev')} ${cas.leverage != null ? fmtLev(cas.leverage) + '×' : '—'}  ${dim('Vel')} ${cas.velocity != null ? cas.velocity.toFixed(2) : '—'}  ${clsFn(cas.class)}`
+      emit(`    ${padEnd(dim(winLabel), 9)}  ${bold('Υ')} ${yDisplay}  ${metrics}`)
+    }
+  }
 }
 
 // ── SUBMIT PREVIEW (FIX I1 / FIX E) — see→confirm→send ───────────────────────
@@ -1070,6 +1213,7 @@ async function renderOnce(tabIdx = 0) {
   if (tabIdx === 0) renderDashboard(data, 'debug')
   else if (tabIdx === 1) renderCompare(data)
   else if (tabIdx === 2) renderBoard(data, '30d')
+  else if (tabIdx === 4) await renderWatch('all', 'all-windows')
   else if (tabIdx === 5) renderConnect(loadIdentity(), '', '')
   const lines = _screenBuf || []
   _screenBuf = null; _footerBuf = null
@@ -1201,8 +1345,11 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
   let compareData  = null
   let boardData    = null
   let boardWindow  = '30d'
-  let watchPlatform = platform
-  let watchWindow  = win
+  // A5 (2026-06-27): Watch defaults to "all" focus — all active platforms × all windows. [P]/[W]
+  // optionally narrow the focus and cycle back to 'all'. ('all-windows' is the window sentinel so
+  // it never collides with the real 'all' window bucket in the cli watcher's optional --window.)
+  let watchPlatform = 'all'
+  let watchWindow  = 'all-windows'
   let watchRefresh = 30        // [5] Watch poll interval (seconds) — [+]/[-] adjust
   let trendSub     = 0         // [2] Trends sub-view index (You/Platform/Field) — [T] cycles
   let loading      = true
@@ -1251,7 +1398,11 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       setFooter(readFooter(`${hint}   ${dim('[T]')} view${submitHint}`))
     } else if (activeTab === 2) {                // Compare
       if (!compareData) {
-        writeln(`\n  ${dim(`loading compare (${platform})…`)}`)
+        // #9 (2026-06-27): Compare runs a FRESH on-demand pull of the external verifier sources
+        // (ccusage + tokscale + token-dashboard rescan) — it can take several seconds. Show a clear
+        // spinner line while it runs, instead of a bare "loading…".
+        writeln(`\n  ${bold('Source Comparison')}  ${dim(`platform: ${platform}`)}`)
+        writeln(`\n  ${gold('◇')} ${dim(`pulling fresh sources… (ccusage · tokscale · token-dash — this can take several seconds)`)}`)
       } else {
         renderCompare(compareData)
       }
@@ -1282,22 +1433,33 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
 
   // ── Initial data load
   const loadAll = async () => {
-    status = 'loading…'
+    // A2 (2026-06-27): paint the frame + a clear "reading your cascade…" status IMMEDIATELY,
+    // BEFORE the await — so the very first thing on screen is the table header + a live status,
+    // not a blank "loading dashboard…". renderDashboard tolerates this empty dashData (guarded).
+    status = 'reading your cascade…'
+    dashData = { active: [], _loading: true }
+    await redraw()
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
     // the other 13 platforms in the background + redraw. The user sees their cascade
     // within ~1 read instead of a 7s blank "loading dashboard…".
     dashData = await loadDashboardData().catch(e => { status = `dashboard error: ${e.message}`; return null })
     status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
     await redraw()
-    // Kick off the rest + compare/board in parallel
-    ;[compareData, boardData] = await Promise.all([
-      loadCompareData(platform).catch(() => null),
-      loadBoardData(boardWindow).catch(() => null),
-    ])
+    // Keep a "filling other platforms…" status visible while fillDashboardRest runs.
+    // #9 (2026-06-27): Compare is NO LONGER eagerly loaded here — loadCompareData now runs the
+    // FRESH verifier pull (ccusage + tokscale + token-dash rescan, 5–60s), which would re-introduce
+    // a slow Dashboard load path. Compare loads lazily ON-DEMAND when the Compare tab is opened.
+    // Board still preloads (fast, cached) in parallel with the platform fill.
     if (dashData?._remaining) {
-      await fillDashboardRest(dashData)
+      status = 'claude ready · filling other platforms…'
       await redraw()
     }
+    ;[, boardData] = await Promise.all([
+      dashData?._remaining ? fillDashboardRest(dashData) : Promise.resolve(false),
+      loadBoardData(boardWindow).catch(() => null),
+    ])
+    status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+    await redraw()
   }
 
   // Always restore terminal on unexpected exit
@@ -1481,6 +1643,17 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       if (k === '6') { activeTab = 5; switched = true }  // Connect = sign in / switch device
       if (k === 'c' && activeTab !== 5) { activeTab = 5; switched = true }  // [C] → Connect from any read tab
 
+      // #9 (2026-06-27): Compare loads its FRESH verifier pull ON-DEMAND when the tab opens
+      // (NOT on the Dashboard load path — that pull is a 5–60s scan). Paint the "pulling fresh
+      // sources…" spinner first (compareData null → redraw shows it), then run the pull + re-render.
+      if (switched && activeTab === 2 && !compareData) {
+        submitMsg = ''
+        await redraw()  // show the spinner line before the (slow) fresh pull
+        compareData = await loadCompareData(platform).catch(() => null)
+        await redraw()
+        return
+      }
+
       // Trends tab: [T] cycles the sub-view (You · Platform · Field)
       if (activeTab === 1 && k === 't') { trendSub = (trendSub + 1) % 3; await redraw(); return }
 
@@ -1492,36 +1665,48 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       // Compare reloads compareData for the new platform; Watch just re-renders.
       const CYCLE_PLATFORMS = ['claude','codex','amp','gemini','kimi','qwen','goose','kilo','hermes','droid','codebuff','copilot','openclaw','pi']
       if (k === 'p' && (activeTab === 2 || activeTab === 4)) {
-        const cur = activeTab === 2 ? platform : watchPlatform
-        const idx = CYCLE_PLATFORMS.indexOf(cur)
-        const next = CYCLE_PLATFORMS[(idx + 1) % CYCLE_PLATFORMS.length]
         if (activeTab === 2) {
-          platform = next
+          // Compare: real platforms only (no 'all' — Compare is per-platform by design).
+          const idx = CYCLE_PLATFORMS.indexOf(platform)
+          platform = CYCLE_PLATFORMS[(idx + 1) % CYCLE_PLATFORMS.length]
+          // #9: clearing compareData makes redraw show the "pulling fresh sources…" spinner
+          // for the new platform while the fresh on-demand verifier pull runs.
+          compareData = null
           status = `loading ${platform}…`
           await redraw()
           compareData = await loadCompareData(platform).catch(() => null)
           status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
         } else {
-          watchPlatform = next
+          // A5: Watch [P] cycles 'all' → claude → codex → … → 'all' (optional focus; default 'all').
+          const WATCH_PLAT_CYCLE = ['all', ...CYCLE_PLATFORMS]
+          const idx = WATCH_PLAT_CYCLE.indexOf(watchPlatform)
+          watchPlatform = WATCH_PLAT_CYCLE[(idx + 1) % WATCH_PLAT_CYCLE.length]
         }
         await redraw(); return
       }
 
-      // FIX J: [W] cycles window on Watch tab (was a dead hinted key). Board tab's
-      // [W] (activeTab === 3) is handled below — it reloads boardData.
+      // FIX J / A5: [W] cycles window FOCUS on the Watch tab. 'all-windows' (default) → 7d → 30d →
+      // 90d → all → back to 'all-windows'. Board tab's [W] (activeTab === 3) is handled below.
       if (k === 'w' && activeTab === 4) {
-        const windows = ['7d', '30d', '90d', 'all']
-        const idx = windows.indexOf(watchWindow)
-        watchWindow = windows[(idx + 1) % windows.length]
+        const WATCH_WIN_CYCLE = ['all-windows', '7d', '30d', '90d', 'all']
+        const idx = WATCH_WIN_CYCLE.indexOf(watchWindow)
+        watchWindow = WATCH_WIN_CYCLE[(idx + 1) % WATCH_WIN_CYCLE.length]
         await redraw(); return
       }
 
       if (activeTab === 4 && (key === '\r' || key === '\n')) {
-        // Launch the live watcher in its own window, passing the chosen refresh interval.
+        // A5 (2026-06-27): launch the live watcher in its own window. By default (focus = 'all')
+        // pass NO --platform/--window so the cli watcher auto-loads ALL active platforms × ALL
+        // windows. Only add a filter flag when the user has set an explicit [P]/[W] focus.
         try {
-          const watchCmd = `sigrank watch --platform ${watchPlatform} --window ${watchWindow} --refresh ${watchRefresh}`
+          let watchCmd = 'sigrank watch'
+          if (watchPlatform && watchPlatform !== 'all') watchCmd += ` --platform ${watchPlatform}`
+          if (watchWindow && watchWindow !== 'all-windows') watchCmd += ` --window ${watchWindow}`
+          watchCmd += ` --refresh ${watchRefresh}`
           execSync(`osascript -e 'tell application "Terminal" to do script "${watchCmd}"'`, { stdio: 'ignore' })
-          status = `watcher launched (${watchRefresh}s) in a new window`
+          const scope = (!watchPlatform || watchPlatform === 'all') && (!watchWindow || watchWindow === 'all-windows')
+            ? 'all platforms × all windows' : 'focused'
+          status = `watcher launched (${scope}, ${watchRefresh}s) in a new window`
         } catch { status = 'could not open Terminal.app — run: sigrank watch' }
         await redraw()
         return
@@ -1529,6 +1714,16 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
 
       if (k === 'r') {
         status = 'refreshing…'
+        // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
+        // (loadAll no longer touches Compare). Clearing compareData shows the spinner first.
+        if (activeTab === 2) {
+          compareData = null
+          await redraw()
+          compareData = await loadCompareData(platform).catch(() => null)
+          status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+          await redraw()
+          return
+        }
         await redraw()
         await loadAll()
         return

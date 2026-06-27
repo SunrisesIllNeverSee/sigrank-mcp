@@ -12,8 +12,9 @@
  *   npx sigrank me                   your cascade across all 4 windows
  *   npx sigrank me --platform amp    use a different platform adapter
  *   npx sigrank me --compare         raw pillar comparison: ccusage vs tokenpull vs token-dashboard
- *   npx sigrank watch                RT tune meter — local cascade, refreshes
- *   npx sigrank watch --window 7d    watch a specific window
+ *   npx sigrank watch                RT tune meter — ALL active platforms × all windows
+ *   npx sigrank watch --platform X   watch one platform only (optional filter)
+ *   npx sigrank watch --window 7d    watch one window only (optional filter)
  *
  * Color palette mirrors the SigRank web dark theme:
  *   gold = class TRANSMITTER headline + rank #1
@@ -684,37 +685,50 @@ async function runCompare({ platform = 'claude' } = {}) {
 }
 
 // ── WATCH command ─────────────────────────────────────────────────────────────
+//
+// A5: by default (no --platform / --window) the watcher auto-loads EVERYTHING — every
+// active platform (input+output > 0) × every window (7d/30d/90d/all), refreshed each tick.
+// --platform / --window remain OPTIONAL filters for back-compat (focus one cell). The
+// refresh loop + --submit behavior are preserved; submit publishes whichever windows are
+// shown whenever their Υ changes.
 
-async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30, submit = false } = {}) {
-  let prev = null
+const WATCH_WINDOWS = ['7d', '30d', '90d', 'all']
+
+// Detect which platforms have real local data (input+output > 0 in any window) via tokenpull.
+// Returns an array of pull results (the same shape tokenpullAny yields), one per active platform.
+async function detectActivePulls() {
+  const { tokenpullAny } = await import('./tokenpull.mjs')
+  const settled = await Promise.allSettled(ALL_PLATFORMS.map((p) => tokenpullAny(p)))
+  const active = []
+  for (const r of settled) {
+    if (r.status !== 'fulfilled' || !r.value) continue
+    const d = r.value
+    const live = (d.windows || []).some((w) => (w.pillars.input + w.pillars.output) > 0)
+    if (live) active.push(d)
+  }
+  return active
+}
+
+async function runWatch({ platform, window: win, refresh = 30, submit = false } = {}) {
   let lines = 0
-  let lastSubmit = null
   const id = submit ? ensureIdentity() : null
   const enrolled = !!(id && id.codename && id.operator_id && id.private_key_pkcs8_b64)
+
+  // Filters: when provided, narrow the grid; when absent, watch all active × all windows.
+  const winFilter = typeof win === 'string' && win ? win : null
+  const platFilter = typeof platform === 'string' && platform ? platform : null
+  const windows = winFilter ? [winFilter] : WATCH_WINDOWS
+
+  // Per-cell Υ memory (key = `${platform}|${window}`) so each cell tracks its own change.
+  const prevY = new Map()
+  const lastSubmitMsg = new Map()
 
   write(HIDE_CURSOR)
 
   const draw = async () => {
-    let result
-    try {
-      result = await callTool('watch_tokenpull', { platform, window: win })
-    } catch (e) {
-      writeln(red(`  ✗ ${e.message}`))
-      return
-    }
-
-    const cas = result.cascade
-    const changed = prev !== null && prev !== cas?.yield
-
-    // --submit (D7 §7): publish the verified window on first observation + whenever Υ changes.
-    if (submit && enrolled && (prev === null || changed)) {
-      try {
-        const r = await submitSignedWindow(win, result.pillars, result.messages, id, { platform: result.platform })
-        lastSubmit = r.status === 'received' ? green(`✓ submitted · tier=${r.verification_tier || '—'}`) : red(`✗ ${r.reason || r.status}`)
-      } catch (e) {
-        lastSubmit = red(`✗ ${e.message}`)
-      }
-    }
+    // Re-detect each tick so a platform that just started writing logs appears automatically.
+    let pulls = await detectActivePulls().catch(() => [])
+    if (platFilter) pulls = pulls.filter((d) => d.platform === platFilter)
 
     if (lines > 0) write(CURSOR_UP(lines))
 
@@ -723,31 +737,64 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30,
     const w = termWidth()
     const ts = new Date().toLocaleTimeString('en-US', { hour12: false })
 
+    const scopeLabel = (platFilter || 'all active platforms') + '  ·  ' + (winFilter ? `window: ${winFilter}` : 'all windows')
+
     push()
-    push(`  ${gold('⊙ SigRank')} ${bold('Watch')}  ${dim(`${platform}  ·  window: ${win}  ·  ${ts}`)}`)
+    push(`  ${gold('⊙ SigRank')} ${bold('Watch')}  ${dim(`${scopeLabel}  ·  ${ts}`)}`)
     push(`  ${dim('─'.repeat(w - 4))}`)
-    push()
 
-    const yDisplay = cas?.yield != null ? fmtYield(cas.yield) : '—'
-    const indicator = changed ? green(' ▲ updated') : dim(' · no change')
-
-    push(`  ${bold('Υ Yield')}      ${cas?.yield != null ? gold(yDisplay) : '—'}${indicator}`)
-    push(`  ${bold('SNR')}          ${fmtSNR(cas?.snr)}`)
-    push(`  ${bold('Leverage')}     ${cas?.leverage != null ? `${fmtLev(cas.leverage)}×` : '—'}`)
-    push(`  ${bold('Velocity')}     ${cas?.velocity != null ? cas.velocity.toFixed(2) : '—'}`)
-    push(`  ${bold('10xDEV')}       ${cas?.dev10x != null ? cas.dev10x.toFixed(2) : '—'}`)
-    push(`  ${bold('Class')}        ${colorClass(cas?.class ?? '—')}`)
-    push()
-    if (submit) {
-      push(`  ${dim('submit:')} ${enrolled ? (lastSubmit || dim('waiting for a change…')) : red('not enrolled — run `npx sigrank enroll`')}`)
+    if (pulls.length === 0) {
+      push()
+      push(`  ${dim('no active platforms detected — run some sessions, this will pick them up automatically')}`)
+      push()
     }
+
+    for (const d of pulls) {
+      const plat = d.platform
+      const byWin = {}
+      for (const ww of (d.windows || [])) byWin[ww.window] = ww
+      push()
+      push(`  ${cyan(plat)}${d.estimated ? dim(' (est)') : ''}`)
+      for (const wk of windows) {
+        const ww = byWin[wk]
+        const cas = ww ? cascadeFromPillars(ww.pillars) : null
+        const key = `${plat}|${wk}`
+        const prev = prevY.get(key)
+        const yNow = cas?.yield ?? null
+        const changed = prev !== undefined && prev !== yNow
+
+        // --submit: publish this cell on first observation + whenever its Υ changes.
+        if (submit && enrolled && ww && yNow != null && (prev === undefined || changed)) {
+          try {
+            const r = await submitSignedWindow(wk, ww.pillars, ww.messages, id, { platform: plat })
+            lastSubmitMsg.set(key, r.status === 'received' ? green(`✓ tier=${r.verification_tier || '—'}`) : red(`✗ ${r.reason || r.status}`))
+          } catch (e) {
+            lastSubmitMsg.set(key, red(`✗ ${e.message}`))
+          }
+        }
+        prevY.set(key, yNow)
+
+        const winLabel = wk === 'all' ? 'all-time' : wk
+        const yDisplay = cas?.yield != null ? gold(fmtYield(cas.yield)) : dim('—')
+        const indicator = changed ? green(' ▲') : dim(' ·')
+        const metrics = cas
+          ? `${dim('SNR')} ${fmtSNR(cas.snr)}  ${dim('Lev')} ${cas.leverage != null ? fmtLev(cas.leverage) + '×' : '—'}  ${dim('Vel')} ${cas.velocity != null ? cas.velocity.toFixed(2) : '—'}  ${colorClass(cas.class ?? '—')}`
+          : dim('no data')
+        const submitNote = (submit && enrolled) ? '  ' + (lastSubmitMsg.get(key) || dim('…')) : ''
+        push(`    ${padEnd(winLabel, 8)}  ${bold('Υ')} ${yDisplay}${indicator}  ${metrics}${submitNote}`)
+      }
+    }
+
+    push()
     push(`  ${dim('─'.repeat(w - 4))}`)
+    if (submit && !enrolled) {
+      push(`  ${red('not enrolled — run `npx sigrank enroll` to auto-submit')}`)
+    }
     push(`  ${dim(`polling every ${refresh}s  ·  ${submit ? 'auto-submit ON  ·  ' : ''}tokens stay on your machine  ·  ctrl+c to exit`)}`)
     push()
 
     write(out.join('\n'))
     lines = out.length
-    prev = cas?.yield ?? null
   }
 
   try {
@@ -1213,11 +1260,12 @@ async function showHelp() {
   writeln(`    ${cyan('compare --platform codex')} compare for a specific platform`)
   writeln(`    ${cyan('tui')}                      full tabbed TUI: Dashboard / Compare / Board / Watch`)
   writeln(`    ${cyan('tui --platform codex')}     TUI with a different default platform`)
-  writeln(`    ${cyan('watch')}                    live tune meter — re-reads local logs every 30s`)
-  writeln(`    ${cyan('watch --window 7d')}        watch a specific window`)
+  writeln(`    ${cyan('watch')}                    live tune meter — ALL active platforms × all windows, every 30s`)
+  writeln(`    ${cyan('watch --platform codex')}   watch only one platform (optional filter)`)
+  writeln(`    ${cyan('watch --window 7d')}        watch only one window (optional filter)`)
   writeln()
   writeln(`  ${bold('Options')}`)
-  writeln(`    ${dim('--window')}    7d · 30d · 90d · all  (default: 30d for board, 7d for watch)`)
+  writeln(`    ${dim('--window')}    7d · 30d · 90d · all  (default: 30d for board; all windows for watch)`)
   writeln(`    ${dim('--platform')}  claude · codex · amp · gemini · opencode · goose · …`)
   writeln(`    ${dim('--refresh')}   poll interval in seconds (default: 30)`)
   writeln(`    ${dim('--once')}      print once and exit (board only)`)
@@ -1337,14 +1385,31 @@ export async function runCli(argv) {
   const args = argv.slice(2) // strip 'node' + script path
   const cmd  = args[0]
 
-  // parse --key value flags
+  // parse --key value AND --key=value flags. E4: validate against the known set and warn
+  // (don't crash) on anything unknown, so a typo'd flag is visible instead of silently ignored.
+  const KNOWN_FLAGS = new Set(['window', 'platform', 'refresh', 'once', 'submit', 'compare', 'label'])
   const flags = {}
   for (let i = 1; i < args.length; i++) {
-    if (args[i].startsWith('--')) {
-      const key = args[i].slice(2)
-      const val = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true
-      flags[key] = val
+    const a = args[i]
+    if (!a.startsWith('--')) continue
+    const body = a.slice(2)
+    let key, val
+    const eq = body.indexOf('=')
+    if (eq !== -1) {
+      // --flag=value form
+      key = body.slice(0, eq)
+      val = body.slice(eq + 1)
+    } else {
+      // --flag [value] form: consume the next token as the value unless it's another flag
+      key = body
+      val = args[i + 1] && !args[i + 1].startsWith('--') ? args[++i] : true
     }
+    if (!key) continue
+    if (!KNOWN_FLAGS.has(key)) {
+      writeln(dim(`  (ignoring unknown flag --${key}; known: ${[...KNOWN_FLAGS].join(', ')})`))
+      continue
+    }
+    flags[key] = val
   }
 
   try {
@@ -1362,9 +1427,12 @@ export async function runCli(argv) {
       const { runTui } = await import('./tui.mjs')
       await runTui({ platform: flags.platform ?? 'claude', window: flags.window ?? '7d' })
     } else if (cmd === 'watch') {
+      // A5: no --platform/--window → watch ALL active platforms × ALL windows. Pass the raw
+      // flags through (undefined = no filter) so runWatch's auto-all mode engages by default;
+      // a provided flag narrows the grid (back-compat).
       await runWatch({
-        platform: flags.platform ?? 'claude',
-        window:   flags.window   ?? '7d',
+        platform: typeof flags.platform === 'string' ? flags.platform : undefined,
+        window:   typeof flags.window === 'string' ? flags.window : undefined,
         refresh:  Number(flags.refresh) || 30,
         submit:   flags.submit === true || flags.submit === 'true',
       })

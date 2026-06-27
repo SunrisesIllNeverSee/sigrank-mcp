@@ -16,6 +16,8 @@
  */
 
 import { readdir, readFile, lstat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { ADAPTERS } from './adapters.mjs'
@@ -279,4 +281,120 @@ export async function tokenpullAny(platform, opts = {}) {
   if (adapter.dataGap)   result.dataGap   = adapter.dataGap
   if (adapter.setupNote) result.setupNote = adapter.setupNote
   return result
+}
+
+// ── Fresh verifier pull (#9 / C1) ─────────────────────────────────────────────
+// The owner-requested FRESH pull of the three external verifier sources. Unlike the
+// stale snapshot readers (a 3-day-old token-dashboard.db, a static tokscale_report.json),
+// these RUN the source tool on every call so the numbers are live. Token-only: each tool
+// reports usage counts, never transcript content. Every external call is wrapped so a
+// missing binary / parse error / timeout returns null and NEVER throws — a verifier the
+// machine doesn't have simply doesn't appear.
+//
+// Returns { ccusage, tokscale, tokendash } where each value is either null or an object
+// keyed by window: { '7d':{...}, '30d':{...}, '90d':{...}, all:{...} } (windows that can't
+// be derived from a source are omitted; 'all' is present whenever the source has data).
+
+// ccusage: run `ccusage <platform> daily --json` and bucket the daily rows into the four
+// windows by date. Logic copied from tools.mjs `_ccusagePillars` (do NOT import private fns).
+function _freshCcusage(platform = 'claude') {
+  try {
+    const raw = execSync(`ccusage ${platform} daily --json`, { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const rows = JSON.parse(raw)?.daily ?? JSON.parse(raw)
+    if (!Array.isArray(rows)) return null
+    const now = Date.now()
+    const result = {}
+    for (const [win, days] of Object.entries({ '7d': 7, '30d': 30, '90d': 90 })) {
+      const since = new Date(now - days * DAY_MS)
+      let i = 0, o = 0, cw = 0, cr = 0
+      for (const r of rows) {
+        if (new Date(r.date ?? r.day ?? '1970') >= since) {
+          i  += r.inputTokens         ?? r.input_tokens         ?? 0
+          o  += r.outputTokens        ?? r.output_tokens        ?? 0
+          cw += r.cacheCreationTokens ?? r.cache_create_tokens  ?? 0
+          cr += r.cacheReadTokens     ?? r.cache_read_tokens    ?? 0
+        }
+      }
+      result[win] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
+    }
+    let i = 0, o = 0, cw = 0, cr = 0
+    for (const r of rows) {
+      i += r.inputTokens ?? 0; o += r.outputTokens ?? 0; cw += r.cacheCreationTokens ?? 0; cr += r.cacheReadTokens ?? 0
+    }
+    result['all'] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
+    return result
+  } catch { return null }
+}
+
+// tokendash: REFRESH ~/.claude/token-dashboard.db by running the dashboard's scan, then read
+// the live db via sqlite3. Claude only (the db only holds Claude Code sessions). The scan is
+// best-effort: if it fails (tool missing, slow), we still read whatever the db currently has.
+function _freshTokendash(platform = 'claude') {
+  if (platform !== 'claude') return null
+  const dbPath = join(homedir(), '.claude', 'token-dashboard.db')
+  const scanCli = join(homedir(), 'Desktop', 'token-dashboard', 'cli.py')
+  // Step 1 — refresh the db (best-effort; failures must not abort the read).
+  if (existsSync(scanCli)) {
+    try {
+      execSync(`python3 "${scanCli}" scan`, { timeout: 90000, stdio: ['ignore', 'ignore', 'ignore'] })
+    } catch { /* continue: read whatever the db currently has */ }
+  }
+  // Step 2 — read the (now-refreshed) db. all-time only; the db doesn't expose windowing here.
+  if (!existsSync(dbPath)) return null
+  try {
+    const raw = execSync(
+      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
+      { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] },
+    ).toString().trim()
+    const [i, o, cw, cr] = raw.split('|').map(Number)
+    if (![i, o, cw, cr].some((n) => Number.isFinite(n) && n > 0)) return null
+    return { all: { input: i || 0, output: o || 0, cacheCreate: cw || 0, cacheRead: cr || 0 } }
+  } catch { return null }
+}
+
+// tokscale: run `bunx tokscale@latest models --json` and sum the per-(client,model) rows for
+// the requested platform. The JSON shape (verified live) is:
+//   { entries: [ { client, model, input, output, cacheRead, cacheWrite, ... }, ... ], ... }
+// `client` maps directly to our platform name. Synthetic/unknown model rows are dropped (they
+// carry no real usage). all-time only — tokscale's models view is not windowed. If no row
+// matches the platform, return null gracefully.
+function _freshTokscale(platform = 'claude') {
+  try {
+    const raw = execSync(`bunx tokscale@latest models --json`, { timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const data = JSON.parse(raw)
+    const entries = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data) ? data : [])
+    const rows = entries.filter((e) =>
+      e && e.client === platform && e.model !== '<synthetic>' && e.model !== 'unknown' &&
+      ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0),
+    )
+    if (!rows.length) return null
+    const acc = rows.reduce((a, e) => ({
+      input:       a.input       + (Number(e.input)      || 0),
+      output:      a.output      + (Number(e.output)     || 0),
+      cacheCreate: a.cacheCreate + (Number(e.cacheWrite) || 0),
+      cacheRead:   a.cacheRead   + (Number(e.cacheRead)  || 0),
+    }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+    return { all: acc }
+  } catch { return null }
+}
+
+/**
+ * Fresh-pull all three external verifier sources for a platform. Each is run live (no stale
+ * snapshot) and returned as { window → {input,output,cacheCreate,cacheRead} } or null when the
+ * source is unavailable / has no data for the platform. Never throws — a failing source is null.
+ *
+ *   - ccusage  : `ccusage <platform> daily --json`              → 7d/30d/90d/all
+ *   - tokendash: refresh + read ~/.claude/token-dashboard.db    → all (claude only)
+ *   - tokscale : `bunx tokscale@latest models --json`           → all
+ */
+export async function freshVerifierPillars(platform = 'claude') {
+  const p = platform || 'claude'
+  // Each call is internally try/catch → null; await Promise.all of resolved values keeps the
+  // helper async (per the contract) without any individual failure rejecting the batch.
+  const [ccusage, tokendash, tokscale] = await Promise.all([
+    Promise.resolve().then(() => _freshCcusage(p)).catch(() => null),
+    Promise.resolve().then(() => _freshTokendash(p)).catch(() => null),
+    Promise.resolve().then(() => _freshTokscale(p)).catch(() => null),
+  ])
+  return { ccusage, tokscale, tokendash }
 }

@@ -113,6 +113,9 @@ async function pullByPlatform(platform, opts = {}) {
 export const DEFAULT_API_BASE = process.env.SIGRANK_API_BASE || 'https://signalaf.com'
 /** Default network timeout in ms (override via opts.fetchTimeout or SIGRANK_FETCH_TIMEOUT). */
 export const DEFAULT_FETCH_TIMEOUT = Number(process.env.SIGRANK_FETCH_TIMEOUT) || 10_000
+/** Max accepted length for a single paste/string arg (chars). Token counts are tiny; anything
+ *  past this is malformed or abusive — reject cleanly before parsing/POSTing (E2 hardening). */
+const MAX_INPUT = 1_000_000
 
 export const TOOLS = [
   {
@@ -245,6 +248,13 @@ export const TOOLS = [
 
 // tokenpull window key → the board's window_type enum.
 const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
+
+// E3: client-side auto-submit cooldown for watch_tokenpull. The server already dedups
+// identical snapshots (exact hash → 422), but a noisy poll loop with submit:true could still
+// churn the network/board with near-identical rows. Cap auto-submit to once per WATCH_SUBMIT_COOLDOWN_MS
+// per window (in-memory, per process). Keyed by window so different windows don't block each other.
+const WATCH_SUBMIT_COOLDOWN_MS = 5 * 60 * 1000
+const _lastWatchSubmitAt = new Map()
 
 export async function callTool(name, args, opts = {}) {
   const apiBase = opts.apiBase || DEFAULT_API_BASE
@@ -390,6 +400,9 @@ export async function callTool(name, args, opts = {}) {
 
   if (name === 'submit_paste') {
     if (!args?.text) throw new Error('submit_paste requires a non-empty `text` argument.')
+    if (typeof args.text === 'string' && args.text.length > MAX_INPUT) {
+      return { status: 'error', reason: 'input_too_large', detail: `text exceeds ${MAX_INPUT} chars (${args.text.length}). Paste only the token-count table, not full output.` }
+    }
     // Local preview first — also validates the paste is parseable before any POST.
     const pillars = parsePillars(args.text)
     const c = withParseWarnings(pillars, cascade(pillars))
@@ -469,6 +482,13 @@ export async function callTool(name, args, opts = {}) {
     // in the same shape as tokenpull output for easy follow-up with tokenpull_submit.
     const WINDOW_KEYS = ['7d', '30d', '90d', 'all']
     const sourceTool = args?.source_tool || null
+    // E2: reject any oversized window paste up front (token tables are tiny).
+    for (const wk of WINDOW_KEYS) {
+      const v = args?.[wk]
+      if (typeof v === 'string' && v.length > MAX_INPUT) {
+        return { status: 'error', reason: 'input_too_large', detail: `window '${wk}' exceeds ${MAX_INPUT} chars (${v.length}). Paste only the token-count table.` }
+      }
+    }
     const windows = []
     for (const wk of WINDOW_KEYS) {
       const text = args?.[wk]
@@ -514,12 +534,22 @@ export async function callTool(name, args, opts = {}) {
     if (args?.submit === true) {
       const id = opts.identity || ensureIdentity()
       if (id.codename && id.operator_id && id.private_key_pkcs8_b64) {
-        auth_submit = await submitSignedWindow(watchWindow, win.pillars, win.messages, id, {
-          apiBase,
-          fetchImpl: doFetch,
-          platform: pulled.platform,
-          now: opts.now,
-        })
+        // E3: client-side cooldown — at most one auto-submit per window per 5 min. Prevents a
+        // fast poll loop from churning the board even before the server's hash-dedup kicks in.
+        const clockNow = typeof opts.now === 'number' ? opts.now : Date.now()
+        const last = _lastWatchSubmitAt.get(watchWindow)
+        if (last != null && clockNow - last < WATCH_SUBMIT_COOLDOWN_MS) {
+          const waitS = Math.ceil((WATCH_SUBMIT_COOLDOWN_MS - (clockNow - last)) / 1000)
+          auth_submit = { status: 'cooldown', detail: `auto-submit for '${watchWindow}' on cooldown — next in ~${waitS}s (max once / 5 min).`, retry_after_s: waitS }
+        } else {
+          _lastWatchSubmitAt.set(watchWindow, clockNow)
+          auth_submit = await submitSignedWindow(watchWindow, win.pillars, win.messages, id, {
+            apiBase,
+            fetchImpl: doFetch,
+            platform: pulled.platform,
+            now: opts.now,
+          })
+        }
       } else {
         auth_submit = { status: 'not_enrolled', detail: 'Run `npx sigrank-mcp enroll` to auto-submit verified runs.' }
       }
