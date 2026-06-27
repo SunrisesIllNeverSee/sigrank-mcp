@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./banner.svg" alt="SigRank" width="920">
+<p><img src="./banner.svg" alt="SigRank" width="920"></p>
 
 **The yield cascade + live leaderboard as MCP tools any agent can call.**
 
