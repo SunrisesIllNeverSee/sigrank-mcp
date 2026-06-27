@@ -36,6 +36,8 @@ npm install -g sigrank
 sigrank          # launches the full tabbed TUI (TTY detected automatically)
 ```
 
+ccusage, tokscale, and tokendash are bundled as dependencies — no separate installs needed.
+
 Or one-shot without installing:
 
 ```bash
@@ -202,9 +204,9 @@ The dashboard pulls from multiple sources and shows them side-by-side for verifi
 | Source | What | Platform |
 |---|---|---|
 | `tokenpull` | On-device JSONL scanner (canon source) | claude, codex, amp, … |
-| `ccusage` | `ccusage <platform> daily --json` CLI | claude, codex |
-| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite | claude only |
-| `tokscale` | `~/tokscale_report.json` export | claude, codex |
+| `ccusage` | `ccusage <platform> daily --json` CLI (bundled) | claude, codex |
+| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite (bundled) | claude only |
+| `tokscale` | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex |
 
 **Codex input is estimated** — Codex logs don't expose true input tokens directly. The formula:
 ```
