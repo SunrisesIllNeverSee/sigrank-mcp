@@ -301,10 +301,7 @@ async function loadDashboardData() {
   // then fill the other 13 as they resolve. The caller passes an onFirst callback
   // that fires when claude is ready so the user sees their cascade within ~1 read,
   // not after a 14-platform barrier.
-  const [claudeResult] = await Promise.all([
-    tokenpullAny('claude').catch(() => null),
-    Promise.resolve(tokenDashPillars()),
-  ])
+  const claudeResult = await tokenpullAny('claude').catch(() => null)
 
   const active = []
   if (claudeResult) {
@@ -312,13 +309,13 @@ async function loadDashboardData() {
     if (all && (all.pillars.input ?? 0) + (all.pillars.output ?? 0) > 0) active.push(claudeResult)
   }
 
-  const verifierMap = {}
-  for (const platform of ALL_PLATFORMS) {
-    verifierMap[platform] = { cc: ccusagePillars(platform), ts: tokscalePillars(platform) }
-  }
-
+  // FIX A1 (2026-06-27): removed the 14× SYNCHRONOUS ccusage `verifierMap` build (measured 39,816 ms)
+  // that blocked the very first Dashboard paint — and the render never read `verifierMap` or `tdPillars`.
+  // (Also dropped the discarded second `tokenDashPillars()` call above.) Verifier comparison
+  // (ccusage / tokscale / token-dashboard) now runs FRESH + on-demand in the Compare tab, scoped to
+  // active platforms — see loadCompareData. Dashboard paints from tokenpull in ~2s.
   const boardData = await boardPromise
-  return { active, verifierMap, tdPillars: tokenDashPillars(), boardData, _loading: true, _remaining: ALL_PLATFORMS.slice(1) }
+  return { active, verifierMap: {}, tdPillars: null, boardData, _loading: true, _remaining: ALL_PLATFORMS.slice(1) }
 }
 
 /** FIX 0: fill the remaining platforms after the primary render. Mutates dashData.active. */
@@ -663,7 +660,10 @@ const TREND_METRICS = [
   { label: '10xDEV',   pick: (c) => c.dev10x,    fmt: (v) => v.toFixed(2) },
   { label: 'Eff',      pick: (c) => c.yield != null ? c.yield / AA_EFF_BASELINE : null, fmt: (v) => v.toFixed(1) + '×' },
   { label: '§IGNA',    pick: () => null, fmt: () => '—', stub: 'composite calibrating (needs user volume)' },
-  { label: 'Op Ratio', pick: (c, p) => (p.input ?? 0) > 0 ? { cacheRead: p.cacheRead ?? 0, input: p.input ?? 0, output: p.output ?? 0 } : null, fmt: (v) => `${fmtTok(v.cacheRead)}:${fmtTok(v.input)}:${fmtTok(v.output)}` },
+  // FIX A4 (2026-06-27): operating ratio is INPUT-NORMALIZED `cache : 1 : output` (matches web canon —
+  // ThreeDegreesChart / OperatingRatioBar, e.g. "3.5 : 1 : 0.50"), not raw token counts (which also
+  // overflowed the Trends columns).
+  { label: 'Op Ratio', pick: (c, p) => (p.input ?? 0) > 0 ? { cacheRead: p.cacheRead ?? 0, input: p.input ?? 0, output: p.output ?? 0 } : null, fmt: (v) => { const i = v.input || 1; return `${(v.cacheRead / i).toFixed(1)} : 1 : ${(v.output / i).toFixed(2)}` } },
   { label: '$/1M',     pick: () => null, fmt: () => '—', stub: 'cost data wires post-ingest' },
 ]
 function renderTrends(data, subIdx = 0) {
