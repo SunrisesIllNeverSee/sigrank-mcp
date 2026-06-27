@@ -417,7 +417,40 @@ function yieldSpark(d) {
 }
 
 // ── TAB 1: DASHBOARD ─────────────────────────────────────────────────────────
-function renderDashboard(data, status = '') {
+
+// SCROLL-VIEW (2026-06-27): section-scoped scroll for the cascade table.
+// The cascade section gets a real scroll viewport — up/down arrows scroll just
+// the cascade rows while the rest of the dashboard (header, token composition,
+// board, footer) stays pinned. This replaces the misleading "+N more — resize /
+// scroll" text (A3) which implied scroll existed but didn't (alt-screen locked
+// frame = no terminal scroll). The scroll is IN-SECTION only, on the Dashboard tab.
+
+const DASH_WINS = ['7d', '30d', '90d', 'all']
+
+// Count how many cascade rows the active platforms would produce (every window
+// with data across all active platforms). This is the "total wanted" count.
+function cascadeScrollableCount(active) {
+  return active.reduce((n, d) =>
+    n + DASH_WINS.filter(wk => {
+      const wd = d.windows?.find(x => x.window === wk)
+      return wd && (wd.pillars.input + wd.pillars.output) > 0
+    }).length, 0)
+}
+
+// Compute the max cascade rows that fit in the current terminal height budget.
+// Mirrors the calculation in renderDashboard (budget - used - sectionsBelow).
+function maxCascadeRowsFor(active) {
+  const budget = H() - 4  // 2 tab bar + 2 footer
+  const platformCount = active.length
+  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0)
+  const boardLines = 17
+  const sectionsBelow = barLines + boardLines
+  // used before cascade = header(2) + blank(1) + title(1) + blank(1) + col-header(1) + separator(1) = 7
+  const usedBeforeCascade = 7
+  return Math.max(8, budget - usedBeforeCascade - sectionsBelow)
+}
+
+function renderDashboard(data, status = '', scrollOffset = 0) {
   const w = W()
   const budget = H() - 4  // 2 tab bar + 2 footer
   const WINS = ['7d', '30d', '90d', 'all']
@@ -497,35 +530,51 @@ function renderDashboard(data, status = '') {
   const sectionsBelow = barLines + boardLines
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow)
 
-  // A3 (2026-06-27): count the cascade rows we WANT to show (every window with data across all
-  // active platforms) so we can tell the user how many were dropped by the height budget, instead
-  // of silently truncating them. (Fit logic below is unchanged — this is observation only.)
-  const totalCascadeRowsWanted = active.reduce((n, d) =>
-    n + WINS.filter(wk => {
-      const wd = d.windows?.find(x => x.window === wk)
-      return wd && (wd.pillars.input + wd.pillars.output) > 0
-    }).length, 0)
-
+  // SCROLL-VIEW (2026-06-27): Build the full list of cascade rows first, then
+  // slice by [scrollOffset, scrollOffset + maxCascadeRows]. This gives a real
+  // in-section scroll viewport — up/down arrows scroll just the cascade rows
+  // while the rest of the dashboard stays pinned. Replaces the A3 "+N more —
+  // resize / scroll" text which implied scroll existed but didn't.
   let firstWin = {}
-  let cascadeRowCount = 0
+  const allCascadeRows = []  // flat list: { platform, winKey, pillars, estimated }
   for (const d of active) {
     firstWin[d.platform] = WINS.find(wk => {
       const wd = d.windows?.find(w => w.window === wk)
       return wd && (wd.pillars.input + wd.pillars.output) > 0
     })
     for (const wk of WINS) {
-      if (cascadeRowCount >= maxCascadeRows || used >= budget - sectionsBelow) break
       const wd = d.windows?.find(x => x.window === wk)
       if (!wd || (wd.pillars.input + wd.pillars.output) === 0) continue
-      renderRow(d.platform, (s) => wk === firstWin[d.platform] ? cyan(s) : dim(s), wk, wd.pillars, d.estimated)
-      cascadeRowCount++
+      allCascadeRows.push({ platform: d.platform, winKey: wk, pillars: wd.pillars, estimated: d.estimated })
     }
-    emit()
   }
 
-  // A3: if any cascade rows were dropped (height budget / row cap), say so instead of hiding them.
-  const cascadeDropped = totalCascadeRowsWanted - cascadeRowCount
-  if (cascadeDropped > 0) emit(`  ${dim(`  +${cascadeDropped} more — resize / scroll`)}`)
+  const totalWanted = allCascadeRows.length
+  const canScroll = totalWanted > maxCascadeRows
+  // Clamp scroll offset to valid range [0, totalWanted - maxCascadeRows]
+  const maxOffset = Math.max(0, totalWanted - maxCascadeRows)
+  const effectiveOffset = Math.min(scrollOffset, maxOffset)
+  const visibleRows = allCascadeRows.slice(effectiveOffset, effectiveOffset + maxCascadeRows)
+
+  // ▲ indicator: rows above the current viewport
+  if (canScroll && effectiveOffset > 0) {
+    emit(`  ${dim(`  ▲ ${effectiveOffset} row${effectiveOffset > 1 ? 's' : ''} above`)}`)
+  }
+
+  // Render the visible slice — group by platform (emit a blank line between platforms)
+  let lastPlatform = null
+  for (const row of visibleRows) {
+    if (lastPlatform !== null && row.platform !== lastPlatform) emit()
+    renderRow(row.platform, (s) => row.winKey === firstWin[row.platform] ? cyan(s) : dim(s), row.winKey, row.pillars, row.estimated)
+    lastPlatform = row.platform
+  }
+  if (visibleRows.length > 0) emit()
+
+  // ▼ indicator: rows below the current viewport
+  const rowsBelow = totalWanted - effectiveOffset - visibleRows.length
+  if (canScroll && rowsBelow > 0) {
+    emit(`  ${dim(`  ▼ ${rowsBelow} row${rowsBelow > 1 ? 's' : ''} below · ↑↓ scroll`)}${effectiveOffset > 0 ? dim(` · ${effectiveOffset}/${maxOffset}`) : ''}`)
+  }
 
   // combined
   if (active.length > 1 && used < budget - sectionsBelow) {
@@ -706,7 +755,9 @@ function renderTrends(data, subIdx = 0) {
       emit()
     }
     // A3: surface the dropped count instead of hiding it.
-    if (trendsDropped > 0) emit(`  ${dim(`  +${trendsDropped} more — resize / scroll`)}`)
+    // SCROLL-VIEW (2026-06-27): changed "resize / scroll" → "resize to see more"
+    // because these tabs don't have a real scroll viewport (only Dashboard cascade does).
+    if (trendsDropped > 0) emit(`  ${dim(`  +${trendsDropped} more — resize to see more`)}`)
   } else { // Field
     emit(`  ${dim('  Field-wide trends — calculating…')}`)
     emit(`  ${dim('  (needs per-window board history; materializes once live ingest lands)')}`)
@@ -882,8 +933,10 @@ function renderSubmissions(boardData, window = '30d', filterCodename = null, hig
     shown++
   }
   // A3-style: if the height budget dropped rows, say so instead of silently truncating.
+  // SCROLL-VIEW (2026-06-27): changed "resize / scroll" → "resize to see more"
+  // (Board tab doesn't have a real scroll viewport — only Dashboard cascade does).
   const dropped = sorted.length - shown
-  if (dropped > 0 && used < budget) emit(`  ${dim(`  +${dropped} more — resize / scroll`)}`)
+  if (dropped > 0 && used < budget) emit(`  ${dim(`  +${dropped} more — resize to see more`)}`)
 }
 
 // ── TAB 3: BOARD ─────────────────────────────────────────────────────────────
@@ -1303,6 +1356,7 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
   let submitMsg    = ''        // [S] in-place submit result, shown in the read-tab footer
   let submitPreview = false    // FIX I1: [S] opens a preview grid before sending (see→confirm→send)
   let boardYouOnly = false     // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
+  let cascadeScroll = 0        // SCROLL-VIEW (2026-06-27): cascade-section scroll offset (Dashboard only)
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
@@ -1329,9 +1383,13 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       if (!dashData) {
         writeln(`\n  ${dim('loading dashboard…')}`)
       } else {
-        renderDashboard(dashData, status)
+        renderDashboard(dashData, status, cascadeScroll)
       }
-      setFooter(readFooter(`${hint}${submitHint}`))
+      // SCROLL-VIEW: show ↑↓ hint only when there are cascade rows to scroll
+      const scrollHint = dashData && Array.isArray(dashData.active)
+        ? cascadeScrollableCount(dashData.active) > maxCascadeRowsFor(dashData.active) ? `   ${dim('↑↓ scroll cascade')}` : ''
+        : ''
+      setFooter(readFooter(`${hint}${scrollHint}${submitHint}`))
     } else if (activeTab === 1) {                // Trends
       if (!dashData) {
         writeln(`\n  ${dim('loading trends…')}`)
@@ -1574,6 +1632,33 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
         return
       }
 
+      // SCROLL-VIEW (2026-06-27): ↑/↓ (or j/k) scroll the cascade section on the
+      // Dashboard tab ONLY. The rest of the dashboard stays pinned. Only active
+      // when there are more cascade rows than fit in the viewport.
+      if (activeTab === 0 && dashData && Array.isArray(dashData.active)) {
+        const total = cascadeScrollableCount(dashData.active)
+        const maxRows = maxCascadeRowsFor(dashData.active)
+        if (total > maxRows) {
+          const maxOff = total - maxRows
+          if (key === '\x1b[A' || k === 'k') {              // ↑ / k → scroll up
+            cascadeScroll = Math.max(0, cascadeScroll - 1)
+            await redraw(); return
+          }
+          if (key === '\x1b[B' || k === 'j') {              // ↓ / j → scroll down
+            cascadeScroll = Math.min(maxOff, cascadeScroll + 1)
+            await redraw(); return
+          }
+          if (key === '\x1b[5~') {                          // PageUp → scroll up by viewport
+            cascadeScroll = Math.max(0, cascadeScroll - maxRows)
+            await redraw(); return
+          }
+          if (key === '\x1b[6~') {                          // PageDown → scroll down by viewport
+            cascadeScroll = Math.min(maxOff, cascadeScroll + maxRows)
+            await redraw(); return
+          }
+        }
+      }
+
       // tab switching (6 tabs: 0=Dashboard 1=Trends 2=Compare 3=Board 4=Watch 5=Connect)
       let switched = false
       if (key === '\x1b[C') { activeTab = Math.min(5, activeTab + 1); switched = true }
@@ -1585,6 +1670,9 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       if (k === '5') { activeTab = 4; switched = true }  // Watch = an in-TUI landing panel
       if (k === '6') { activeTab = 5; switched = true }  // Connect = sign in / switch device
       if (k === 'c' && activeTab !== 5) { activeTab = 5; switched = true }  // [C] → Connect from any read tab
+
+      // SCROLL-VIEW: reset cascade scroll when leaving the Dashboard tab
+      if (switched && activeTab !== 0) cascadeScroll = 0
 
       // #9 (2026-06-27): Compare loads its FRESH verifier pull ON-DEMAND when the tab opens
       // (NOT on the Dashboard load path — that pull is a 5–60s scan). Paint the "pulling fresh
@@ -1657,6 +1745,7 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
 
       if (k === 'r') {
         status = 'refreshing…'
+        cascadeScroll = 0  // SCROLL-VIEW: reset scroll on refresh
         // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
         // (loadAll no longer touches Compare). Clearing compareData shows the spinner first.
         if (activeTab === 2) {
