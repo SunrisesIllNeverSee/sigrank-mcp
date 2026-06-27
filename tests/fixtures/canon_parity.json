@@ -1,4 +1,5 @@
 {
+  "_warning": "TEST-ONLY FIXTURE — DO NOT USE THIS KEYPAIR AS A REAL IDENTITY. This private key is publicly committed and has zero value. Generated once for the canon-parity gate; both sigrank-mcp and sigrank-app assert against it. Excluded from npm tarball by .npmignore + files[] whitelist + CI pack-check (grep canon_parity).",
   "_note": "TEST-ONLY keypair. Generated once for the canon-parity gate; both sigrank-mcp and sigrank-app assert against it. Not a real device identity.",
   "public_key": "ed25519:pkMEwTRuT+XFpOhInnMvZt98yKgy8MfhBTqPTv8h+NQ=",
   "private_key_pkcs8_b64": "MC4CAQAwBQYDK2VwBCIEIIu04KDTTAqykO+Q0/sivxqHW/YnhO6Urh9RZDkjlwE6",

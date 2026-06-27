@@ -396,6 +396,16 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
 
 // ── COMPARE command ───────────────────────────────────────────────────────────
 // Side-by-side: ccusage (JSON) vs tokenpull vs token-dashboard (SQLite)
+//
+// NOTE (P3 2026-06-27): These sync verifier readers (ccusagePillars / tokscalePillars /
+// tokenDashPillars / appPillars) are INTENTIONALLY separate from tokenpull.mjs
+// `freshVerifierPillars()`. The compare command uses cached/file-based data sources
+// (tokscale_report.json, direct db read with windowed+model-filtered queries) for a
+// quick side-by-side, while freshVerifierPillars runs all three live (bunx tokscale,
+// scan+read tokendash) for the dashboard. Merging them would change compare's data
+// source and lose the windowed tokendash breakdown. ccusagePillars IS functionally
+// identical to _freshCcusage and could be consolidated in a future pass if compare
+// switches to live data — but that's a behavior change, not a refactor.
 
 function ccusagePillars(platform = 'claude') {
   // ccusage <platform> daily --json → sum by window
@@ -831,7 +841,7 @@ async function runSigRank() {
   writeln(`  ${gold('⊙ SigRank')}  ${bold('Operator Dashboard')}`)
   writeln(`  ${dim('reading local data…')}`)
 
-  const { tokenpullAny } = await import('./tokenpull.mjs')
+  const { tokenpullAny, freshVerifierPillars } = await import('./tokenpull.mjs')
 
   // Local sources first (fast) — board fetch with 5s timeout runs in parallel
   const boardPromise = Promise.race([
@@ -839,23 +849,15 @@ async function runSigRank() {
     new Promise(r => setTimeout(() => r(null), 5000)),
   ])
 
-  const [platformResults, tdPillars] = await Promise.all([
+  // FIX A1-CLI (2026-06-27): verifiers (ccusage/tokscale/tokendash) are fetched
+  // ON-DEMAND for ACTIVE platforms only — not synchronously for all 15 platforms
+  // upfront (which blocked Dashboard paint up to ~40s, same class of bug as TUI
+  // FIX A1). The sync ccusagePillars()/tokscalePillars()/tokenDashPillars() loop
+  // over ALL_PLATFORMS is replaced by parallel freshVerifierPillars() calls after
+  // we know which platforms actually have local data.
+  const [platformResults] = await Promise.all([
     Promise.allSettled(ALL_PLATFORMS.map(p => tokenpullAny(p))),
-    Promise.resolve(tokenDashPillars()),
   ])
-
-  // per-platform verifiers: ccusage + tokscale both support multiple platforms
-  // build map: platform → { cc, ts }
-  const verifierMap = {}
-  for (const platform of ALL_PLATFORMS) {
-    verifierMap[platform] = {
-      cc: ccusagePillars(platform),
-      ts: tokscalePillars(platform),
-    }
-  }
-  // keep top-level claude refs for combined section
-  const ccPillars = verifierMap['claude']?.cc ?? null
-  const tsPillars = verifierMap['claude']?.ts ?? null
 
   const boardData = await boardPromise
 
@@ -870,6 +872,21 @@ async function runSigRank() {
     const total = (all.pillars.input ?? 0) + (all.pillars.output ?? 0)
     if (total === 0) continue
     active.push(d)
+  }
+
+  // Fetch verifiers on-demand for active platforms only (parallel, never throws).
+  // tdPillars (token-dashboard) is claude-only and pulled from the claude fresh result.
+  const verifierMap = {}
+  let tdPillars = null
+  if (active.length > 0) {
+    const fresh = await Promise.all(
+      active.map(d => freshVerifierPillars(d.platform).catch(() => ({ ccusage: null, tokscale: null, tokendash: null })))
+    )
+    for (let i = 0; i < active.length; i++) {
+      const f = fresh[i]
+      verifierMap[active[i].platform] = { cc: f.ccusage, ts: f.tokscale }
+      if (active[i].platform === 'claude' && f.tokendash) tdPillars = f.tokendash
+    }
   }
 
   // clear the 3 loading lines (blank + header + "reading…")

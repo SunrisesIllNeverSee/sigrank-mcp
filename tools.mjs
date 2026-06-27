@@ -22,6 +22,12 @@ import path from 'node:path'
 
 // ── Verifier readers (sync, on-device, token-only) ────────────────────────────
 // These mirror the implementations in cli.mjs / tui.mjs without the circular import.
+//
+// NOTE (P3 2026-06-27): Intentionally separate from tokenpull.mjs `freshVerifierPillars()`.
+// The MCP `tokenpull_compare` tool uses these file-based/cached readers (tokscale_report.json,
+// direct db read) for a quick comparison, while freshVerifierPillars runs all sources live
+// (bunx tokscale, scan+read tokendash) for the TUI/CLI dashboard. Different data sources =
+// different behavior; do NOT merge without understanding the trade-off.
 
 function _ccusagePillars(platform = 'claude') {
   try {

@@ -67,7 +67,7 @@ sigrank
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.11.2
+⊙ SigRank CLI  v0.12.1
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board
@@ -258,7 +258,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | Var | Default | Description |
 |---|---|---|
 | `SIGRANK_API_BASE` | `https://signalaf.com` | Override the board host |
-| `SIGRANK_FETCH_TIMEOUT_MS` | `10000` | Board API fetch timeout |
+| `SIGRANK_FETCH_TIMEOUT` | `10000` | Board API fetch timeout (ms) |
 
 ---
 
