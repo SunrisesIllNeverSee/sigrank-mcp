@@ -485,3 +485,17 @@ assert.strictEqual(fromPartial.operator_id, null, 'A-REAL: existing w/o device_i
 // clearIdentity is exported (the Connect [X] sign-out escape hatch)
 assert.strictEqual(typeof clearIdentity, 'function', 'clearIdentity is exported (FIX A sign-out)')
 console.log('✓ A-REAL: binding invalidation on device_id change · clearIdentity exported')
+
+// ── E2 (0.12.0): 1MB oversized-input guard — reject before any parse / network ──
+const big = 'x'.repeat(1_000_001)
+const oversizePaste = await callTool('submit_paste', { text: big })
+assert.strictEqual(oversizePaste.status, 'error', 'E2: oversized submit_paste → error status')
+assert.strictEqual(oversizePaste.reason, 'input_too_large', 'E2: oversized submit_paste → input_too_large')
+// normal input still scores after the guard (regression)
+const okAfterGuard = await callTool('rank_paste', { text: MOSES })
+assert.strictEqual(okAfterGuard.yield, 18436.98, 'E2: normal paste still scores with the guard in place')
+// rank_windows rejects an oversized per-window paste up front
+const oversizeWin = await callTool('rank_windows', { '7d': 'y'.repeat(1_000_001) })
+assert.strictEqual(oversizeWin.status, 'error', 'E2: oversized rank_windows arg → error status')
+assert.strictEqual(oversizeWin.reason, 'input_too_large', 'E2: oversized rank_windows arg → input_too_large')
+console.log('✓ E2: 1MB input guard — submit_paste + rank_windows reject oversized; normal input unaffected')

@@ -221,70 +221,13 @@ function sparkline(values) {
   }).join('')
 }
 
-// ── Data sources (same as cli.mjs) ──────────────────────────────────────────
-function ccusagePillars(platform = 'claude') {
-  try {
-    const cmd = platform === 'claude' ? 'ccusage claude daily --json' : `ccusage ${platform} daily --json`
-    const raw = execSync(cmd, { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
-    const data = JSON.parse(raw)
-    const rows = data.daily ?? data
-    const now = Date.now()
-    const cutoff = { '7d': 7, '30d': 30, '90d': 90 }
-    const result = {}
-    for (const [win, days] of Object.entries(cutoff)) {
-      const since = new Date(now - days * 86400000)
-      let i = 0, o = 0, cw = 0, cr = 0
-      for (const row of rows) {
-        if (new Date(row.date ?? row.day ?? '1970') >= since) {
-          i  += row.inputTokens        ?? row.input_tokens        ?? 0
-          o  += row.outputTokens       ?? row.output_tokens       ?? 0
-          cw += row.cacheCreationTokens ?? row.cache_create_tokens ?? 0
-          cr += row.cacheReadTokens    ?? row.cache_read_tokens   ?? 0
-        }
-      }
-      result[win] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
-    }
-    let i = 0, o = 0, cw = 0, cr = 0
-    for (const row of rows) {
-      i  += row.inputTokens        ?? 0
-      o  += row.outputTokens       ?? 0
-      cw += row.cacheCreationTokens ?? 0
-      cr += row.cacheReadTokens    ?? 0
-    }
-    result['all'] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
-    return result
-  } catch { return null }
-}
-
-function tokscalePillars(platform = 'claude') {
-  const p = path.join(os.homedir(), 'tokscale_report.json')
-  if (!existsSync(p)) return null
-  try {
-    const data = JSON.parse(readFileSync(p, 'utf8'))
-    const rows = (data.entries ?? []).filter(e =>
-      e.client === platform && e.model !== '<synthetic>' && e.model !== 'unknown' && (e.input > 0 || e.output > 0)
-    )
-    if (!rows.length) return null
-    const acc = rows.reduce((a, e) => ({
-      input: a.input + (e.input ?? 0), output: a.output + (e.output ?? 0),
-      cacheCreate: a.cacheCreate + (e.cacheWrite ?? 0), cacheRead: a.cacheRead + (e.cacheRead ?? 0),
-    }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
-    return { all: acc }
-  } catch { return null }
-}
-
-function tokenDashPillars() {
-  const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
-  if (!existsSync(dbPath)) return null
-  try {
-    const raw = execSync(
-      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
-      { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }
-    ).toString().trim()
-    const [i, o, cw, cr] = raw.split('|').map(Number)
-    return { all: { input: i || 0, output: o || 0, cacheCreate: cw || 0, cacheRead: cr || 0 } }
-  } catch { return null }
-}
+// ── Data sources ─────────────────────────────────────────────────────────────
+// (0.12.1 FIX 4) The local verifier readers (ccusage / tokscale / token-dashboard)
+// moved to `freshVerifierPillars()` in tokenpull.mjs — FRESH on-demand pulls used by
+// the Compare tab (#9). The old in-tui copies were dead after A1 removed the Dashboard
+// verifierMap loop and #9 routed Compare through the fresh helper; removed here.
+// (tools.mjs keeps its own `_ccusagePillars`/`_tokscalePillars`/`_tokenDashPillars` —
+// still used by the `tokenpull_compare` MCP tool.)
 
 async function loadDashboardData() {
   const { tokenpullAny } = await import('./tokenpull.mjs')
