@@ -17,12 +17,26 @@
 
 import { readdir, readFile, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { execSync } from 'node:child_process'
+import { execSync, execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { ADAPTERS } from './adapters.mjs'
 
 const DAY_MS = 86_400_000
+
+// ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync in the
+// fresh verifier readers. execSync blocks the entire Node event loop (no key handling,
+// no screen repaint for up to 90s during the tokendash scan). execFile is async: the
+// event loop keeps running, so the TUI stays responsive while external commands run.
+// Returns stdout as a string. Rejects on error or timeout (caller catches → null).
+function execFileAsync(cmd, args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.toString())
+    })
+  })
+}
 
 // Background tooling that runs under your account but is NOT your work — memory plugins,
 // observers, summarizers, sub-agent fleets. They pad output/Υ (claude-mem did ~27%).
@@ -297,9 +311,13 @@ export async function tokenpullAny(platform, opts = {}) {
 
 // ccusage: run `ccusage <platform> daily --json` and bucket the daily rows into the four
 // windows by date. Logic copied from tools.mjs `_ccusagePillars` (do NOT import private fns).
-function _freshCcusage(platform = 'claude') {
+//
+// ASYNC FIX (2026-06-27): was execSync (blocked the entire event loop for up to 15s,
+// freezing the TUI locked frame + key handling). Now uses execFile (async) so the
+// event loop keeps running — the TUI stays responsive while the external command runs.
+async function _freshCcusage(platform = 'claude') {
   try {
-    const raw = execSync(`ccusage ${platform} daily --json`, { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const raw = await execFileAsync('ccusage', [platform, 'daily', '--json'], 15000)
     const rows = JSON.parse(raw)?.daily ?? JSON.parse(raw)
     if (!Array.isArray(rows)) return null
     const now = Date.now()
@@ -329,24 +347,26 @@ function _freshCcusage(platform = 'claude') {
 // tokendash: REFRESH ~/.claude/token-dashboard.db by running the dashboard's scan, then read
 // the live db via sqlite3. Claude only (the db only holds Claude Code sessions). The scan is
 // best-effort: if it fails (tool missing, slow), we still read whatever the db currently has.
-function _freshTokendash(platform = 'claude') {
+//
+// ASYNC FIX (2026-06-27): was execSync with a 90s timeout — that blocked the ENTIRE event
+// loop for up to 90 seconds, freezing the TUI completely (no key handling, no frame repaint).
+// Now uses execFile (async) so the TUI stays responsive during the scan.
+async function _freshTokendash(platform = 'claude') {
   if (platform !== 'claude') return null
   const dbPath = join(homedir(), '.claude', 'token-dashboard.db')
   const scanCli = join(homedir(), 'Desktop', 'token-dashboard', 'cli.py')
   // Step 1 — refresh the db (best-effort; failures must not abort the read).
   if (existsSync(scanCli)) {
-    try {
-      execSync(`python3 "${scanCli}" scan`, { timeout: 90000, stdio: ['ignore', 'ignore', 'ignore'] })
-    } catch { /* continue: read whatever the db currently has */ }
+    try { await execFileAsync('python3', [scanCli, 'scan'], 90000) }
+    catch { /* continue: read whatever the db currently has */ }
   }
   // Step 2 — read the (now-refreshed) db. all-time only; the db doesn't expose windowing here.
   if (!existsSync(dbPath)) return null
   try {
-    const raw = execSync(
-      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
-      { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] },
-    ).toString().trim()
-    const [i, o, cw, cr] = raw.split('|').map(Number)
+    const raw = await execFileAsync('sqlite3', [dbPath,
+      'SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages'
+    ], 5000)
+    const [i, o, cw, cr] = raw.trim().split('|').map(Number)
     if (![i, o, cw, cr].some((n) => Number.isFinite(n) && n > 0)) return null
     return { all: { input: i || 0, output: o || 0, cacheCreate: cw || 0, cacheRead: cr || 0 } }
   } catch { return null }
@@ -358,9 +378,12 @@ function _freshTokendash(platform = 'claude') {
 // `client` maps directly to our platform name. Synthetic/unknown model rows are dropped (they
 // carry no real usage). all-time only — tokscale's models view is not windowed. If no row
 // matches the platform, return null gracefully.
-function _freshTokscale(platform = 'claude') {
+//
+// ASYNC FIX (2026-06-27): was execSync with a 60s timeout — blocked the event loop entirely.
+// Now uses execFile (async) so the TUI stays responsive.
+async function _freshTokscale(platform = 'claude') {
   try {
-    const raw = execSync(`bunx tokscale@latest models --json`, { timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const raw = await execFileAsync('bunx', ['tokscale@latest', 'models', '--json'], 60000)
     const data = JSON.parse(raw)
     const entries = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data) ? data : [])
     const rows = entries.filter((e) =>

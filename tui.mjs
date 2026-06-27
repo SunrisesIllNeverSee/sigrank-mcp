@@ -1677,11 +1677,17 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       // #9 (2026-06-27): Compare loads its FRESH verifier pull ON-DEMAND when the tab opens
       // (NOT on the Dashboard load path — that pull is a 5–60s scan). Paint the "pulling fresh
       // sources…" spinner first (compareData null → redraw shows it), then run the pull + re-render.
+      // ASYNC FIX (2026-06-27): with execFile (async), the event loop keeps running during the
+      // pull — key presses are NOT blocked. Guard: only render the result if the user is still
+      // on the Compare tab (they may have switched away during the pull).
       if (switched && activeTab === 2 && !compareData) {
         submitMsg = ''
         await redraw()  // show the spinner line before the (slow) fresh pull
-        compareData = await loadCompareData(platform).catch(() => null)
-        await redraw()
+        const result = await loadCompareData(platform).catch(() => null)
+        if (activeTab === 2) {  // still on Compare? render the result
+          compareData = result
+          await redraw()
+        }
         return
       }
 
@@ -1705,8 +1711,12 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
           compareData = null
           status = `loading ${platform}…`
           await redraw()
-          compareData = await loadCompareData(platform).catch(() => null)
-          status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+          // ASYNC FIX: guard — only render if still on Compare (user may have switched away)
+          const result = await loadCompareData(platform).catch(() => null)
+          if (activeTab === 2) {
+            compareData = result
+            status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+          }
         } else {
           // A5: Watch [P] cycles 'all' → claude → codex → … → 'all' (optional focus; default 'all').
           const WATCH_PLAT_CYCLE = ['all', ...CYCLE_PLATFORMS]
@@ -1751,9 +1761,13 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
         if (activeTab === 2) {
           compareData = null
           await redraw()
-          compareData = await loadCompareData(platform).catch(() => null)
-          status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
-          await redraw()
+          // ASYNC FIX: guard — only render if still on Compare
+          const result = await loadCompareData(platform).catch(() => null)
+          if (activeTab === 2) {
+            compareData = result
+            status = `last refreshed ${new Date().toLocaleTimeString('en-US', { hour12: false })}`
+            await redraw()
+          }
           return
         }
         await redraw()
