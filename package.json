@@ -37,6 +37,7 @@
     "keystore.mjs",
     "submit.mjs",
     "connect.mjs",
+    "banner.svg",
     "README.md",
     "LICENSE"
   ],

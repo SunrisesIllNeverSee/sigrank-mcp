@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="320" viewBox="0 0 920 320">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#15120c"/>
+      <stop offset="100%" stop-color="#0a0805"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c4923a"/>
+      <stop offset="100%" stop-color="#e8b955"/>
+    </linearGradient>
+    <linearGradient id="goldDim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8a6e2e"/>
+      <stop offset="100%" stop-color="#a8843c"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="920" height="320" rx="16" fill="url(#bg)"/>
+
+  <!-- Top accent line -->
+  <rect x="0" y="0" width="920" height="3" rx="16" fill="url(#gold)"/>
+
+  <!-- § mark -->
+  <text x="56" y="130" font-family="Georgia, 'Times New Roman', serif" font-size="88" font-weight="700" fill="url(#gold)">§</text>
+
+  <!-- SigRank wordmark -->
+  <text x="56" y="200" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="700" fill="#f5f0e8">SigRank</text>
+
+  <!-- Tagline -->
+  <text x="56" y="240" font-family="Helvetica, Arial, sans-serif" font-size="18" fill="#a89a7a">The AI operator leaderboard. Token-telemetry. Cascade-ranked.</text>
+
+  <!-- Υ formula (right side) -->
+  <text x="560" y="120" font-family="Georgia, 'Times New Roman', serif" font-size="20" fill="#6b6354" text-anchor="middle">RANK METRIC</text>
+  <text x="560" y="180" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" fill="url(#gold)" text-anchor="middle">Υ = (cr × o) / i²</text>
+  <text x="560" y="215" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#a89a7a" text-anchor="middle">Yield · Leverage · Velocity · 10xDEV</text>
+
+  <!-- Cascade bars (right side, decorative) -->
+  <rect x="460" y="250" width="40" height="12" rx="2" fill="url(#goldDim)" opacity="0.4"/>
+  <rect x="510" y="250" width="40" height="12" rx="2" fill="url(#goldDim)" opacity="0.6"/>
+  <rect x="560" y="250" width="40" height="12" rx="2" fill="url(#gold)" opacity="0.8"/>
+  <rect x="610" y="250" width="40" height="12" rx="2" fill="url(#gold)"/>
+
+  <!-- signalaf.com -->
+  <text x="56" y="290" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#6b6354">signalaf.com</text>
+
+  <!-- npm badge area (right bottom) -->
+  <text x="864" y="290" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#6b6354" text-anchor="end">npm: sigrank</text>
+</svg>

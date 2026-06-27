@@ -1,16 +1,6 @@
 <div align="center">
 
-```
- ███████ ██  ██████  ██████   █████  ███    ██ ██   ██
- ██      ██ ██       ██   ██ ██   ██ ████   ██ ██  ██
- ███████ ██ ██   ███ ██████  ███████ ██ ██  ██ █████
-      ██ ██ ██    ██ ██   ██ ██   ██ ██  ██ ██ ██  ██
- ███████ ██  ██████  ██   ██ ██   ██ ██   ████ ██   ██
-```
-
-◈ ─────────────────────────────────────────── ◈
-
-# SigRank MCP
+<img src="./banner.svg" alt="SigRank" width="920">
 
 **The yield cascade + live leaderboard as MCP tools any agent can call.**
 
@@ -27,21 +17,26 @@ For all builders, burners and 10xers.
 
 ---
 
-Token-only. No auth. No transcript content. Privacy-preserving by design.
-
-Dual-mode package: **interactive CLI dashboard** for operators, **MCP stdio server** for AI clients.
+## Quickstart — 3 steps to the board
 
 ```bash
+# 1. Install (pulls ccusage + tokscale + tokendash automatically — no separate installs)
 npm install -g sigrank
-sigrank          # launches the full tabbed TUI (TTY detected automatically)
+
+# 2. Sign in (paste a connect code from signalaf.com → Settings → New key)
+sigrank enroll
+
+# 3. Submit your cascade to the board
+sigrank submit
 ```
 
-ccusage, tokscale, and tokendash are bundled as dependencies — no separate installs needed.
+That's it. The agent reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — only the four token counts leave your machine.
 
-Or one-shot without installing:
+Or just explore without signing in:
 
 ```bash
-npx sigrank board --once
+sigrank          # launches the full tabbed TUI (dashboard, compare, board, watch)
+npx sigrank board --once    # print the live leaderboard once
 ```
 
 ## Install from GitHub
