@@ -28,10 +28,23 @@ import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { classify } from './cascade.mjs'
 import { ensureIdentity, keystorePath } from './keystore.mjs'
 import { submitSignedWindow } from './submit.mjs'
-import { execSync } from 'child_process'
+import { execFile } from 'child_process'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
+
+// ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync for
+// defense-in-depth (shell injection prevention). execFile passes args as an
+// array, so no shell parsing occurs — even if platform contained special chars,
+// they'd be treated as literal arguments, not shell commands.
+function execFileAsync(cmd, args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.toString())
+    })
+  })
+}
 
 // ── ANSI helpers (no chalk dep) ────────────────────────────────────────────
 const ESC = '\x1b['
@@ -407,11 +420,10 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
 // identical to _freshCcusage and could be consolidated in a future pass if compare
 // switches to live data — but that's a behavior change, not a refactor.
 
-function ccusagePillars(platform = 'claude') {
+async function ccusagePillars(platform = 'claude') {
   // ccusage <platform> daily --json → sum by window
   try {
-    const cmd = platform === 'claude' ? 'ccusage claude daily --json' : `ccusage ${platform} daily --json`
-    const raw = execSync(cmd, { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    const raw = await execFileAsync('ccusage', [platform, 'daily', '--json'], 15000)
     const data = JSON.parse(raw)
     const rows = data.daily ?? data // ccusage may return {daily:[...]} or [...]
 
@@ -494,7 +506,7 @@ function appPillars() {
   }
 }
 
-function tokenDashPillars() {
+async function tokenDashPillars() {
   const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
   if (!existsSync(dbPath)) return null
   try {
@@ -513,9 +525,8 @@ r = db.execute(f"SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m
 out['all'] = {'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}
 print(json.dumps(out))
 `)
-    const raw = execSync(`python3 "${tmpScript}" "${dbPath}"`,
-      { timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
-    return JSON.parse(raw)
+    const raw = await execFileAsync('python3', [tmpScript, dbPath], 15000)
+    return JSON.parse(raw.trim())
   } catch {
     return null
   }
@@ -560,12 +571,12 @@ function cascadeFromPillars(p) {
 async function runCompare({ platform = 'claude' } = {}) {
   write(HIDE_CURSOR)
 
-  // Pull all five sources in parallel
+  // Pull all five sources in parallel (verifiers now async via execFile)
   writeln(`  ${dim('reading all 5 sources…')}`)
   const [ccPillars, tpData, tdPillars, tsPillars, apPillars] = await Promise.all([
-    Promise.resolve(ccusagePillars(platform)),
+    ccusagePillars(platform).catch(() => null),
     callTool('tokenpull', { platform }).catch(() => null),
-    Promise.resolve(platform === 'claude' ? tokenDashPillars() : null),
+    (platform === 'claude' ? tokenDashPillars() : Promise.resolve(null)).catch(() => null),
     Promise.resolve(tokscalePillars(platform)),
     Promise.resolve(platform === 'claude' ? appPillars() : null),
   ])
@@ -1154,8 +1165,8 @@ async function runSigRank() {
         if (k === 'q' || key === '\u0003') { // q or ctrl+c
           resolve()
         } else if (k === 'b') {
-          const { execSync: es } = await import('child_process')
-          try { es('open https://signalaf.com', { stdio: 'ignore' }) } catch { }
+          // ASYNC FIX (2026-06-27): execFile instead of dynamic execSync import
+          execFile('open', ['https://signalaf.com'], { stdio: 'ignore' }, () => {})
           resolve()
         } else if (k === 's') {
           const id = ensureIdentity()

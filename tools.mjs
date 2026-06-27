@@ -15,10 +15,23 @@ import { ALL_PLATFORMS } from './adapters.mjs'
 import { ensureIdentity, recordEnrollment } from './keystore.mjs'
 import { submitSignedWindow } from './submit.mjs'
 import { createHash } from 'node:crypto'
-import { execSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+
+// ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync for
+// defense-in-depth (shell injection prevention + non-blocking). The platform param
+// is enum-validated at the MCP schema level, but execFile also prevents shell
+// interpolation attacks by passing args as an array (no shell parsing).
+function execFileAsync(cmd, args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.toString())
+    })
+  })
+}
 
 // ── Verifier readers (sync, on-device, token-only) ────────────────────────────
 // These mirror the implementations in cli.mjs / tui.mjs without the circular import.
@@ -29,9 +42,9 @@ import path from 'node:path'
 // (bunx tokscale, scan+read tokendash) for the TUI/CLI dashboard. Different data sources =
 // different behavior; do NOT merge without understanding the trade-off.
 
-function _ccusagePillars(platform = 'claude') {
+async function _ccusagePillars(platform = 'claude') {
   try {
-    const raw = execSync(`ccusage ${platform} daily --json`, { timeout: 15000, stdio: ['ignore','pipe','ignore'] }).toString()
+    const raw = await execFileAsync('ccusage', [platform, 'daily', '--json'], 15000)
     const rows = JSON.parse(raw)?.daily ?? JSON.parse(raw)
     const now = Date.now()
     const result = {}
@@ -57,15 +70,14 @@ function _ccusagePillars(platform = 'claude') {
   } catch { return null }
 }
 
-function _tokenDashPillars() {
+async function _tokenDashPillars() {
   const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
   if (!existsSync(dbPath)) return null
   try {
-    const raw = execSync(
-      `sqlite3 "${dbPath}" "SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages"`,
-      { timeout: 5000, stdio: ['ignore','pipe','ignore'] }
-    ).toString().trim()
-    const [i,o,cw,cr] = raw.split('|').map(Number)
+    const raw = await execFileAsync('sqlite3', [dbPath,
+      'SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens)+SUM(cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages'
+    ], 5000)
+    const [i,o,cw,cr] = raw.trim().split('|').map(Number)
     return { all: { input: i||0, output: o||0, cacheCreate: cw||0, cacheRead: cr||0 } }
   } catch { return null }
 }
@@ -578,11 +590,11 @@ export async function callTool(name, args, opts = {}) {
     const platform = args?.platform || 'claude'
     const WINS = ['7d', '30d', '90d', 'all']
 
-    // Pull all four sources in parallel (verifiers are sync, wrap in Promise.resolve)
+    // Pull all four sources in parallel (verifiers are now async via execFile)
     const [tpResult, ccPillars, tdPillars, tsPillars] = await Promise.all([
       pullByPlatform(platform, opts).catch(() => null),
-      Promise.resolve(_ccusagePillars(platform)),
-      Promise.resolve(platform === 'claude' ? _tokenDashPillars() : null),
+      _ccusagePillars(platform).catch(() => null),
+      (platform === 'claude' ? _tokenDashPillars() : Promise.resolve(null)).catch(() => null),
       Promise.resolve(_tokscalePillars(platform)),
     ])
 

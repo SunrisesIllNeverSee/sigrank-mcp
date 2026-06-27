@@ -16,7 +16,7 @@ import { callTool, DEFAULT_API_BASE } from './tools.mjs'
 import { freshVerifierPillars } from './tokenpull.mjs'
 import { isSignedIn, isCodeChar } from './connect.mjs'
 import { loadIdentity, clearIdentity } from './keystore.mjs'
-import { execSync } from 'child_process'
+import { execFile } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
@@ -1758,7 +1758,9 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
           if (watchPlatform && watchPlatform !== 'all') watchCmd += ` --platform ${watchPlatform}`
           if (watchWindow && watchWindow !== 'all-windows') watchCmd += ` --window ${watchWindow}`
           watchCmd += ` --refresh ${watchRefresh}`
-          execSync(`osascript -e 'tell application "Terminal" to do script "${watchCmd}"'`, { stdio: 'ignore' })
+          // ASYNC FIX (2026-06-27): execFile instead of execSync — no shell
+          // interpolation. osascript args passed as array (defense-in-depth).
+          execFile('osascript', ['-e', `tell application "Terminal" to do script "${watchCmd}"`], { stdio: 'ignore' }, () => {})
           const scope = (!watchPlatform || watchPlatform === 'all') && (!watchWindow || watchWindow === 'all-windows')
             ? 'all platforms × all windows' : 'focused'
           status = `watcher launched (${scope}, ${watchRefresh}s) in a new window`

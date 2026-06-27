@@ -17,7 +17,7 @@
 
 import { readdir, readFile, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { execSync, execFile } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { ADAPTERS } from './adapters.mjs'
