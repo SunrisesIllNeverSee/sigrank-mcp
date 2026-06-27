@@ -1118,7 +1118,7 @@ function splashFrame(mode) {
   out.push(ctr(bold('For all builders, burners and 10xers')))
   out.push(ctr(dim('signalaf')), '')
   out.push(ctr(`${dim('powered by')}  ${gold('MO§ES™')}`))
-  out.push(ctr(dim('$ npx sigrank-mcp')), '')
+  out.push(ctr(dim('$ npx sigrank')), '')
   out.push(ctr(`${gold('▸')} ${dim('press any key')} ${gold('◂')}`))
   return out.join('\n')
 }
@@ -1519,10 +1519,10 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
       if (activeTab === 4 && (key === '\r' || key === '\n')) {
         // Launch the live watcher in its own window, passing the chosen refresh interval.
         try {
-          const watchCmd = `sigrank-mcp watch --platform ${watchPlatform} --window ${watchWindow} --refresh ${watchRefresh}`
+          const watchCmd = `sigrank watch --platform ${watchPlatform} --window ${watchWindow} --refresh ${watchRefresh}`
           execSync(`osascript -e 'tell application "Terminal" to do script "${watchCmd}"'`, { stdio: 'ignore' })
           status = `watcher launched (${watchRefresh}s) in a new window`
-        } catch { status = 'could not open Terminal.app — run: sigrank-mcp watch' }
+        } catch { status = 'could not open Terminal.app — run: sigrank watch' }
         await redraw()
         return
       }

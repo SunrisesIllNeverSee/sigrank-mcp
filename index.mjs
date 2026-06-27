@@ -3,15 +3,15 @@
  * SigRank MCP server + CLI entry point.
  *
  * The TUI is the whole app. Launch it and sign in inside it:
- *   npx sigrank-mcp                 full tabbed TUI (Dashboard / Trends / Compare /
+ *   npx sigrank                 full tabbed TUI (Dashboard / Trends / Compare /
  *                                   Board / Watch / Connect). Sign in on the Connect
  *                                   tab (paste a connect code), then [S] submits.
  *
  * CLI shortcuts (optional — the TUI never needs them):
- *   npx sigrank-mcp enroll          sign in: redeem a connect code from signalaf.com
- *   npx sigrank-mcp submit          publish your verified runs to the board
- *   npx sigrank-mcp board | me | compare | watch    read / publish helpers
- *   npx sigrank-mcp --help          full reference
+ *   npx sigrank enroll          sign in: redeem a connect code from signalaf.com
+ *   npx sigrank submit          publish your verified runs to the board
+ *   npx sigrank board | me | compare | watch    read / publish helpers
+ *   npx sigrank --help          full reference
  *
  * For AI clients (NOT human commands): in a piped/non-TTY context this starts an MCP
  * stdio server; AI clients call its tools automatically. See ./tools.mjs.

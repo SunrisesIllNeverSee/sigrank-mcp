@@ -5,15 +5,15 @@
  *   board position, [S] submit prompt.
  *
  * Commands:
- *   npx sigrank-mcp                      full unified view (default)
- *   npx sigrank-mcp board                live leaderboard, refreshes every 30s
- *   npx sigrank-mcp board --window 7d    board for a specific window
- *   npx sigrank-mcp board --once         print once and exit (no live refresh)
- *   npx sigrank-mcp me                   your cascade across all 4 windows
- *   npx sigrank-mcp me --platform amp    use a different platform adapter
- *   npx sigrank-mcp me --compare         raw pillar comparison: ccusage vs tokenpull vs token-dashboard
- *   npx sigrank-mcp watch                RT tune meter — local cascade, refreshes
- *   npx sigrank-mcp watch --window 7d    watch a specific window
+ *   npx sigrank                      full unified view (default)
+ *   npx sigrank board                live leaderboard, refreshes every 30s
+ *   npx sigrank board --window 7d    board for a specific window
+ *   npx sigrank board --once         print once and exit (no live refresh)
+ *   npx sigrank me                   your cascade across all 4 windows
+ *   npx sigrank me --platform amp    use a different platform adapter
+ *   npx sigrank me --compare         raw pillar comparison: ccusage vs tokenpull vs token-dashboard
+ *   npx sigrank watch                RT tune meter — local cascade, refreshes
+ *   npx sigrank watch --window 7d    watch a specific window
  *
  * Color palette mirrors the SigRank web dark theme:
  *   gold = class TRANSMITTER headline + rank #1
@@ -388,7 +388,7 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
   writeln()
 
   // submit hint
-  writeln(`  ${dim('to publish:')}  ${cyan('npx sigrank-mcp submit')}  ${dim('(sign in first:')}  ${cyan('npx sigrank-mcp enroll')}${dim(' — get a code at signalaf.com → Settings)')}`)
+  writeln(`  ${dim('to publish:')}  ${cyan('npx sigrank submit')}  ${dim('(sign in first:')}  ${cyan('npx sigrank enroll')}${dim(' — get a code at signalaf.com → Settings)')}`)
   writeln()
   write(SHOW_CURSOR)
 }
@@ -739,7 +739,7 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30,
     push(`  ${bold('Class')}        ${colorClass(cas?.class ?? '—')}`)
     push()
     if (submit) {
-      push(`  ${dim('submit:')} ${enrolled ? (lastSubmit || dim('waiting for a change…')) : red('not enrolled — run `npx sigrank-mcp enroll`')}`)
+      push(`  ${dim('submit:')} ${enrolled ? (lastSubmit || dim('waiting for a change…')) : red('not enrolled — run `npx sigrank enroll`')}`)
     }
     push(`  ${dim('─'.repeat(w - 4))}`)
     push(`  ${dim(`polling every ${refresh}s  ·  ${submit ? 'auto-submit ON  ·  ' : ''}tokens stay on your machine  ·  ctrl+c to exit`)}`)
@@ -762,7 +762,7 @@ async function runWatch({ platform = 'claude', window: win = '7d', refresh = 30,
 }
 
 // ── UNIFIED DEFAULT VIEW ──────────────────────────────────────────────────────
-// npx sigrank-mcp (no args) — pulls everything at once:
+// npx sigrank (no args) — pulls everything at once:
 //   - all platforms in parallel (only shows ones with data)
 //   - all 4 windows per platform
 //   - token pillars table (transparency layer)
@@ -1122,7 +1122,7 @@ async function runSigRank() {
           }
           // NOT enrolled → the anonymous paste path (preview-only; does NOT rank) + a hint.
           writeln()
-          writeln(`  ${dim('Not enrolled — run')} ${bold('npx sigrank-mcp enroll')} ${dim('to rank as a verified operator. Anonymous paste below:')}`)
+          writeln(`  ${dim('Not enrolled — run')} ${bold('npx sigrank enroll')} ${dim('to rank as a verified operator. Anonymous paste below:')}`)
           process.stdout.write('  Codename: ')
           let codename = ''
           process.stdin.on('data', async function onData(chunk) {
@@ -1199,7 +1199,7 @@ async function showHelp() {
   writeln(`  ${gold('⊙ SigRank')} ${bold('CLI')}  ${dim('v' + pkg.version)}`)
   writeln()
   writeln(`  ${bold('Default (no args)')}`)
-  writeln(`    ${cyan('sigrank-mcp')}              unified dashboard: cascade + token pillars + board`)
+  writeln(`    ${cyan('sigrank')}              unified dashboard: cascade + token pillars + board`)
   writeln()
   writeln(`  ${bold('Commands')}`)
   writeln(`    ${cyan('enroll')}                   sign in: paste a connect code (get one at signalaf.com → Settings)`)
@@ -1223,18 +1223,18 @@ async function showHelp() {
   writeln(`    ${dim('--once')}      print once and exit (board only)`)
   writeln()
   writeln(`  ${bold('For AI clients (not typeable)')}`)
-  writeln(`    ${dim('In a piped/non-TTY context, sigrank-mcp is an MCP stdio server.')}`)
+  writeln(`    ${dim('In a piped/non-TTY context, sigrank is an MCP stdio server.')}`)
   writeln(`    ${dim('AI clients (Claude, Cursor, …) call its tools automatically — these are')}`)
   writeln(`    ${dim('NOT shell commands. Humans use the commands above.')}`)
   writeln()
   writeln(`  ${bold('Examples')}`)
-  writeln(`    ${dim('sigrank-mcp')}                        # unified dashboard`)
-  writeln(`    ${dim('sigrank-mcp board')}                  # live leaderboard`)
-  writeln(`    ${dim('sigrank-mcp compare')}                # pillar audit (claude)`)
-  writeln(`    ${dim('sigrank-mcp compare --platform codex')}`)
-  writeln(`    ${dim('sigrank-mcp me --platform codex')}`)
-  writeln(`    ${dim('sigrank-mcp watch --window 7d --refresh 60')}`)
-  writeln(`    ${dim('sigrank-mcp board --window all --once')}`)
+  writeln(`    ${dim('sigrank')}                        # unified dashboard`)
+  writeln(`    ${dim('sigrank board')}                  # live leaderboard`)
+  writeln(`    ${dim('sigrank compare')}                # pillar audit (claude)`)
+  writeln(`    ${dim('sigrank compare --platform codex')}`)
+  writeln(`    ${dim('sigrank me --platform codex')}`)
+  writeln(`    ${dim('sigrank watch --window 7d --refresh 60')}`)
+  writeln(`    ${dim('sigrank board --window all --once')}`)
   writeln()
 }
 
@@ -1278,7 +1278,7 @@ async function runEnroll({ label } = {}) {
   if (out.status === 'enrolled') {
     writeln()
     writeln(`  ${green('✓')} Signed in as ${cyan(out.codename || '(operator)')}.`)
-    writeln(`  ${dim('Your runs now cascade to the board. Publish with ')}${bold('npx sigrank-mcp submit')}${dim(' (one-shot) or ')}${bold('npx sigrank-mcp watch --submit')}${dim(' (continuous).')}`)
+    writeln(`  ${dim('Your runs now cascade to the board. Publish with ')}${bold('npx sigrank submit')}${dim(' (one-shot) or ')}${bold('npx sigrank watch --submit')}${dim(' (continuous).')}`)
     writeln(`  ${dim(`identity: ${keystorePath()}`)}`)
     return
   }
@@ -1299,7 +1299,7 @@ async function runEnroll({ label } = {}) {
 async function runSubmit({ platform = 'claude', window } = {}) {
   const id = ensureIdentity()
   if (!id.codename || !id.operator_id) {
-    writeln(red('  ✗ This device is not enrolled. Run `npx sigrank-mcp enroll` first.'))
+    writeln(red('  ✗ This device is not enrolled. Run `npx sigrank enroll` first.'))
     process.exitCode = 1
     return
   }
@@ -1316,7 +1316,7 @@ async function runSubmit({ platform = 'claude', window } = {}) {
     return
   }
   if (out.status === 'not_enrolled') {
-    writeln(red('  ✗ Not enrolled — run `npx sigrank-mcp enroll`.'))
+    writeln(red('  ✗ Not enrolled — run `npx sigrank enroll`.'))
     process.exitCode = 1
     return
   }

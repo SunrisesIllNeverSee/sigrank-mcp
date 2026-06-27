@@ -16,8 +16,8 @@
 
 For all builders, burners and 10xers.
 
-[![npm version](https://img.shields.io/npm/v/sigrank-mcp.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank-mcp)
-[![npm downloads](https://img.shields.io/npm/dm/sigrank-mcp.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/sigrank-mcp)
+[![npm version](https://img.shields.io/npm/v/sigrank.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank)
+[![npm downloads](https://img.shields.io/npm/dm/sigrank.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/sigrank)
 [![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
 [![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
@@ -32,14 +32,14 @@ Token-only. No auth. No transcript content. Privacy-preserving by design.
 Dual-mode package: **interactive CLI dashboard** for operators, **MCP stdio server** for AI clients.
 
 ```bash
-npm install -g sigrank-mcp
-sigrank-mcp          # launches the full tabbed TUI (TTY detected automatically)
+npm install -g sigrank
+sigrank          # launches the full tabbed TUI (TTY detected automatically)
 ```
 
 Or one-shot without installing:
 
 ```bash
-npx sigrank-mcp board --once
+npx sigrank board --once
 ```
 
 ## Install from GitHub
@@ -53,14 +53,14 @@ npm install
 node index.mjs                        # TUI (if TTY)
 node cli.mjs board --once             # leaderboard one-shot
 
-# Or link globally for `sigrank-mcp` command
+# Or link globally for `sigrank` command
 npm link
-sigrank-mcp
+sigrank
 ```
 
 **Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
 **Site:** [signalaf.com](https://signalaf.com)
-**npm:** [sigrank-mcp](https://www.npmjs.com/package/sigrank-mcp)
+**npm:** [sigrank](https://www.npmjs.com/package/sigrank)
 
 ---
 
@@ -70,7 +70,7 @@ sigrank-mcp
 ⊙ SigRank CLI  v0.11.2
 
 Default (no args)
-  sigrank-mcp              unified dashboard: cascade + token pillars + board
+  sigrank              unified dashboard: cascade + token pillars + board
 
 Commands
   enroll                   sign in: paste a connect code (get one at signalaf.com → Settings)
@@ -94,18 +94,18 @@ Options
   --once      print once and exit (board only)
 
 For AI clients (not typeable)
-  In a piped/non-TTY context, sigrank-mcp is an MCP stdio server.
+  In a piped/non-TTY context, sigrank is an MCP stdio server.
   AI clients (Claude, Cursor, …) call its tools automatically — these are
   NOT shell commands. Humans use the commands above.
 
 Examples
-  sigrank-mcp                        # unified dashboard
-  sigrank-mcp board                  # live leaderboard
-  sigrank-mcp compare                # pillar audit (claude)
-  sigrank-mcp compare --platform codex
-  sigrank-mcp me --platform codex
-  sigrank-mcp watch --window 7d --refresh 60
-  sigrank-mcp board --window all --once
+  sigrank                        # unified dashboard
+  sigrank board                  # live leaderboard
+  sigrank compare                # pillar audit (claude)
+  sigrank compare --platform codex
+  sigrank me --platform codex
+  sigrank watch --window 7d --refresh 60
+  sigrank board --window all --once
 ```
 
 ### The TUI is the whole app
@@ -113,7 +113,7 @@ Examples
 Launch it and sign in inside it:
 
 ```
-npx sigrank-mcp
+npx sigrank
 ```
 
 Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
@@ -130,8 +130,8 @@ Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
 ### Sign in + submit
 
 ```bash
-sigrank-mcp enroll          # sign in: paste a connect code (get one at signalaf.com → Settings)
-sigrank-mcp submit          # publish your verified runs to the board (sign in first)
+sigrank enroll          # sign in: paste a connect code (get one at signalaf.com → Settings)
+sigrank submit          # publish your verified runs to the board (sign in first)
 ```
 
 Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit.
@@ -140,7 +140,7 @@ Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit
 
 ## MCP Server mode
 
-When stdout is not a TTY (i.e. piped to an AI client), `sigrank-mcp` starts an MCP stdio server automatically. AI clients (Claude Code, Cursor, Windsurf, etc.) use this path.
+When stdout is not a TTY (i.e. piped to an AI client), `sigrank` starts an MCP stdio server automatically. AI clients (Claude Code, Cursor, Windsurf, etc.) use this path.
 
 Add to `.mcp.json` or equivalent:
 ```json
@@ -148,7 +148,7 @@ Add to `.mcp.json` or equivalent:
   "mcpServers": {
     "sigrank": {
       "command": "npx",
-      "args": ["-y", "sigrank-mcp"]
+      "args": ["-y", "sigrank"]
     }
   }
 }
@@ -158,7 +158,7 @@ Or if installed globally:
 {
   "mcpServers": {
     "sigrank": {
-      "command": "sigrank-mcp"
+      "command": "sigrank"
     }
   }
 }
