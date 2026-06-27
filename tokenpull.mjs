@@ -18,20 +18,30 @@
 import { readdir, readFile, lstat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { ADAPTERS } from './adapters.mjs'
 
 const DAY_MS = 86_400_000
+
+// Resolve the package root for finding bundled binaries (ccusage, tokscale, etc.)
+const _pkgRoot = join(dirname(fileURLToPath(import.meta.url)))
+const _localBin = join(_pkgRoot, 'node_modules', '.bin')
+// Prepend local node_modules/.bin to PATH so bundled deps are found even when
+// not globally installed (e.g., npx sigrank, local dev).
+const _envPath = `${_localBin}${process.env.PATH ? ':' + process.env.PATH : ''}`
 
 // ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync in the
 // fresh verifier readers. execSync blocks the entire Node event loop (no key handling,
 // no screen repaint for up to 90s during the tokendash scan). execFile is async: the
 // event loop keeps running, so the TUI stays responsive while external commands run.
 // Returns stdout as a string. Rejects on error or timeout (caller catches → null).
+// BIN FIX (2026-06-27): PATH includes local node_modules/.bin so bundled deps
+// (ccusage, tokscale) are found even when sigrank isn't globally installed.
 function execFileAsync(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.toString())
     })
@@ -354,13 +364,9 @@ async function _freshCcusage(platform = 'claude') {
 async function _freshTokendash(platform = 'claude') {
   if (platform !== 'claude') return null
   const dbPath = join(homedir(), '.claude', 'token-dashboard.db')
-  const scanCli = join(homedir(), 'Desktop', 'token-dashboard', 'cli.py')
-  // Step 1 — refresh the db (best-effort; failures must not abort the read).
-  if (existsSync(scanCli)) {
-    try { await execFileAsync('python3', [scanCli, 'scan'], 90000) }
-    catch { /* continue: read whatever the db currently has */ }
-  }
-  // Step 2 — read the (now-refreshed) db. all-time only; the db doesn't expose windowing here.
+  // Read the token-dashboard DB directly with sqlite3 (no external python scan
+  // needed — the DB is created by the tokendash dashboard, now bundled as a dep).
+  // all-time only; the db doesn't expose windowing here.
   if (!existsSync(dbPath)) return null
   try {
     const raw = await execFileAsync('sqlite3', [dbPath,
@@ -372,8 +378,9 @@ async function _freshTokendash(platform = 'claude') {
   } catch { return null }
 }
 
-// tokscale: run `bunx tokscale@latest models --json` and sum the per-(client,model) rows for
-// the requested platform. The JSON shape (verified live) is:
+// tokscale: run `tokscale models --json` (bundled as npm dep — no bunx needed)
+// and sum the per-(client,model) rows for the requested platform. The JSON shape
+// (verified live) is:
 //   { entries: [ { client, model, input, output, cacheRead, cacheWrite, ... }, ... ], ... }
 // `client` maps directly to our platform name. Synthetic/unknown model rows are dropped (they
 // carry no real usage). all-time only — tokscale's models view is not windowed. If no row
@@ -383,7 +390,7 @@ async function _freshTokendash(platform = 'claude') {
 // Now uses execFile (async) so the TUI stays responsive.
 async function _freshTokscale(platform = 'claude') {
   try {
-    const raw = await execFileAsync('bunx', ['tokscale@latest', 'models', '--json'], 60000)
+    const raw = await execFileAsync('tokscale', ['models', '--json'], 60000)
     const data = JSON.parse(raw)
     const entries = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data) ? data : [])
     const rows = entries.filter((e) =>

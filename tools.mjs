@@ -19,14 +19,22 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Resolve local node_modules/.bin for bundled deps (ccusage, tokscale)
+const _pkgRoot = path.dirname(fileURLToPath(import.meta.url))
+const _localBin = path.join(_pkgRoot, 'node_modules', '.bin')
+const _envPath = `${_localBin}${process.env.PATH ? ':' + process.env.PATH : ''}`
 
 // ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync for
 // defense-in-depth (shell injection prevention + non-blocking). The platform param
 // is enum-validated at the MCP schema level, but execFile also prevents shell
 // interpolation attacks by passing args as an array (no shell parsing).
+// BIN FIX (2026-06-27): PATH includes local node_modules/.bin so bundled deps
+// are found even when sigrank isn't globally installed.
 function execFileAsync(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.toString())
     })
@@ -82,7 +90,24 @@ async function _tokenDashPillars() {
   } catch { return null }
 }
 
-function _tokscalePillars(platform = 'claude') {
+async function _tokscalePillars(platform = 'claude') {
+  // Try the bundled tokscale CLI first (fresh data), fall back to saved report file.
+  try {
+    const raw = await execFileAsync('tokscale', ['models', '--json'], 60000)
+    const data = JSON.parse(raw)
+    const entries = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data) ? data : [])
+    const rows = entries.filter(e =>
+      e && e.client === platform && e.model !== '<synthetic>' && e.model !== 'unknown' && ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0)
+    )
+    if (rows.length) {
+      const acc = rows.reduce((a,e) => ({
+        input: a.input+(Number(e.input)||0), output: a.output+(Number(e.output)||0),
+        cacheCreate: a.cacheCreate+(Number(e.cacheWrite)||0), cacheRead: a.cacheRead+(Number(e.cacheRead)||0),
+      }), { input:0, output:0, cacheCreate:0, cacheRead:0 })
+      return { all: acc }
+    }
+  } catch { /* fall through to file-based read */ }
+  // Fallback: read saved tokscale_report.json if it exists
   const p = path.join(os.homedir(), 'tokscale_report.json')
   if (!existsSync(p)) return null
   try {
@@ -595,7 +620,7 @@ export async function callTool(name, args, opts = {}) {
       pullByPlatform(platform, opts).catch(() => null),
       _ccusagePillars(platform).catch(() => null),
       (platform === 'claude' ? _tokenDashPillars() : Promise.resolve(null)).catch(() => null),
-      Promise.resolve(_tokscalePillars(platform)),
+      _tokscalePillars(platform).catch(() => null),
     ])
 
     // Build tokenpull window lookup

@@ -67,7 +67,7 @@ sigrank
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.12.5
+⊙ SigRank CLI  v0.13.0
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board

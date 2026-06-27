@@ -29,17 +29,25 @@ import { classify } from './cascade.mjs'
 import { ensureIdentity, keystorePath } from './keystore.mjs'
 import { submitSignedWindow } from './submit.mjs'
 import { execFile } from 'child_process'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import os from 'os'
 import path from 'path'
+import { fileURLToPath } from 'url'
+
+// Resolve local node_modules/.bin for bundled deps (ccusage, tokscale)
+const _pkgRoot = path.dirname(fileURLToPath(import.meta.url))
+const _localBin = path.join(_pkgRoot, 'node_modules', '.bin')
+const _envPath = `${_localBin}${process.env.PATH ? ':' + process.env.PATH : ''}`
 
 // ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync for
 // defense-in-depth (shell injection prevention). execFile passes args as an
 // array, so no shell parsing occurs — even if platform contained special chars,
 // they'd be treated as literal arguments, not shell commands.
+// BIN FIX (2026-06-27): PATH includes local node_modules/.bin so bundled deps
+// are found even when sigrank isn't globally installed.
 function execFileAsync(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.toString())
     })
@@ -460,8 +468,28 @@ async function ccusagePillars(platform = 'claude') {
   }
 }
 
-function tokscalePillars(platform = 'claude') {
-  // Read tokscale_report.json — all-time only (no timestamps in export)
+async function tokscalePillars(platform = 'claude') {
+  // Try the bundled tokscale CLI first (fresh data), fall back to saved report file.
+  try {
+    const raw = await execFileAsync('tokscale', ['models', '--json'], 60000)
+    const data = JSON.parse(raw)
+    const entries = Array.isArray(data?.entries) ? data.entries : (Array.isArray(data) ? data : [])
+    const rows = entries.filter(e =>
+      e && e.client === platform &&
+      e.model !== '<synthetic>' && e.model !== 'unknown' &&
+      ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0)
+    )
+    if (rows.length) {
+      const p = rows.reduce((acc, e) => ({
+        input:       acc.input       + (Number(e.input)      || 0),
+        output:      acc.output      + (Number(e.output)     || 0),
+        cacheCreate: acc.cacheCreate + (Number(e.cacheWrite) || 0),
+        cacheRead:   acc.cacheRead   + (Number(e.cacheRead)  || 0),
+      }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+      return { all: p }
+    }
+  } catch { /* fall through to file-based read */ }
+  // Fallback: read saved tokscale_report.json — all-time only (no timestamps in export)
   const reportPath = path.join(os.homedir(), 'tokscale_report.json')
   if (!existsSync(reportPath)) return null
   try {
@@ -509,24 +537,34 @@ function appPillars() {
 async function tokenDashPillars() {
   const dbPath = path.join(os.homedir(), '.claude', 'token-dashboard.db')
   if (!existsSync(dbPath)) return null
+  // Read directly with sqlite3 — no python script needed (bundled dep).
+  // Windowed queries using sqlite3's datetime() function.
+  const cf = "(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')"
   try {
-    const tmpScript = path.join(os.tmpdir(), 'sigrank_td_query.py')
-    writeFileSync(tmpScript, `
-import sqlite3, json, sys
-from datetime import datetime, timezone, timedelta
-db = sqlite3.connect(sys.argv[1])
-cf = "(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')"
-out = {}
-for win, days in [('7d',7),('30d',30),('90d',90)]:
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    r = db.execute(f"SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE timestamp>=? AND {cf}",(since,)).fetchone()
-    out[win] = {'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}
-r = db.execute(f"SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE {cf}").fetchone()
-out['all'] = {'input':r[0] or 0,'output':r[1] or 0,'cacheCreate':r[2] or 0,'cacheRead':r[3] or 0}
-print(json.dumps(out))
-`)
-    const raw = await execFileAsync('python3', [tmpScript, dbPath], 15000)
-    return JSON.parse(raw.trim())
+    const wins = [
+      ['7d',  "datetime('now','-7 days')"],
+      ['30d', "datetime('now','-30 days')"],
+      ['90d', "datetime('now','-90 days')"],
+    ]
+    const sql = (cutoff) =>
+      `SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE timestamp>=${cutoff} AND ${cf}`
+    const allSql = `SELECT SUM(input_tokens),SUM(output_tokens),SUM(cache_create_5m_tokens+cache_create_1h_tokens),SUM(cache_read_tokens) FROM messages WHERE ${cf}`
+    const [d7, d30, d90, dAll] = await Promise.all([
+      execFileAsync('sqlite3', [dbPath, sql(wins[0][1])], 5000),
+      execFileAsync('sqlite3', [dbPath, sql(wins[1][1])], 5000),
+      execFileAsync('sqlite3', [dbPath, sql(wins[2][1])], 5000),
+      execFileAsync('sqlite3', [dbPath, allSql], 5000),
+    ])
+    const parse = (raw) => {
+      const [i,o,cw,cr] = raw.trim().split('|').map(Number)
+      return { input: i||0, output: o||0, cacheCreate: cw||0, cacheRead: cr||0 }
+    }
+    return {
+      '7d': parse(d7),
+      '30d': parse(d30),
+      '90d': parse(d90),
+      all: parse(dAll),
+    }
   } catch {
     return null
   }
@@ -577,7 +615,7 @@ async function runCompare({ platform = 'claude' } = {}) {
     ccusagePillars(platform).catch(() => null),
     callTool('tokenpull', { platform }).catch(() => null),
     (platform === 'claude' ? tokenDashPillars() : Promise.resolve(null)).catch(() => null),
-    Promise.resolve(tokscalePillars(platform)),
+    tokscalePillars(platform).catch(() => null),
     Promise.resolve(platform === 'claude' ? appPillars() : null),
   ])
   write(CURSOR_UP(1) + ERASE_LINE)

@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "0.12.5",
+  "version": "0.13.0",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "type": "module",
   "license": "MIT",
@@ -41,6 +41,9 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@zhangferry-dev/tokendash": "^1.7.5",
+    "ccusage": "^20.0.14",
+    "tokscale": "^4.0.4"
   }
 }
