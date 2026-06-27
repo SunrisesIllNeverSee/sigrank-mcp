@@ -57,6 +57,7 @@ const green  = (s) => paint(c.green, s)
 const red    = (s) => paint(c.red, s)
 
 const CLEAR      = `${ESC}H${ESC}2J`   // home + erase visible area
+const CLEAR_SB   = `${ESC}3J`          // clear scrollback/saved lines (prevents scroll-up past TUI)
 const ENTER_ALT  = `${ESC}?1049h`       // enter alternate screen buffer
 const EXIT_ALT   = `${ESC}?1049l`       // exit alternate screen buffer (restores original)
 const HIDE       = `${ESC}?25l`
@@ -1334,6 +1335,7 @@ export async function runTui({ platform: initPlatform = 'claude', window: win = 
   }
 
   write(ENTER_ALT)  // switch to alternate screen — original terminal state preserved on exit
+  write(CLEAR_SB)   // FIXED-WINDOW (2026-06-27): clear scrollback so nothing is above the TUI
   write(HIDE)
   write(CLEAR)
 
