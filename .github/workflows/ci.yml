@@ -24,3 +24,57 @@ jobs:
 
       - name: Signing tests
         run: node sign.test.mjs
+
+  # Cross-repo contract test — catches platform-enum drift between the MCP server
+  # and the web app. The codex landing was triple-blocked because these enums
+  # drifted. This job checks out the web repo and diffs the two enums.
+  cross-repo-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Checkout sigrank-app (the other half of the contract)
+        uses: actions/checkout@v4
+        with:
+          repository: SunrisesIllNeverSee/sigrank-app
+          path: _sigrank-app
+          # Public repo — no token needed. If it goes private, add a PAT secret.
+          # token: ${{ secrets.CROSS_REPO_PAT }}
+
+      - name: Cross-repo platform-enum contract test
+        run: node __tests__/contract/platform-enum-contract.test.mjs ${{ github.workspace }}/_sigrank-app
+
+  # Verify the published tarball doesn't leak test fixtures or sensitive files.
+  # The files[] whitelist in package.json controls what ships; this job is
+  # defense-in-depth in case the whitelist is ever accidentally widened.
+  pack-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Verify tarball contents (no test fixtures / secrets leak)
+        run: |
+          set -e
+          TARBALL=$(npm pack --dry-run 2>&1)
+          echo "$TARBALL"
+          # Fail if any test fixture or .env file appears in the tarball
+          if echo "$TARBALL" | grep -iE "test|fixture|\.env|canon_parity|\.key"; then
+            echo "✗ FAIL: test fixture or sensitive file found in tarball"
+            exit 1
+          fi
+          # Verify connect.mjs is present (the 0.11.5 hotfix)
+          if ! echo "$TARBALL" | grep -q "connect.mjs"; then
+            echo "✗ FAIL: connect.mjs missing from tarball (0.11.5 regression)"
+            exit 1
+          fi
+          echo "✓ Tarball is clean"
