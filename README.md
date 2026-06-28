@@ -15,6 +15,13 @@ For all builders, burners and 10xers.
 
 </div>
 
+| The board | Your operator profile |
+|:---:|:---:|
+| [![SigRank leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all) | [![SigRank operator profile](./.github/assets/profile.png)](https://signalaf.com) |
+| Every operator ranked by **Υ Yield** — the architecture of the cascade, not raw spend | Cascade layer, class, and fingerprint — derived from four token counts |
+
+> **Run [`sigrank enroll`](#sign-in--submit) then [`sigrank submit`](#sign-in--submit) to get ranked and claim your public profile at [signalaf.com](https://signalaf.com).**
+
 ---
 
 ## Quickstart — 3 steps to the board
