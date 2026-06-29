@@ -41,6 +41,23 @@
     "README.md",
     "LICENSE"
   ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "claude",
+    "anthropic",
+    "llm",
+    "token-telemetry",
+    "token-usage",
+    "leaderboard",
+    "cli",
+    "tui",
+    "yield-cascade",
+    "sigrank",
+    "agent-tools",
+    "on-device"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@zhangferry-dev/tokendash": "^1.7.5",
