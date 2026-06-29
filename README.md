@@ -1,6 +1,6 @@
 <div align="center">
 
-<p><img src="./banner.svg" alt="SigRank" width="920"></p>
+<p><img src="./.github/assets/og-card.png" alt="SigRank — the new standard in AI evaluation &amp; benchmarks" width="800"></p>
 
 **The yield cascade + live leaderboard as MCP tools any agent can call.**
 
