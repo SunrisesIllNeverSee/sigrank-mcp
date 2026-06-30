@@ -24,7 +24,7 @@
  *   green = positive movement
  */
 
-import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from './tools.mjs'
 import { classify } from './cascade.mjs'
 import { ensureIdentity, keystorePath } from './keystore.mjs'
 import { submitSignedWindow } from './submit.mjs'
@@ -328,13 +328,7 @@ async function runMe({ platform = null, compare = false } = {}) {
   // --platform stays an OPTIONAL filter (focus one platform).
   let pulls
   try {
-    const targets = platform ? [platform] : ALL_PLATFORMS
-    const settled = await Promise.allSettled(targets.map((p) => callTool('tokenpull', { platform: p })))
-    pulls = settled
-      .filter((r) => r.status === 'fulfilled' && r.value)
-      .map((r) => r.value)
-      .filter((d) => (d.windows || []).some((win) => ((win.pillars?.input ?? 0) + (win.pillars?.output ?? 0)) > 0))
-      .sort((a, b) => ALL_PLATFORMS.indexOf(a.platform) - ALL_PLATFORMS.indexOf(b.platform))
+    pulls = await pullActivePlatforms({ platforms: platform ? [platform] : undefined })
   } catch (e) {
     write(SHOW_CURSOR)
     write(CURSOR_UP(1) + ERASE_LINE)
@@ -792,16 +786,8 @@ const WATCH_WINDOWS = ['7d', '30d', '90d', 'all']
 // Detect which platforms have real local data (input+output > 0 in any window) via tokenpull.
 // Returns an array of pull results (the same shape tokenpullAny yields), one per active platform.
 async function detectActivePulls() {
-  const { tokenpullAny } = await import('./tokenpull.mjs')
-  const settled = await Promise.allSettled(ALL_PLATFORMS.map((p) => tokenpullAny(p)))
-  const active = []
-  for (const r of settled) {
-    if (r.status !== 'fulfilled' || !r.value) continue
-    const d = r.value
-    const live = (d.windows || []).some((w) => (w.pillars.input + w.pillars.output) > 0)
-    if (live) active.push(d)
-  }
-  return active
+  // Unified: one loader for me / watch / the TUI Dashboard (was a separate tokenpullAny loop).
+  return pullActivePlatforms()
 }
 
 async function runWatch({ platform, window: win, refresh = 30, submit = false } = {}) {
@@ -1472,15 +1458,26 @@ async function runSubmit({ platform = 'claude', window } = {}) {
   }
 
   writeln()
+  let anyRanked = false
+  let anyReceivedNotRanked = false
   for (const w of out.windows || []) {
     const label = String(w.window).padEnd(8)
-    if (w.status === 'received') {
-      writeln(`  ${green('✓')} ${bold(label)} ${dim(`tier=${w.verification_tier || '—'}${w.persisted ? ' · persisted' : ''}`)}`)
+    if (w.ranked) {
+      anyRanked = true
+      writeln(`  ${green('✓')} ${bold(label)} ${green('RANKED')} ${dim('· live on the board')}`)
+    } else if (w.status === 'received') {
+      anyReceivedNotRanked = true
+      writeln(`  ${gold('⚠')} ${bold(label)} ${gold('received · NOT ranked')} ${dim(`(tier=${w.verification_tier || '—'})`)}`)
     } else {
       writeln(`  ${red('✗')} ${bold(label)} ${dim(w.reason || w.status || 'failed')}`)
     }
   }
-  writeln(`  ${dim(`Reload your board row: signalaf.com/user/${id.codename}`)}`)
+  writeln()
+  if (anyRanked) {
+    writeln(`  ${dim('Your board row:')}  ${cyan(`signalaf.com/user/${id.codename}`)}`)
+  } else if (anyReceivedNotRanked) {
+    writeln(`  ${gold('Received, but NOT ranked')} ${dim('— this device is unenrolled or revoked. Re-enroll to rank:')}  ${cyan('npx sigrank enroll')}`)
+  }
 }
 
 export async function runCli(argv) {

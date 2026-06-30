@@ -299,6 +299,24 @@ const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
 const WATCH_SUBMIT_COOLDOWN_MS = 5 * 60 * 1000
 const _lastWatchSubmitAt = new Map()
 
+// ── Shared active-platform loader ───────────────────────────────────────────
+// THE single data path for "show my cascade across platforms" — used by `me`,
+// `watch`, and the TUI Dashboard so they can't drift apart again. Pulls each
+// target platform via the tokenpull tool (enriched: pillars + cascade + card),
+// keeps only platforms with real local data, and sorts claude → codex → rest.
+// Pass `platforms` to scope it (e.g. ['claude'] for a fast first paint).
+export async function pullActivePlatforms({ platforms } = {}, opts = {}) {
+  const targets = platforms && platforms.length ? platforms : ALL_PLATFORMS
+  const settled = await Promise.allSettled(targets.map((p) => callTool('tokenpull', { platform: p }, opts)))
+  const active = settled
+    .filter((r) => r.status === 'fulfilled' && r.value)
+    .map((r) => r.value)
+    .filter((d) => (d.windows || []).some((w) => ((w.pillars?.input ?? 0) + (w.pillars?.output ?? 0)) > 0))
+  const rank = (p) => (p === 'claude' ? -2 : p === 'codex' ? -1 : ALL_PLATFORMS.indexOf(p))
+  active.sort((a, b) => rank(a.platform) - rank(b.platform))
+  return active
+}
+
 export async function callTool(name, args, opts = {}) {
   const apiBase = opts.apiBase || DEFAULT_API_BASE
   const timeoutMs = opts.fetchTimeout ?? DEFAULT_FETCH_TIMEOUT

@@ -12,7 +12,8 @@
  *   - Dashboard + Compare load once, refresh on [R].
  */
 
-import { callTool, DEFAULT_API_BASE } from './tools.mjs'
+import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from './tools.mjs'
+import { ALL_PLATFORMS } from './adapters.mjs'
 import { freshVerifierPillars } from './tokenpull.mjs'
 import { isSignedIn, isCodeChar } from './connect.mjs'
 import { loadIdentity, clearIdentity } from './keystore.mjs'
@@ -231,54 +232,33 @@ function sparkline(values) {
 // still used by the `tokenpull_compare` MCP tool.)
 
 async function loadDashboardData() {
-  const { tokenpullAny } = await import('./tokenpull.mjs')
-  const ALL_PLATFORMS = [
-    'claude','codex','amp','gemini','kimi','qwen','goose','kilo',
-    'hermes','droid','codebuff','copilot','openclaw','pi',
-  ]
   const boardPromise = Promise.race([
     fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=yield_`, { headers: { accept: 'application/json' } })
       .then(r => r.ok ? r.json() : null).catch(() => null),
     new Promise(r => setTimeout(() => r(null), 5000)),
   ])
 
-  // FIX 0: progressive load — render the primary platform (claude) FAST first,
-  // then fill the other 13 as they resolve. The caller passes an onFirst callback
-  // that fires when claude is ready so the user sees their cascade within ~1 read,
-  // not after a 14-platform barrier.
-  const claudeResult = await tokenpullAny('claude').catch(() => null)
+  // FIX 0 + unify (0.14): progressive load via the SHARED loader (pullActivePlatforms) — paint the
+  // primary platform (claude) FAST, then fill the rest in fillDashboardRest. This is the SAME loader
+  // `me` and `watch` use, so the three views can't drift apart. (Verifier comparison still runs
+  // FRESH + on-demand in the Compare tab — see loadCompareData — never on this Dashboard path.)
+  const active = await pullActivePlatforms({ platforms: ['claude'] }).catch(() => [])
 
-  const active = []
-  if (claudeResult) {
-    const all = claudeResult.windows?.find(w => w.window === 'all')
-    if (all && (all.pillars.input ?? 0) + (all.pillars.output ?? 0) > 0) active.push(claudeResult)
-  }
-
-  // FIX A1 (2026-06-27): removed the 14× SYNCHRONOUS ccusage `verifierMap` build (measured 39,816 ms)
-  // that blocked the very first Dashboard paint — and the render never read `verifierMap` or `tdPillars`.
-  // (Also dropped the discarded second `tokenDashPillars()` call above.) Verifier comparison
-  // (ccusage / tokscale / token-dashboard) now runs FRESH + on-demand in the Compare tab, scoped to
-  // active platforms — see loadCompareData. Dashboard paints from tokenpull in ~2s.
   const boardData = await boardPromise
-  return { active, verifierMap: {}, tdPillars: null, boardData, _loading: true, _remaining: ALL_PLATFORMS.slice(1) }
+  return { active, verifierMap: {}, tdPillars: null, boardData, _loading: true, _remaining: ALL_PLATFORMS.filter(p => p !== 'claude') }
 }
 
 /** FIX 0: fill the remaining platforms after the primary render. Mutates dashData.active. */
 async function fillDashboardRest(dashData) {
   if (!dashData?._remaining) return false
-  const { tokenpullAny } = await import('./tokenpull.mjs')
-  const rest = await Promise.allSettled(dashData._remaining.map(p => tokenpullAny(p)))
-  for (const r of rest) {
-    if (r.status !== 'fulfilled') continue
-    const d = r.value
-    const all = d.windows?.find(w => w.window === 'all')
-    if (!all) continue
-    if ((all.pillars.input ?? 0) + (all.pillars.output ?? 0) === 0) continue
+  // Unify: fill the remaining platforms through the SAME shared loader.
+  const rest = await pullActivePlatforms({ platforms: dashData._remaining }).catch(() => [])
+  for (const d of rest) {
     if (!dashData.active.find(a => a.platform === d.platform)) dashData.active.push(d)
   }
-  // sort active by ALL_PLATFORMS order for stable display
-  const order = ['claude','codex','amp','gemini','kimi','qwen','goose','kilo','hermes','droid','codebuff','copilot','openclaw','pi']
-  dashData.active.sort((a, b) => order.indexOf(a.platform) - order.indexOf(b.platform))
+  // stable display order: claude → codex → rest (matches the shared loader)
+  const rank = (p) => (p === 'claude' ? -2 : p === 'codex' ? -1 : ALL_PLATFORMS.indexOf(p))
+  dashData.active.sort((a, b) => rank(a.platform) - rank(b.platform))
   dashData._loading = false
   dashData._remaining = null
   return true

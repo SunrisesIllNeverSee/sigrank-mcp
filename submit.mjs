@@ -157,6 +157,9 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
     window: WINDOW_TYPE[windowKey] || windowKey,
     verification_tier: ack.verification_tier ?? null,
     persisted: ack.persisted ?? null,
+    // ranked = actually on the board (verified + written), not just "received".
+    // An unenrolled/revoked device gets HTTP 202 received but is NEVER ranked.
+    ranked: !!(res.ok && ack.verification_tier === 'verified' && ack.persisted === true),
     snapshot_hash: payload.agent.snapshot_hash,
     reason: res.ok ? null : ack.reason || ack.status || `http_${res.status}`,
     detail: ack.detail ?? null,
