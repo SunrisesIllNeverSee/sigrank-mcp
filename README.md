@@ -71,7 +71,7 @@ sigrank
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.14.1
+⊙ SigRank CLI  v0.14.2
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board
@@ -82,8 +82,6 @@ Commands
   board                    live leaderboard (refreshes every 30s)
   board --window 7d        board for a specific window (7d, 30d, 90d, all)
   board --once             print once and exit
-  me                       single-platform cascade (claude by default)
-  me --platform codex      use a different platform adapter
   compare                  raw pillar audit: tokenpull vs ccusage vs token-dash vs tokscale
   compare --platform codex compare for a specific platform
   tui                      full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect
@@ -107,7 +105,6 @@ Examples
   sigrank board                  # live leaderboard
   sigrank compare                # pillar audit (claude)
   sigrank compare --platform codex
-  sigrank me --platform codex
   sigrank watch --window 7d --refresh 60
   sigrank board --window all --once
 ```

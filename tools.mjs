@@ -490,7 +490,8 @@ export async function callTool(name, args, opts = {}) {
     })
     let ack
     try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON response)` } }
-    return { ...c, card, submission: { ...stamp, httpStatus: res.status, ...ack } }
+    const ranked = !!(res.ok && ack.verification_tier === 'verified' && ack.persisted === true)
+    return { ...c, card, ranked, submission: { ...stamp, httpStatus: res.status, ranked, ...ack } }
   }
 
   if (name === 'tokenpull') {
@@ -530,7 +531,10 @@ export async function callTool(name, args, opts = {}) {
       })
       let ack
       try { ack = await res.json() } catch { ack = { status: 'error', detail: `HTTP ${res.status} (non-JSON)` } }
-      out.push({ window: w.window, pillars: w.pillars, cascade: c, card, submission: { ...stamp, httpStatus: res.status, ...ack } })
+      // ranked = actually on the board (verified + persisted), not just received — parity
+      // with submit_verified (submit.mjs). An unenrolled/revoked device gets 202 but is NEVER ranked.
+      const ranked = !!(res.ok && ack.verification_tier === 'verified' && ack.persisted === true)
+      out.push({ window: w.window, pillars: w.pillars, cascade: c, card, ranked, submission: { ...stamp, httpStatus: res.status, ranked, ...ack } })
     }
     return { platform: pulled.platform, codename: codename || null, generatedAt: pulled.generatedAt, windows: out }
   }
