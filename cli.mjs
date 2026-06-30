@@ -316,15 +316,25 @@ async function runBoard({ window = '30d', once = false, refresh = 30 } = {}) {
 
 // ── ME command ───────────────────────────────────────────────────────────────
 
-async function runMe({ platform = 'claude', compare = false } = {}) {
-  if (compare) return runCompare({ platform })
+async function runMe({ platform = null, compare = false } = {}) {
+  if (compare) return runCompare({ platform: platform || 'claude' })
 
   write(HIDE_CURSOR)
-  writeln(`  ${dim('reading local token logs…')}`)
+  writeln(`  ${dim(platform ? `reading ${platform} token logs…` : 'reading local token logs… (all platforms)')}`)
 
-  let pulled
+  // Multi-platform: pull EVERY platform's local cascade (enriched with cascade + card via the
+  // tokenpull tool), then keep the ones with real data — same data scope as `watch` / the TUI
+  // Dashboard, so `me` is no longer claude-only (it now surfaces codex + any active platform).
+  // --platform stays an OPTIONAL filter (focus one platform).
+  let pulls
   try {
-    pulled = await callTool('tokenpull', { platform })
+    const targets = platform ? [platform] : ALL_PLATFORMS
+    const settled = await Promise.allSettled(targets.map((p) => callTool('tokenpull', { platform: p })))
+    pulls = settled
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => r.value)
+      .filter((d) => (d.windows || []).some((win) => ((win.pillars?.input ?? 0) + (win.pillars?.output ?? 0)) > 0))
+      .sort((a, b) => ALL_PLATFORMS.indexOf(a.platform) - ALL_PLATFORMS.indexOf(b.platform))
   } catch (e) {
     write(SHOW_CURSOR)
     write(CURSOR_UP(1) + ERASE_LINE)
@@ -336,9 +346,26 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
   write(CURSOR_UP(1) + ERASE_LINE)
 
   const w = termWidth()
+
+  // No active platforms / no logs at all — friendly guidance, not a wall of "—".
+  if (pulls.length === 0) {
+    writeln()
+    writeln(`  ${gold('⊙ SigRank')} ${bold('Your Cascade')}`)
+    if (platform) {
+      writeln(`  ${dim(`No local "${platform}" data found.`)} ${dim('Try')} ${cyan('npx sigrank me')} ${dim('(all platforms), or run a')} ${platform} ${dim('session first.')}`)
+    } else {
+      writeln(`  ${dim('No AI session logs found yet.')}`)
+      writeln(`  ${dim('Run a Claude Code or Codex session, then re-run')} ${cyan('npx sigrank me')}${dim('.')}`)
+      writeln(`  ${dim('SigRank reads token counts only, on-device — never prompt content.')}`)
+    }
+    writeln()
+    write(SHOW_CURSOR)
+    return
+  }
+
+  const scope = platform ? `platform: ${platform}` : `${pulls.length} platform${pulls.length > 1 ? 's' : ''} · all windows`
   writeln()
-  writeln(`  ${gold('⊙ SigRank')} ${bold('Your Cascade')}  ${dim(`platform: ${pulled.platform ?? platform}`)}`)
-  if (pulled.estimated) writeln(`  ${dim('⚠  estimated values (cache data unavailable for this platform)')}`)
+  writeln(`  ${gold('⊙ SigRank')} ${bold('Your Cascade')}  ${dim(scope)}`)
   writeln(`  ${dim('─'.repeat(w - 4))}`)
 
   // column headers
@@ -355,42 +382,51 @@ async function runMe({ platform = 'claude', compare = false } = {}) {
   writeln(`    ${cols_h.join('  ')}`)
   writeln(`  ${dim('·'.repeat(w - 4))}`)
 
-  const windows = pulled.windows ?? []
-  for (const win of windows) {
-    const cas = win.cascade
-    const isAll = win.window === 'all'
-    const wLabel = isAll ? bold('all-time') : win.window
-    const yVal   = cas?.yield  != null ? fmtYield(cas.yield)  : '—'
-    const snrVal = cas?.snr    != null ? fmtSNR(cas.snr)       : '—'
-    const levVal = cas?.leverage != null ? `${fmtLev(cas.leverage)}×` : '—'
-    const velVal = cas?.velocity != null ? cas.velocity.toFixed(2)    : '—'
-    const devVal = cas?.dev10x  != null ? cas.dev10x.toFixed(2)       : '—'
-    const cls    = colorClass(cas?.class ?? '—')
-    const tok    = fmtTokens(win.pillars?.total ?? (
-      (win.pillars?.input ?? 0) + (win.pillars?.output ?? 0) +
-      (win.pillars?.cacheCreate ?? 0) + (win.pillars?.cacheRead ?? 0)
-    ))
+  const multi = pulls.length > 1
+  for (const d of pulls) {
+    if (multi) {
+      writeln(`  ${cyan('▸ ' + (d.platform ?? '?'))}${d.estimated ? dim('  (estimated — cache data unavailable)') : ''}`)
+    } else if (d.estimated) {
+      writeln(`  ${dim('⚠  estimated values (cache data unavailable for this platform)')}`)
+    }
+    for (const win of (d.windows ?? [])) {
+      const cas = win.cascade
+      const isAll = win.window === 'all'
+      const wLabel = isAll ? bold('all-time') : win.window
+      const yVal   = cas?.yield  != null ? fmtYield(cas.yield)  : '—'
+      const snrVal = cas?.snr    != null ? fmtSNR(cas.snr)       : '—'
+      const levVal = cas?.leverage != null ? `${fmtLev(cas.leverage)}×` : '—'
+      const velVal = cas?.velocity != null ? cas.velocity.toFixed(2)    : '—'
+      const devVal = cas?.dev10x  != null ? cas.dev10x.toFixed(2)       : '—'
+      const cls    = colorClass(cas?.class ?? '—')
+      const tok    = fmtTokens(win.pillars?.total ?? (
+        (win.pillars?.input ?? 0) + (win.pillars?.output ?? 0) +
+        (win.pillars?.cacheCreate ?? 0) + (win.pillars?.cacheRead ?? 0)
+      ))
 
-    const row = [
-      padEnd(wLabel, 8),
-      padStart(isAll ? gold(yVal) : yVal, 10),
-      padStart(snrVal, 7),
-      padStart(levVal, 9),
-      padStart(velVal, 9),
-      padStart(devVal, 8),
-      padEnd(cls, 13),
-      padStart(tok, 8),
-    ]
-    writeln(`  ${row.join('  ')}`)
+      const row = [
+        padEnd(wLabel, 8),
+        padStart(isAll ? gold(yVal) : yVal, 10),
+        padStart(snrVal, 7),
+        padStart(levVal, 9),
+        padStart(velVal, 9),
+        padStart(devVal, 8),
+        padEnd(cls, 13),
+        padStart(tok, 8),
+      ]
+      writeln(`  ${row.join('  ')}`)
+    }
+    if (multi) writeln()
   }
 
   writeln(`  ${dim('─'.repeat(w - 4))}`)
 
-  // card for the best window (all-time if present, else first)
-  const best = windows.find(w => w.window === 'all') ?? windows[0]
+  // card for the primary platform's best window (all-time if present, else first)
+  const primary = pulls.find((d) => d.platform === 'claude') ?? pulls[0]
+  const best = primary.windows?.find((x) => x.window === 'all') ?? primary.windows?.[0]
   if (best?.card) {
     writeln()
-    writeln(`  ${dim('cascade read:')}`)
+    writeln(`  ${dim('cascade read:')}${multi ? dim(` (${primary.platform})`) : ''}`)
     // wrap card text at terminal width
     const cardText = best.card
     const maxW = w - 6
@@ -1486,7 +1522,7 @@ export async function runCli(argv) {
         refresh: Number(flags.refresh) || 30,
       })
     } else if (cmd === 'me') {
-      await runMe({ platform: flags.platform ?? 'claude', compare: flags.compare === true || flags.compare === 'true' })
+      await runMe({ platform: typeof flags.platform === 'string' ? flags.platform : null, compare: flags.compare === true || flags.compare === 'true' })
     } else if (cmd === 'compare') {
       await runCompare({ platform: flags.platform ?? 'claude' })
     } else if (cmd === 'tui') {
