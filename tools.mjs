@@ -285,12 +285,13 @@ export const TOOLS = [
   {
     name: 'submit_verified',
     description:
-      'Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine.',
+      'Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Pass dry_run:true to inspect the exact signed payload without publishing.',
     inputSchema: {
       type: 'object',
       properties: {
         window: { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
         platform: { type: 'string', enum: [...ALL_PLATFORMS, 'multi'], description: "source platform (default: claude). 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active); empty windows are skipped." },
+        dry_run: { type: 'boolean', description: 'build + sign but do NOT publish — returns the exact payload that would be POSTed (token counts only), so you can inspect before submitting' },
       },
     },
   },
@@ -451,7 +452,7 @@ export async function callTool(name, args, opts = {}) {
           msgs += w.messages || 0
         }
         if (sum.input + sum.output + sum.cacheCreate + sum.cacheRead <= 0) continue // skip empty window
-        const r = await submitSignedWindow(wk, sum, msgs, id, { apiBase, fetchImpl: doFetch, platform: 'multi', now: opts.now })
+        const r = await submitSignedWindow(wk, sum, msgs, id, { apiBase, fetchImpl: doFetch, platform: 'multi', now: opts.now, dryRun: !!args?.dry_run })
         out.push({ window: wk, pillars: sum, ...r })
       }
       return { platform: 'multi', codename: id.codename, operator_id: id.operator_id, sources: detected.map((d) => d.platform), windows: out }
@@ -466,6 +467,7 @@ export async function callTool(name, args, opts = {}) {
         fetchImpl: doFetch,
         platform: pulled.platform,
         now: opts.now,
+        dryRun: !!args?.dry_run,
       })
       out.push({ window: w.window, pillars: w.pillars, ...r })
     }

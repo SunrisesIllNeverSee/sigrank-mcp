@@ -130,6 +130,20 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
   const payload = buildPayload(windowKey, pillars, messages, identity, opts.platform || 'claude', opts)
   const signature = signPayload(payload, identity.private_key_pkcs8_b64)
 
+  // Dry run: build + sign exactly as a real publish, then STOP before the POST.
+  // Returns the exact payload that would be sent — the privacy proof ("token
+  // counts only") is inspectable, and nothing touches the network.
+  if (opts.dryRun) {
+    return {
+      status: 'dry_run',
+      window: WINDOW_TYPE[windowKey] || windowKey,
+      would_post: `${apiBase}/api/v1/snapshots`,
+      payload,
+      signature,
+      detail: 'Nothing sent. Re-run without dry_run to publish.',
+    }
+  }
+
   let res
   let ack
   try {

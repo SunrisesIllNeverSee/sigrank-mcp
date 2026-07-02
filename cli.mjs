@@ -1309,7 +1309,7 @@ async function runSubmit({ platform = 'claude', window } = {}) {
 
   let out
   try {
-    out = await callTool('submit_verified', { platform, window: typeof window === 'string' ? window : undefined })
+    out = await callTool('submit_verified', { platform, window: typeof window === 'string' ? window : undefined, dry_run: process.argv.includes('--dry-run') })
   } catch (e) {
     writeln(red(`  ✗ ${e.message}`))
     process.exitCode = 1
