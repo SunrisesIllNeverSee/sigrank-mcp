@@ -35,9 +35,12 @@ sigrank enroll
 
 # 3. Submit your cascade to the board
 sigrank submit
+
+# (cautious? see exactly what would be sent — four counts + a signature — sending nothing)
+sigrank submit --dry-run
 ```
 
-That's it. The agent reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — only the four token counts leave your machine.
+That's it. sigrank reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — only the four token counts leave your machine.
 
 Or just explore without signing in:
 
@@ -133,6 +136,7 @@ Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
 ```bash
 sigrank enroll          # sign in: paste a connect code (get one at signalaf.com → Settings)
 sigrank submit          # publish your verified runs to the board (sign in first)
+sigrank submit --dry-run  # inspect the exact signed payload without sending anything
 ```
 
 Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit.
@@ -177,7 +181,9 @@ Or if installed globally:
 | `tokenpull_submit(codename, window?)` | `{codename?, window?}` | `tokenpull` → publish to board. Omit codename for preview |
 | `tokenpull_compare(platform?)` | `{platform?}` | All four sources side-by-side: tokenpull + ccusage + token-dash + tokscale. Returns pillars, cascade metrics, and delta % vs tokenpull per window |
 | `rank_windows` | `{platform?, window?}` | Multi-window cascade from local logs |
-| `watch_tokenpull` | `{platform?, interval_s?}` | Streaming cascade snapshots |
+| `watch_tokenpull` | `{platform?, interval_s?}` | One cascade snapshot per call (interval_s advisory) |
+| `submit_verified` | `{window?, platform?, dry_run?}` | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
+| `enroll` | `{code, device_label?}` | Bind this device with a connect code from signalaf.com → Settings |
 
 ---
 
@@ -250,7 +256,8 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 - **Token-only, always.** No message content is ever read, logged, or transmitted — only token counts (`input`, `output`, `cache_creation`, `cache_read`), message IDs, and timestamps.
 - **Local by default.** `tokenpull` reads only `~/.claude/projects` (Claude) or `~/.codex` (Codex) on your device. Numbers stay on your machine unless you explicitly submit with a codename.
 - **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
-- **No auth required.** All board reads and the submit path are anonymous.
+- **Board reads are anonymous.** No account needed to browse, compare, or watch.
+- **Ranked submissions are signed, not trusted.** `sigrank submit` requires a one-time `enroll` (device-bound ed25519 key — the private key never leaves your machine). Verify what's sent with `sigrank submit --dry-run`: the payload is four token counts, ratios, and a signature.
 
 ---
 
