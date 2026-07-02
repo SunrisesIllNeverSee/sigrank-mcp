@@ -10,7 +10,7 @@
  * CLI shortcuts (optional — the TUI never needs them):
  *   npx sigrank enroll          sign in: redeem a connect code from signalaf.com
  *   npx sigrank submit          publish your verified runs to the board
- *   npx sigrank board | me | compare | watch    read / publish helpers
+ *   npx sigrank board | compare | watch    read / publish helpers
  *   npx sigrank --help          full reference
  *
  * For AI clients (NOT human commands): in a piped/non-TTY context this starts an MCP
@@ -23,7 +23,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import { TOOLS, callTool } from './tools.mjs'
 import { runCli } from './cli.mjs'
 import { readFileSync } from 'node:fs'
@@ -55,6 +55,11 @@ async function startMcpServer() {
   const server = new Server({ name: 'sigrank', version: serverVersion() }, { capabilities: { tools: {} } })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    // Unknown tool name = a client/host bug → JSON-RPC -32602 protocol error, per the MCP
+    // spec. isError results (below) are reserved for tools that ran and failed.
+    if (!TOOLS.some((t) => t.name === req.params.name)) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${req.params.name}`)
+    }
     try {
       const out = await callTool(req.params.name, req.params.arguments)
       return { content: [{ type: 'text', text: JSON.stringify(out, null, 2) }] }
@@ -66,14 +71,14 @@ async function startMcpServer() {
 }
 
 // Route:
-//   any CLI command arg  → terminal UI / CLI command
+//   any arg              → the CLI (runCli shows help + exits non-zero on unknown commands,
+//                          so a typo never silently starts a hung MCP stdio server on a TTY)
 //   no args + TTY stdout → full tabbed TUI (interactive use)
 //   no args + piped      → MCP stdio server (AI client use)
 const cliArgs = process.argv.slice(2)
-const CLI_COMMANDS = new Set(['board', 'compare', 'tui', 'watch', 'enroll', 'submit', 'help', '--help', '-h', '--version', '-v'])
-if (cliArgs.length > 0 && (CLI_COMMANDS.has(cliArgs[0]) || cliArgs[0].startsWith('--'))) {
+if (cliArgs.length > 0) {
   runCli(process.argv)
-} else if (cliArgs.length === 0 && process.stdout.isTTY) {
+} else if (process.stdout.isTTY) {
   // Interactive terminal — launch the full tabbed TUI
   const { runTui } = await import('./tui.mjs')
   runTui()

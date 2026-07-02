@@ -35,10 +35,10 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { homedir } from 'node:os'
-import { exec as execCb } from 'node:child_process'
+import { execFile as execFileCb } from 'node:child_process'
 import { promisify } from 'node:util'
 
-const exec = promisify(execCb)
+const execFileP = promisify(execFileCb)
 const DAY_MS = 86_400_000 // shared with tokenpull.mjs but kept local to avoid circular import
 
 // ── File-system helpers ───────────────────────────────────────────────────────
@@ -75,10 +75,12 @@ function* parseJsonl(text, filePath) {
   }
 }
 
-/** Shell out to sqlite3 and return parsed JSON rows, or [] on error/unavailability. */
+/** Run sqlite3 -json and return parsed rows, or [] on error/unavailability.
+ *  execFile with an args array — no shell, so dbPath/sql need no quoting/escaping
+ *  (matches the execFile hardening used in tools.mjs / tokenpull.mjs). */
 async function sqliteJson(dbPath, sql) {
   try {
-    const { stdout } = await exec(`sqlite3 -json "${dbPath}" "${sql.replace(/"/g, '\\"')}"`, { timeout: 10_000 })
+    const { stdout } = await execFileP('sqlite3', ['-json', dbPath, sql], { timeout: 10_000 })
     return JSON.parse(stdout || '[]')
   } catch { return [] }
 }

@@ -34,7 +34,9 @@ const _envPath = `${_localBin}${process.env.PATH ? ':' + process.env.PATH : ''}`
 // are found even when sigrank isn't globally installed.
 function execFileAsync(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
+    // NOTE: execFile does not accept a `stdio` option (it always pipes + buffers
+    // stdout/stderr against maxBuffer) — a previous `stdio` key here was silently ignored.
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.toString())
     })
@@ -71,7 +73,10 @@ async function _ccusagePillars(platform = 'claude') {
     }
     let i=0,o=0,cw=0,cr=0
     for (const r of rows) {
-      i+=r.inputTokens??0; o+=r.outputTokens??0; cw+=r.cacheCreationTokens??0; cr+=r.cacheReadTokens??0
+      i  += r.inputTokens         ?? r.input_tokens         ?? 0
+      o  += r.outputTokens        ?? r.output_tokens        ?? 0
+      cw += r.cacheCreationTokens ?? r.cache_create_tokens  ?? 0
+      cr += r.cacheReadTokens     ?? r.cache_read_tokens    ?? 0
     }
     result['all'] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
     return result
@@ -231,17 +236,19 @@ export const TOOLS = [
         all:   { type: 'string', description: 'ccusage/tokscale paste or JSON for the all-time window (optional)' },
         source_tool: { type: 'string', enum: ['ccusage', 'tokscale', 'claude_max', 'token_dashboard', 'other'], description: 'which token reader produced the paste (for cross-tool variance tracking)' },
       },
+      // at least one window paste is required (runtime check backs this up)
+      anyOf: [{ required: ['7d'] }, { required: ['30d'] }, { required: ['90d'] }, { required: ['all'] }],
     },
   },
   {
     name: 'watch_tokenpull',
     description:
-      'Watch your local token logs and re-derive your cascade whenever new sessions are written — a live tune meter. Polls at a configurable interval (default 60s) and returns the updated cascade. With submit:true (and an enrolled device) it also signs + publishes the watched window to the board each poll; default is preview-only (no submit).',
+      'One poll per call: pulls your local token logs and returns the current cascade for the watched window — the tool never blocks or loops. Re-call at your desired cadence to watch for changes (interval_s is advisory only and echoed back as poll_interval_s). With submit:true (and an enrolled device) each call may also sign + publish the watched window to the board, rate-limited to once per 5 min per platform+window; default is preview-only (no submit).',
     inputSchema: {
       type: 'object',
       properties: {
         platform:    { type: 'string', enum: ALL_PLATFORMS, description: 'platform to watch (default: claude)' },
-        interval_s:  { type: 'number', description: 'poll interval in seconds (default: 60, min: 10)' },
+        interval_s:  { type: 'number', description: 'advisory poll cadence in seconds (default: 60, min: 10) — echoed back as poll_interval_s; does not make the call block or loop' },
         window:      { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'which window to watch (default: 7d — most sensitive to recent activity)' },
         submit:      { type: 'boolean', description: 'auto-submit the watched window to the board as a VERIFIED operator each poll (requires `enroll`; default false = preview only)' },
       },
@@ -283,7 +290,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         window: { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
-        platform: { type: 'string', enum: ALL_PLATFORMS, description: 'source platform (default: claude)' },
+        platform: { type: 'string', enum: [...ALL_PLATFORMS, 'multi'], description: "source platform (default: claude). 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active); empty windows are skipped." },
       },
     },
   },
@@ -295,7 +302,9 @@ const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
 // E3: client-side auto-submit cooldown for watch_tokenpull. The server already dedups
 // identical snapshots (exact hash → 422), but a noisy poll loop with submit:true could still
 // churn the network/board with near-identical rows. Cap auto-submit to once per WATCH_SUBMIT_COOLDOWN_MS
-// per window (in-memory, per process). Keyed by window so different windows don't block each other.
+// per platform+window (in-memory, per process). Keyed by platform:window so different
+// platforms/windows don't block each other, and only armed on a non-error submit so a
+// network failure doesn't lock out retries for 5 minutes.
 const WATCH_SUBMIT_COOLDOWN_MS = 5 * 60 * 1000
 const _lastWatchSubmitAt = new Map()
 
@@ -348,6 +357,10 @@ export async function callTool(name, args, opts = {}) {
 
   if (name === 'rank_paste') {
     if (!args?.text) throw new Error('rank_paste requires a non-empty `text` argument.')
+    // E2: reject oversized pastes before parsing (parity with submit_paste / rank_windows).
+    if (typeof args.text === 'string' && args.text.length > MAX_INPUT) {
+      return { status: 'error', reason: 'input_too_large', detail: `text exceeds ${MAX_INPUT} chars (${args.text.length}). Paste only the token-count table, not full output.` }
+    }
     const pillars = parsePillars(args.text)
     const c = withParseWarnings(pillars, cascade(pillars))
     return { ...c, card: narrate(c) }
@@ -599,21 +612,23 @@ export async function callTool(name, args, opts = {}) {
     if (args?.submit === true) {
       const id = opts.identity || ensureIdentity()
       if (id.codename && id.operator_id && id.private_key_pkcs8_b64) {
-        // E3: client-side cooldown — at most one auto-submit per window per 5 min. Prevents a
-        // fast poll loop from churning the board even before the server's hash-dedup kicks in.
+        // E3: client-side cooldown — at most one auto-submit per platform+window per 5 min.
+        // Prevents a fast poll loop from churning the board even before the server's
+        // hash-dedup kicks in. Armed only on a non-error outcome so failed submits retry.
         const clockNow = typeof opts.now === 'number' ? opts.now : Date.now()
-        const last = _lastWatchSubmitAt.get(watchWindow)
+        const cdKey = `${pulled.platform}:${watchWindow}`
+        const last = _lastWatchSubmitAt.get(cdKey)
         if (last != null && clockNow - last < WATCH_SUBMIT_COOLDOWN_MS) {
           const waitS = Math.ceil((WATCH_SUBMIT_COOLDOWN_MS - (clockNow - last)) / 1000)
-          auth_submit = { status: 'cooldown', detail: `auto-submit for '${watchWindow}' on cooldown — next in ~${waitS}s (max once / 5 min).`, retry_after_s: waitS }
+          auth_submit = { status: 'cooldown', detail: `auto-submit for '${cdKey}' on cooldown — next in ~${waitS}s (max once / 5 min).`, retry_after_s: waitS }
         } else {
-          _lastWatchSubmitAt.set(watchWindow, clockNow)
           auth_submit = await submitSignedWindow(watchWindow, win.pillars, win.messages, id, {
             apiBase,
             fetchImpl: doFetch,
             platform: pulled.platform,
             now: opts.now,
           })
+          if (auth_submit?.status !== 'error') _lastWatchSubmitAt.set(cdKey, clockNow)
         }
       } else {
         auth_submit = { status: 'not_enrolled', detail: 'Run `npx sigrank-mcp enroll` to auto-submit verified runs.' }

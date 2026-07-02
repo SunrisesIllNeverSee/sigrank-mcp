@@ -1412,8 +1412,11 @@ export async function runCli(argv) {
       // default: full unified view
       await runSigRank()
     } else {
-      // unknown command: show help
+      // unknown command: show help + exit non-zero so typos fail loudly (index.mjs now
+      // routes ALL arg'd invocations here instead of falling through to the MCP server)
+      writeln(red(`\n  ✗ unknown command: ${cmd}`))
       await showHelp()
+      process.exit(2)
     }
   } catch (e) {
     write(SHOW_CURSOR)

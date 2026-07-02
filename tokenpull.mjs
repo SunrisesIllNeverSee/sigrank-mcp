@@ -41,7 +41,9 @@ const _envPath = `${_localBin}${process.env.PATH ? ':' + process.env.PATH : ''}`
 // (ccusage, tokscale) are found even when sigrank isn't globally installed.
 function execFileAsync(cmd, args, timeoutMs) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { timeout: timeoutMs, stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
+    // NOTE: execFile does not accept a `stdio` option (it always pipes + buffers
+    // stdout/stderr against maxBuffer) — a previous `stdio` key here was silently ignored.
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, PATH: _envPath } }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout.toString())
     })
@@ -347,7 +349,10 @@ async function _freshCcusage(platform = 'claude') {
     }
     let i = 0, o = 0, cw = 0, cr = 0
     for (const r of rows) {
-      i += r.inputTokens ?? 0; o += r.outputTokens ?? 0; cw += r.cacheCreationTokens ?? 0; cr += r.cacheReadTokens ?? 0
+      i  += r.inputTokens         ?? r.input_tokens         ?? 0
+      o  += r.outputTokens        ?? r.output_tokens        ?? 0
+      cw += r.cacheCreationTokens ?? r.cache_create_tokens  ?? 0
+      cr += r.cacheReadTokens     ?? r.cache_read_tokens    ?? 0
     }
     result['all'] = { input: i, output: o, cacheCreate: cw, cacheRead: cr }
     return result

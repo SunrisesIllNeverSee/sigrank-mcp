@@ -288,7 +288,7 @@ Tests verify (29 assertions):
 | File | Responsibility |
 |---|---|
 | `index.mjs` | Entry point — TTY detection, routes to CLI or MCP server |
-| `cli.mjs` | CLI commands: board, me, compare, watch, enroll, submit, help |
+| `cli.mjs` | CLI commands: board, compare, watch, enroll, submit, help |
 | `tui.mjs` | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
 | `cascade.mjs` | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class) |
 | `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform |
