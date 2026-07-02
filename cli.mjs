@@ -1326,7 +1326,9 @@ async function runSubmit({ platform = 'claude', window } = {}) {
   let anyReceivedNotRanked = false
   for (const w of out.windows || []) {
     const label = String(w.window).padEnd(8)
-    if (w.ranked) {
+    if (w.status === 'dry_run') {
+      writeln(`  ${gold('◇')} ${bold(label)} ${gold('DRY RUN')} ${dim('· nothing sent')}`)
+    } else if (w.ranked) {
       anyRanked = true
       writeln(`  ${green('✓')} ${bold(label)} ${green('RANKED')} ${dim('· live on the board')}`)
     } else if (w.status === 'received') {
@@ -1350,7 +1352,7 @@ export async function runCli(argv) {
 
   // parse --key value AND --key=value flags. E4: validate against the known set and warn
   // (don't crash) on anything unknown, so a typo'd flag is visible instead of silently ignored.
-  const KNOWN_FLAGS = new Set(['window', 'platform', 'refresh', 'once', 'submit', 'compare', 'label'])
+  const KNOWN_FLAGS = new Set(['window', 'platform', 'refresh', 'once', 'submit', 'compare', 'label', 'dry-run'])
   const flags = {}
   for (let i = 1; i < args.length; i++) {
     const a = args[i]
