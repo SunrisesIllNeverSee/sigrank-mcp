@@ -499,3 +499,52 @@ const oversizeWin = await callTool('rank_windows', { '7d': 'y'.repeat(1_000_001)
 assert.strictEqual(oversizeWin.status, 'error', 'E2: oversized rank_windows arg → error status')
 assert.strictEqual(oversizeWin.reason, 'input_too_large', 'E2: oversized rank_windows arg → input_too_large')
 console.log('✓ E2: 1MB input guard — submit_paste + rank_windows reject oversized; normal input unaffected')
+
+// ── simulate_change (0.15.0): the first prescriptive tool — "what if I changed my token mix?" ──
+// Pure local math: current pillars + proposed changes → cascade on both → delta.
+// No network, no submission. The quadratic input penalty should be visible: halving
+// input quadruples Υ (because I² is in the denominator).
+const simRel = await callTool('simulate_change', {
+  text: MOSES,
+  changes: { cacheRead: '+50000000' },
+})
+assert.strictEqual(simRel.current.yield, 18436.98, 'simulate_change: current Υ matches canon')
+assert.strictEqual(simRel.simulated.yield, 18797.75, 'simulate_change: +50M cacheRead → 18797.75')
+assert.strictEqual(simRel.deltas.yield.delta, 360.77, 'simulate_change: yield delta = +360.77')
+assert.strictEqual(simRel.changes.cacheRead.delta, 50000000, 'simulate_change: relative delta applied')
+assert.strictEqual(simRel.class_changed, false, 'simulate_change: no class change for +50M cacheRead')
+
+// Halving input → Υ quadruples (the quadratic penalty story)
+const simHalve = await callTool('simulate_change', {
+  text: MOSES,
+  changes: { input: 625605 }, // absolute: half of 1251211
+})
+assert.strictEqual(simHalve.simulated.yield, 73748.02, 'simulate_change: halved input → 4x Υ (quadratic penalty)')
+assert.strictEqual(simHalve.changes.input.from, 1251211, 'simulate_change: absolute replacement recorded from-value')
+assert.strictEqual(simHalve.changes.input.to, 625605, 'simulate_change: absolute replacement recorded to-value')
+
+// JSON input path works the same as positional
+const simJson = await callTool('simulate_change', {
+  text: '{"input":1000000,"output":5000000,"cacheCreate":50000000,"cacheRead":100000000}',
+  changes: { cacheRead: 200000000 },
+})
+assert.strictEqual(simJson.current.yield, 500, 'simulate_change: JSON input current Υ = 500')
+assert.strictEqual(simJson.simulated.yield, 1000, 'simulate_change: doubled cacheRead → doubled Υ = 1000')
+
+// Negative result → clean error (token counts can't be negative)
+const simNeg = await callTool('simulate_change', {
+  text: '1000000 5000000 50000000 100000000',
+  changes: { input: '-2000000' },
+})
+assert.strictEqual(simNeg.status, 'error', 'simulate_change: negative result → error')
+assert.strictEqual(simNeg.reason, 'invalid_change', 'simulate_change: negative result → invalid_change')
+
+// No changes specified → error
+const simEmpty = await callTool('simulate_change', {
+  text: MOSES,
+  changes: {},
+})
+assert.strictEqual(simEmpty.status, 'error', 'simulate_change: empty changes → error')
+assert.strictEqual(simEmpty.reason, 'no_changes', 'simulate_change: empty changes → no_changes')
+
+console.log('✓ simulate_change: relative + absolute deltas · quadratic penalty · JSON input · negative guard · empty-changes guard')
