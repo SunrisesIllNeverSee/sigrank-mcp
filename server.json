@@ -1,8 +1,9 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "SigRank MCP server — ranks AI coding operators by token cascade efficiency (Yield = Cache Reads × Output / Input²). Live leaderboard, head-to-head comparisons, signed token-count submission.",
+  "description": "Ranks AI coding operators by token cascade efficiency. Live leaderboard + signed submission.",
   "title": "SigRank — Token Efficiency Leaderboard",
+  "version": "0.15.1",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
