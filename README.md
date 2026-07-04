@@ -80,7 +80,29 @@ sigrank
 
 ## Use in AI apps (HTTP via Smithery Gateway)
 
-SigRank is available as a hosted MCP server through Smithery — no local install required. Use it with the Vercel AI SDK, any HTTP MCP client, or Claude Desktop via Smithery's one-click install.
+SigRank is available as a hosted MCP server through Smithery — no local install required. Use it with the Smithery CLI, Vercel AI SDK, MCP TypeScript SDK, any HTTP MCP client, or Claude Desktop via Smithery's one-click install.
+
+**Gateway URL:** `https://sigrank-mcp--burnmydays.run.tools`
+
+### Smithery CLI
+
+```bash
+# Install Smithery CLI
+npm install -g smithery
+
+# Log in
+smithery auth login
+
+# Connect to SigRank
+smithery mcp add sigrank --id sigrank
+
+# List available tools
+smithery tool list sigrank
+
+# Call a tool
+smithery tool call sigrank get_leaderboard '{}'
+smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
+```
 
 ### Vercel AI SDK
 
@@ -108,6 +130,30 @@ const { text } = await generateText({
 });
 
 await mcpClient.close();
+```
+
+### MCP TypeScript SDK
+
+```bash
+npm install @smithery/api @modelcontextprotocol/sdk
+```
+
+```typescript
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { createConnection } from '@smithery/api/mcp';
+
+const { transport } = await createConnection({
+  mcpUrl: 'https://sigrank-mcp--burnmydays.run.tools',
+});
+
+const mcpClient = new Client({ name: 'my-app', version: '1.0.0' });
+await mcpClient.connect(transport);
+
+const { tools } = await mcpClient.listTools();
+const result = await mcpClient.callTool({
+  name: 'get_leaderboard',
+  arguments: {},
+});
 ```
 
 ### Any HTTP MCP client
