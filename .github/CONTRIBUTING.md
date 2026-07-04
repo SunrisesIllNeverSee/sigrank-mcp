@@ -19,6 +19,15 @@ node test.mjs          # 29 assertions, no network, no fs writes
 node sign.test.mjs     # signing tests
 ```
 
+CI also runs (in addition to the above + cross-repo contract + pack-check):
+
+- **Secret scan** (gitleaks) — never commit real keys/tokens; test fixtures
+  and test files are allowlisted in `.gitleaks.toml`.
+- **CodeQL** — static analysis on JS; fix or dismiss alerts it raises on your PR.
+  Especially relevant for `sign.mjs` + `keystore.mjs` (crypto + key handling).
+- **Dependency audit** — `npm audit` fails on high/critical advisories (moderate
+  is reported only). If your PR bumps a dep with a high/critical advisory, CI blocks.
+
 ## Invariants — do not break
 
 - **Token-only.** No message content is ever read, logged, or transmitted.

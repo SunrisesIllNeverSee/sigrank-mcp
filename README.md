@@ -12,6 +12,9 @@ For all builders, burners and 10xers.
 
 [![npm version](https://img.shields.io/npm/v/sigrank.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank)
 [![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/codeql.yml)
+[![audit](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/dependency-audit.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/dependency-audit.yml)
+[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?style=flat-square&logo=dependabot)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/network/dependencies)
 [![license](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
 [![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
 [![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
