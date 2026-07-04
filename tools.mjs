@@ -174,13 +174,24 @@ export const TOOLS = [
   },
   {
     name: 'get_leaderboard',
-    description: 'The live public SigRank board (signalaf.com) — operators ranked by yield.',
+    description:
+      "Fetch the live public SigRank leaderboard from signalaf.com — all ranked operators sorted by yield (Υ = Cache Reads × Output / Input²). Returns each operator's codename, yield, leverage ratio (Cr/I), velocity (O/I), class tier, and rank. Use this to see where operators stand overall or to find specific codenames for get_operator lookups.",
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'get_operator',
-    description: "One operator's live profile by codename.",
-    inputSchema: { type: 'object', properties: { codename: { type: 'string' } }, required: ['codename'] },
+    description:
+      "Fetch one operator's live profile from the SigRank board by their codename. Returns their current yield (Υ), leverage ratio (Cr/I), velocity (O/I), class tier, rank position, and per-window breakdowns (7d/30d/90d/all-time). Use this to look up any operator who has submitted to the board — codenames are public and visible on the leaderboard.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        codename: {
+          type: 'string',
+          description: 'The operator\'s public codename as shown on the SigRank leaderboard (e.g. "Ghost Falcon", "Iron Lotus"). Case-insensitive.',
+        },
+      },
+      required: ['codename'],
+    },
   },
   {
     name: 'submit_paste',
