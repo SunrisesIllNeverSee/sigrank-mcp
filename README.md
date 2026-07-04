@@ -73,6 +73,55 @@ sigrank
 **Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
 **Site:** [signalaf.com](https://signalaf.com)
 **npm:** [sigrank](https://www.npmjs.com/package/sigrank)
+**Smithery:** [smithery.ai/servers/burnmydays/sigrank-mcp](https://smithery.ai/servers/burnmydays/sigrank-mcp)
+**Glama:** [glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
+
+---
+
+## Use in AI apps (HTTP via Smithery Gateway)
+
+SigRank is available as a hosted MCP server through Smithery — no local install required. Use it with the Vercel AI SDK, any HTTP MCP client, or Claude Desktop via Smithery's one-click install.
+
+### Vercel AI SDK
+
+```bash
+npm install ai @ai-sdk/mcp @ai-sdk/anthropic @smithery/api
+```
+
+```typescript
+import { createMCPClient } from '@ai-sdk/mcp';
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { createConnection } from '@smithery/api/mcp';
+
+const { transport } = await createConnection({
+  mcpUrl: 'https://sigrank-mcp--burnmydays.run.tools',
+});
+
+const mcpClient = await createMCPClient({ transport });
+const tools = await mcpClient.tools();
+
+const { text } = await generateText({
+  model: anthropic('claude-sonnet-4-20250514'),
+  tools,
+  prompt: 'Pull my local token usage and compute my SigRank yield.',
+});
+
+await mcpClient.close();
+```
+
+### Any HTTP MCP client
+
+```
+MCP URL: https://sigrank-mcp--burnmydays.run.tools
+Transport: streamable-http
+```
+
+### Claude Desktop (via Smithery)
+
+1. Go to [smithery.ai/servers/burnmydays/sigrank-mcp](https://smithery.ai/servers/burnmydays/sigrank-mcp)
+2. Click **Install**
+3. Smithery handles the rest — no manual config editing
 
 ---
 
