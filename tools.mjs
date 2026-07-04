@@ -169,8 +169,17 @@ export const TOOLS = [
   {
     name: 'rank_paste',
     description:
-      'Rank a paste of ccusage-style token counts. Accepts JSON {input,output,cacheCreate,cacheRead} or 4 whitespace-separated numbers in that order. Returns Υ Yield, SNR, Leverage, Velocity, 10xDEV, class, AND a deterministic prose "card". Token-only; computes locally.',
-    inputSchema: { type: 'object', properties: { text: { type: 'string', description: 'ccusage JSON or "input output cacheCreate cacheRead"' } }, required: ['text'] },
+      'Rank a paste of ccusage-style token counts to compute your SigRank yield. Accepts JSON {input,output,cacheCreate,cacheRead} or 4 whitespace-separated numbers in that order (input output cacheCreate cacheRead). Returns Υ Yield (the headline efficiency metric), SNR, Leverage ratio (Cr/I), Velocity (O/I), 10xDEV score, operator class tier (Burner/Builder/10xer), and a deterministic prose "card" summarizing the result. All computation is local — no network calls, no prompt data leaves the machine. Use this for a quick one-off ranking without submitting to the board.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Token counts to rank. Two formats accepted: (1) JSON object {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} or (2) four whitespace-separated numbers in order: input output cacheCreate cacheRead. Get these from `ccusage` output, the Claude Max dashboard, or any token reader.',
+        },
+      },
+      required: ['text'],
+    },
   },
   {
     name: 'get_leaderboard',
@@ -196,12 +205,18 @@ export const TOOLS = [
   {
     name: 'submit_paste',
     description:
-      'Rank a paste AND publish it to the live SigRank board in one call. Computes the cascade locally (instant preview + card), then submits the RAW paste to the board\'s web-paste endpoint, which re-parses and re-scores it server-side (authoritative). A codename is required to publish; omit it for a local preview only. Token-only, no auth (matches the web paste path). Best with a ccusage JSON paste — the 4-number form ranks locally but the board may reject it.',
+      'Rank a paste of token counts AND publish it to the live SigRank board at signalaf.com in one call. Computes the cascade locally for an instant preview + card, then submits the raw paste to the board\'s web-paste endpoint, which re-parses and re-scores it server-side (the server score is authoritative). A codename is required to publish — omit it for a local preview only. Token-only, no auth required (matches the web paste path). Best with a ccusage JSON paste — the 4-number form ranks locally but the board may reject it.',
     inputSchema: {
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'ccusage JSON or "input output cacheCreate cacheRead"' },
-        codename: { type: 'string', description: 'operator codename to publish under (required to submit; omit for local preview only)' },
+        text: {
+          type: 'string',
+          description: 'Token counts to rank and submit. Two formats: (1) JSON {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} from ccusage, or (2) four whitespace-separated numbers: input output cacheCreate cacheRead.',
+        },
+        codename: {
+          type: 'string',
+          description: 'Operator codename to publish under on the leaderboard (e.g. "Ghost Falcon"). Required to submit — omit for local preview only (no board submission).',
+        },
       },
       required: ['text'],
     },
@@ -224,13 +239,24 @@ export const TOOLS = [
   {
     name: 'tokenpull_submit',
     description:
-      "Pull your LOCAL usage (tokenpull) AND publish it to the SigRank board in one call — the zero-paste flow. Submits the canonical 4 pillars per window, each re-scored server-side and tagged with the source platform. Requires a codename to publish; omit for local preview. Token-only.",
+      "Pull your LOCAL token usage from session logs AND publish it to the SigRank board in one call — the zero-paste flow. Reads the four canonical pillars (input, output, cacheCreate, cacheRead) per window from your local logs, computes the cascade, and submits each window to the board where it is re-scored server-side and tagged with the source platform. Requires a codename to publish; omit for a local preview only. Token-only — no prompt content is read or transmitted.",
     inputSchema: {
       type: 'object',
       properties: {
-        codename: { type: 'string', description: 'operator codename to publish under (omit for preview-only)' },
-        window:   { type: 'string', enum: ['7d', '30d', '90d', 'all'], description: 'submit only this window (default: all 4)' },
-        platform: { type: 'string', enum: ALL_PLATFORMS, description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(', ')}` },
+        codename: {
+          type: 'string',
+          description: 'Operator codename to publish under on the leaderboard (e.g. "Iron Lotus"). Required to submit — omit for local preview only.',
+        },
+        window: {
+          type: 'string',
+          enum: ['7d', '30d', '90d', 'all'],
+          description: 'Submit only this time window (default: all 4 windows). Use "7d" for recent activity or "all" for all-time ranking.',
+        },
+        platform: {
+          type: 'string',
+          enum: ALL_PLATFORMS,
+          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(', ')}. Each platform reads its own session logs locally.`,
+        },
       },
     },
   },

@@ -23,7 +23,14 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js'
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
+  McpError,
+  ErrorCode,
+} from '@modelcontextprotocol/sdk/types.js'
 import { TOOLS, callTool } from './tools.mjs'
 import { runCli } from './cli.mjs'
 import { readFileSync } from 'node:fs'
@@ -52,7 +59,10 @@ process.on('unhandledRejection', (reason) => {
 })
 
 async function startMcpServer() {
-  const server = new Server({ name: 'sigrank', version: serverVersion() }, { capabilities: { tools: {} } })
+  const server = new Server(
+    { name: 'sigrank', version: serverVersion() },
+    { capabilities: { tools: {}, prompts: {} } },
+  )
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     // Unknown tool name = a client/host bug → JSON-RPC -32602 protocol error, per the MCP
@@ -67,6 +77,82 @@ async function startMcpServer() {
       return { content: [{ type: 'text', text: `Error: ${e.message}` }], isError: true }
     }
   })
+
+  // --- Prompts: interactive templates that agents can offer to users ---
+  const PROMPTS = [
+    {
+      name: 'check-my-efficiency',
+      description:
+        'Pull your local token usage, compute your SigRank yield, and compare your efficiency against the leaderboard. Shows your class tier (Burner/Builder/10xer) and where you rank.',
+      arguments: [],
+    },
+    {
+      name: 'simulate-improvement',
+      description:
+        'Run a what-if analysis on your token mix: "if I increased my cache reads by 50k, how would my yield change?" Uses simulate_change to show the payoff before you change your workflow.',
+      arguments: [
+        {
+          name: 'change',
+          description: 'The change to simulate (e.g. "increase cache reads by 50000" or "reduce input by 100000")',
+          required: true,
+        },
+      ],
+    },
+    {
+      name: 'compare-with-leader',
+      description:
+        'Fetch the top operator from the SigRank leaderboard and compare their token efficiency metrics against yours. Shows the gap and what you\'d need to change to close it.',
+      arguments: [],
+    },
+  ]
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: PROMPTS }))
+  server.setRequestHandler(GetPromptRequestSchema, async (req) => {
+    const name = req.params.name
+    const args = req.params.arguments || {}
+    if (name === 'check-my-efficiency') {
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: 'Pull my local token usage with tokenpull, compute my yield, and then fetch the leaderboard so I can see where I rank. Show me my class tier and my key metrics (Yield, Leverage, Velocity).',
+            },
+          },
+        ],
+      }
+    }
+    if (name === 'simulate-improvement') {
+      const change = args.change || 'increase cache reads by 50000'
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `First pull my local token usage with tokenpull to get my current pillars. Then use simulate_change to answer: "what if I ${change}?" Show me the yield delta and whether my class tier would change.`,
+            },
+          },
+        ],
+      }
+    }
+    if (name === 'compare-with-leader') {
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: 'Fetch the SigRank leaderboard with get_leaderboard, then pull my local token usage with tokenpull. Compare my yield, leverage, and velocity against the top operator. What\'s the gap and what would I need to change to close it?',
+            },
+          },
+        ],
+      }
+    }
+    throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`)
+  })
+
   await server.connect(new StdioServerTransport())
 }
 
