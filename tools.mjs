@@ -169,56 +169,63 @@ export const TOOLS = [
   {
     name: 'rank_paste',
     description:
-      'Rank a paste of ccusage-style token counts to compute your SigRank yield. Accepts JSON {input,output,cacheCreate,cacheRead} or 4 whitespace-separated numbers in that order (input output cacheCreate cacheRead). Returns Υ Yield (the headline efficiency metric), SNR, Leverage ratio (Cr/I), Velocity (O/I), 10xDEV score, operator class tier (Burner/Builder/10xer), and a deterministic prose "card" summarizing the result. All computation is local — no network calls, no prompt data leaves the machine. Use this for a quick one-off ranking without submitting to the board.',
+      'Computes the SigRank yield cascade from a paste of token counts. Parses the input, runs the full cascade math locally (no network calls), and returns: Υ Yield (the headline efficiency metric, Υ = Cache Reads × Output / Input²), SNR (signal-to-noise ratio), Leverage ratio (Cr/I = cache reads divided by input), Velocity (O/I = output divided by input), 10xDEV score, operator class tier (Burner / Builder / 10xer), and a deterministic prose "card" summarizing the result in plain English. Accepts two input formats: (1) JSON object {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} or (2) four whitespace-separated numbers in order: input output cacheCreate cacheRead. Returns an error if the input is malformed or has negative values. Use this for a quick one-off ranking without submitting to the board. Do NOT use this to submit your score — use submit_paste instead, which both ranks and publishes. Do NOT use this if you want to rank all four time windows at once — use rank_windows for that. After calling this, use submit_paste to publish the result if you want to appear on the leaderboard.',
     inputSchema: {
       type: 'object',
       properties: {
         text: {
           type: 'string',
-          description: 'Token counts to rank. Two formats accepted: (1) JSON object {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} or (2) four whitespace-separated numbers in order: input output cacheCreate cacheRead. Get these from `ccusage` output, the Claude Max dashboard, or any token reader.',
+          description: 'Token counts to rank. Two formats accepted: (1) JSON object {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} where all values are non-negative integers, or (2) four whitespace-separated numbers in order: input output cacheCreate cacheRead. Get these from `ccusage` output, the Claude Max usage dashboard, tokscale, or any token reader. Example valid input: {"input":1000000,"output":500000,"cacheCreate":50000,"cacheRead":800000}',
         },
       },
       required: ['text'],
+      description: 'Requires the token counts as a string. No other parameters are accepted.',
     },
   },
   {
     name: 'get_leaderboard',
     description:
-      "Fetch the live public SigRank leaderboard from signalaf.com — all ranked operators sorted by yield (Υ = Cache Reads × Output / Input²). Returns each operator's codename, yield, leverage ratio (Cr/I), velocity (O/I), class tier, and rank. Use this to see where operators stand overall or to find specific codenames for get_operator lookups.",
-    inputSchema: { type: 'object', properties: {} },
+      "Fetches the live public SigRank leaderboard from signalaf.com. Reads all ranked operators sorted by yield (Υ = Cache Reads × Output / Input²) and returns an array of operator summaries. Each entry contains: codename (public display name), yield (Υ, the headline efficiency metric), leverage ratio (Cr/I = cache reads divided by input), velocity (O/I = output divided by input), class tier (Burner / Builder / 10xer), and rank position (integer, 1-based). Returns an empty array if no operators have submitted yet. Use this to see where operators stand overall, to find specific codenames for get_operator lookups, or to display the current rankings. Do NOT use this to check your own rank if you already know your codename — use get_operator instead for a single-operator profile with per-window breakdowns. After calling this, follow up with get_operator to get detailed metrics for any operator of interest.",
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      description: 'This tool takes no parameters. It always fetches the full public leaderboard.',
+    },
   },
   {
     name: 'get_operator',
     description:
-      "Fetch one operator's live profile from the SigRank board by their codename. Returns their current yield (Υ), leverage ratio (Cr/I), velocity (O/I), class tier, rank position, and per-window breakdowns (7d/30d/90d/all-time). Use this to look up any operator who has submitted to the board — codenames are public and visible on the leaderboard.",
+      "Fetches one operator's live profile from the SigRank board by their codename. Reads the operator's current submission data from signalaf.com and returns their detailed metrics: yield (Υ), leverage ratio (Cr/I), velocity (O/I), class tier (Burner / Builder / 10xer), rank position (integer, 1-based), and per-window breakdowns for each time range (7d, 30d, 90d, all-time) with the four canonical pillars (input, output, cacheCreate, cacheRead) per window. Returns an error if the codename is not found on the board. Use this to look up any operator who has submitted to the board — codenames are public and visible on the leaderboard. Do NOT use this to browse all operators — use get_leaderboard for that. After calling this, you can use simulate_change to model what would happen if the operator adjusted their token mix.",
     inputSchema: {
       type: 'object',
       properties: {
         codename: {
           type: 'string',
-          description: 'The operator\'s public codename as shown on the SigRank leaderboard (e.g. "Ghost Falcon", "Iron Lotus"). Case-insensitive.',
+          description: 'The operator\'s public codename as shown on the SigRank leaderboard. Case-insensitive — "Ghost Falcon" and "ghost falcon" are equivalent. Must match a codename that exists on the board; returns an error if not found. To discover valid codenames, call get_leaderboard first.',
         },
       },
       required: ['codename'],
+      description: 'Requires the operator\'s codename. No other parameters are accepted.',
     },
   },
   {
     name: 'submit_paste',
     description:
-      'Rank a paste of token counts AND publish it to the live SigRank board at signalaf.com in one call. Computes the cascade locally for an instant preview + card, then submits the raw paste to the board\'s web-paste endpoint, which re-parses and re-scores it server-side (the server score is authoritative). A codename is required to publish — omit it for a local preview only. Token-only, no auth required (matches the web paste path). Best with a ccusage JSON paste — the 4-number form ranks locally but the board may reject it.',
+      'Ranks a paste of token counts AND publishes it to the live SigRank board at signalaf.com in one call. First computes the cascade locally for an instant preview (yield, leverage, velocity, class, card), then submits the raw paste to the board\'s web-paste endpoint, which re-parses and re-scores it server-side. The server score is authoritative — it may differ from the local preview if the board applies additional validation. Returns both the local preview and the server response (including the operator\'s new rank if accepted). A codename is required to publish — omit it for a local preview only (no board submission). Token-only, no auth required. Use this when you have token counts from ccusage or a dashboard and want to both see your score and publish it. Do NOT use this if you want to pull your local usage automatically — use tokenpull_submit for the zero-paste flow. Do NOT use this for multi-window dashboard pastes — use rank_windows to rank them first, then submit each window. After calling this, use get_operator with your codename to verify your submission appeared on the board.',
     inputSchema: {
       type: 'object',
       properties: {
         text: {
           type: 'string',
-          description: 'Token counts to rank and submit. Two formats: (1) JSON {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} from ccusage, or (2) four whitespace-separated numbers: input output cacheCreate cacheRead.',
+          description: 'Token counts to rank and submit. Two formats: (1) JSON {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} from ccusage (preferred — the board parses this reliably), or (2) four whitespace-separated numbers: input output cacheCreate cacheRead. The 4-number form ranks locally but the board may reject it. Example: {"input":1000000,"output":500000,"cacheCreate":50000,"cacheRead":800000}',
         },
         codename: {
           type: 'string',
-          description: 'Operator codename to publish under on the leaderboard (e.g. "Ghost Falcon"). Required to submit — omit for local preview only (no board submission).',
+          description: 'Operator codename to publish under on the leaderboard (e.g. "Ghost Falcon"). Required to submit — omit for local preview only (no board submission, just returns the local cascade result). Must be a non-empty string.',
         },
       },
       required: ['text'],
+      description: 'Requires token counts (text). Codename is optional but required for board submission — omit it for preview-only mode.',
     },
   },
   {
