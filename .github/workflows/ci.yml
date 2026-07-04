@@ -25,7 +25,7 @@ jobs:
       # annotations silently don't appear.
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history so gitleaks can scan past commits, not just the diff.
           fetch-depth: 0
@@ -36,7 +36,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -57,14 +57,14 @@ jobs:
   cross-repo-contract:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Checkout sigrank-app (the other half of the contract)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: SunrisesIllNeverSee/sigrank-app
           path: _sigrank-app
@@ -80,7 +80,7 @@ jobs:
   pack-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
