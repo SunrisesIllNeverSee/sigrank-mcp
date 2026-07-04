@@ -1,0 +1,18 @@
+# gitleaks config — extends the built-in rule set and allowlists test fixtures
+# so the secret-scan CI job does not false-positive on the canon-parity fixture
+# (which carries a known test-only signature, never a real key) or test files
+# (which generate ephemeral keypairs that are never persisted or used).
+# Auto-detected by gitleaks when present at the repo root.
+title = "SigRank MCP gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures + test files use ephemeral/generated keys, not real secrets"
+paths = [
+  '''tests/fixtures/.*''',
+  '''test\.mjs''',
+  '''sign\.test\.mjs''',
+  '''__tests__/.*''',
+]
