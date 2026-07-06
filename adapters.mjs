@@ -33,7 +33,7 @@
  */
 
 import { readdir, readFile } from 'node:fs/promises'
-import { join, extname } from 'node:path'
+import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { execFile as execFileCb } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -212,10 +212,6 @@ export const openclawAdapter = {
   defaultRoot: () => {
     const env = process.env.OPENCLAW_DIR
     if (env) return env.split(',')[0].trim()
-    for (const d of ['.openclaw', '.clawdbot', '.moltbot', '.moldbot']) {
-      const p = join(homedir(), d)
-      return p // return first; walkFiles silently skips missing
-    }
     return join(homedir(), '.openclaw')
   },
   async *messages(root) {
@@ -245,6 +241,9 @@ export const openclawAdapter = {
 // ~/.factory/sessions/**/*.settings.json
 // Fields: input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, thinking_tokens
 // Thinking tokens → output. Per-settings-file (session-level granularity).
+// CUMULATIVE-COLUMN GUARD: settings files contain session-level totals. If the same session
+// appears in multiple files, summing double-counts. We set both id and sid to the session id
+// so tokenpull()'s (sid|id) keep-last dedup collapses duplicates to the latest values.
 export const droidAdapter = {
   platform: 'droid',
   defaultRoot: () => join(homedir(), '.factory', 'sessions'),
@@ -260,7 +259,8 @@ export const droidAdapter = {
         const cacheCreate = Number(s.cache_creation_tokens || 0)
         const cacheRead   = Number(s.cache_read_tokens     || 0)
         if (input + output + cacheCreate + cacheRead === 0) continue
-        yield { id: null, sid: s.session_id || s.id || null, ts: s.updated_at || s.created_at || null, input, output, cacheCreate, cacheRead, file: path }
+        const sessionId = String(s.session_id || s.id || '')
+        yield { id: sessionId, sid: sessionId, ts: s.updated_at || s.created_at || null, input, output, cacheCreate, cacheRead, file: path }
       }
     }
   },
@@ -345,7 +345,7 @@ export const copilotAdapter = {
   defaultRoot: () => join(homedir(), '.copilot', 'otel'),
   async *messages(root) {
     const dir = process.env.COPILOT_OTEL_FILE_EXPORTER_PATH
-      ? require('node:path').dirname(process.env.COPILOT_OTEL_FILE_EXPORTER_PATH)
+      ? dirname(process.env.COPILOT_OTEL_FILE_EXPORTER_PATH)
       : root
     for await (const path of walkFiles(dir, isJsonl)) {
       const text = await readUtf8(path)
@@ -387,6 +387,10 @@ export const opencodeAdapter = {
 // SQLite: sessions.db at standard Goose data roots or $GOOSE_PATH_ROOT/data/sessions/sessions.db
 // Columns: accumulated_input_tokens (or input_tokens), accumulated_output_tokens (or output_tokens),
 //          accumulated_total_tokens (or total_tokens). NO cache fields. Reasoning = total-input-output.
+// CUMULATIVE-COLUMN GUARD: accumulated_* columns are per-session running totals. If the sessions
+// table has multiple rows per session id, summing them downstream double-counts. We set both sid
+// and id to the session id and ORDER BY updated_at so tokenpull()'s (sid|id) keep-last dedup
+// collapses duplicate session rows to the latest (max accumulated) values.
 export const gooseAdapter = {
   platform: 'goose',
   estimated: true, // no cacheCreate or cacheRead
@@ -405,14 +409,17 @@ export const gooseAdapter = {
           join(homedir(), '.local', 'share', 'Block', 'goose', 'sessions', 'sessions.db'),
         ]
     for (const db of dbCandidates) {
-      const rows = await sqliteJson(db, 'SELECT * FROM sessions')
+      // ORDER BY updated_at so the latest cumulative row per session is yielded last
+      // (tokenpull keep-last dedup picks the final row = max accumulated values).
+      const rows = await sqliteJson(db, 'SELECT * FROM sessions ORDER BY updated_at')
       for (const row of rows) {
         const input  = Number(row.accumulated_input_tokens  || row.input_tokens  || 0)
         const output = Number(row.accumulated_output_tokens || row.output_tokens || 0)
         const total  = Number(row.accumulated_total_tokens  || row.total_tokens  || 0)
         const reasoning = Math.max(0, total - input - output) // folded into output
         if (input + output === 0) continue
-        yield { id: String(row.id || ''), sid: null, ts: row.created_at || row.updated_at || null, input, output: output + reasoning, cacheCreate: 0, cacheRead: 0, file: db }
+        const sessionId = String(row.id || row.session_id || '')
+        yield { id: sessionId, sid: sessionId, ts: row.created_at || row.updated_at || null, input, output: output + reasoning, cacheCreate: 0, cacheRead: 0, file: db }
       }
     }
   },
@@ -441,13 +448,18 @@ export const kiloAdapter = {
 // ── 13. Hermes Agent ─────────────────────────────────────────────────────────
 // SQLite: ~/.hermes/state.db
 // Per-session rows: input, output, cache_read, cache_write (=cacheCreate), reasoning_tokens → output
+// CUMULATIVE-COLUMN GUARD: session rows may contain cumulative totals. If the same session
+// appears in multiple rows, summing double-counts. We set both id and sid to the session id
+// and ORDER BY updated_at so tokenpull()'s (sid|id) keep-last dedup collapses duplicates
+// to the latest values.
 export const hermesAdapter = {
   platform: 'hermes',
   defaultRoot: () => join(homedir(), '.hermes'),
   async *messages(root) {
     for (const r of roots('HERMES_HOME', root)) {
       const dbPath = join(r, 'state.db')
-      const rows = await sqliteJson(dbPath, 'SELECT * FROM sessions')
+      // ORDER BY updated_at so the latest cumulative row per session is yielded last.
+      const rows = await sqliteJson(dbPath, 'SELECT * FROM sessions ORDER BY updated_at')
       for (const row of rows) {
         const input     = Number(row.input    || 0)
         const reasoning = Number(row.reasoning_tokens || 0)
@@ -455,7 +467,8 @@ export const hermesAdapter = {
         const cacheCreate = Number(row.cache_write || row.cache_creation || 0)
         const cacheRead   = Number(row.cache_read  || 0)
         if (input + output + cacheCreate + cacheRead === 0) continue
-        yield { id: String(row.id || ''), sid: null, ts: row.created_at || row.updated_at || null, input, output, cacheCreate, cacheRead, file: dbPath }
+        const sessionId = String(row.id || row.session_id || '')
+        yield { id: sessionId, sid: sessionId, ts: row.created_at || row.updated_at || null, input, output, cacheCreate, cacheRead, file: dbPath }
       }
     }
   },

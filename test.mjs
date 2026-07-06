@@ -322,6 +322,64 @@ assert.strictEqual(droidAll.pillars.output,       500, 'droid: output + thinking
 assert.strictEqual(droidAll.pillars.cacheCreate,  100, 'droid: cacheCreate')
 assert.strictEqual(droidAll.pillars.cacheRead,   2000, 'droid: cacheRead')
 
+// --- 25b. Goose cumulative-column double-count regression test ---
+// Simulates a Goose sessions table with MULTIPLE cumulative rows for the SAME session.
+// Without the fix (sid=null, unique id per row), tokenpull sums all rows → 750.
+// With the fix (sid=session_id, id=session_id), keep-last dedup collapses to 400.
+const mockGooseCumulative = {
+  platform: 'goose',
+  defaultRoot: () => '/mock/goose',
+  async *messages() {
+    // Session S: three cumulative snapshots, growing input (100 → 250 → 400)
+    // All share the same sid+id after the fix, so keep-last wins → input=400
+    yield { id: 'S', sid: 'S', ts: '2026-06-17T00:00:00Z', input: 100, output: 50,  cacheCreate: 0, cacheRead: 0, file: 'sessions.db' }
+    yield { id: 'S', sid: 'S', ts: '2026-06-18T00:00:00Z', input: 250, output: 120, cacheCreate: 0, cacheRead: 0, file: 'sessions.db' }
+    yield { id: 'S', sid: 'S', ts: '2026-06-18T12:00:00Z', input: 400, output: 200, cacheCreate: 0, cacheRead: 0, file: 'sessions.db' }
+  },
+}
+const gooseCumResult = await tokenpull({ adapter: mockGooseCumulative, now: NOW })
+const gooseCumAll = gooseCumResult.windows.find((w) => w.window === 'all')
+const gooseCum7d  = gooseCumResult.windows.find((w) => w.window === '7d')
+assert.strictEqual(gooseCumResult.totalMessages, 1, 'goose: 3 cumulative rows for 1 session → deduped to 1')
+assert.strictEqual(gooseCumAll.pillars.input,  400, 'goose: cumulative input collapsed to latest (400), not summed (750)')
+assert.strictEqual(gooseCumAll.pillars.output, 200, 'goose: cumulative output collapsed to latest (200), not summed (370)')
+assert.strictEqual(gooseCum7d.pillars.input,  400, 'goose: 7d window also collapsed (latest row is in 7d)')
+
+// --- 25c. Goose: different sessions are NOT collapsed (they sum correctly) ---
+const mockGooseMultiSession = {
+  platform: 'goose',
+  defaultRoot: () => '/mock/goose',
+  async *messages() {
+    yield { id: 'S1', sid: 'S1', ts: '2026-06-18T00:00:00Z', input: 400, output: 200, cacheCreate: 0, cacheRead: 0, file: 'sessions.db' }
+    yield { id: 'S2', sid: 'S2', ts: '2026-06-18T00:00:00Z', input: 300, output: 150, cacheCreate: 0, cacheRead: 0, file: 'sessions.db' }
+  },
+}
+const gooseMulti = await tokenpull({ adapter: mockGooseMultiSession, now: NOW })
+const gooseMultiAll = gooseMulti.windows.find((w) => w.window === 'all')
+assert.strictEqual(gooseMulti.totalMessages, 2, 'goose: 2 different sessions → 2 records')
+assert.strictEqual(gooseMultiAll.pillars.input, 700, 'goose: different sessions sum correctly (400+300=700)')
+
+// --- 25d. Per-message adapters still SUM correctly (the fix doesn't break them) ---
+// Kimi/Pi/Kilo yield per-message increments (distinct ids, non-cumulative) — these
+// must still be summed, not collapsed. They use unique id + sid:null, so the dedup
+// key falls to the unique id → each record counts.
+const mockPerMessage = {
+  platform: 'kimi',
+  defaultRoot: () => '/mock/kimi',
+  async *messages() {
+    yield { id: 'msg1', sid: null, ts: '2026-06-18T00:00:00Z', input: 100, output: 50, cacheCreate: 30, cacheRead: 40, file: 'wire.jsonl' }
+    yield { id: 'msg2', sid: null, ts: '2026-06-18T01:00:00Z', input: 200, output: 80, cacheCreate: 60, cacheRead: 90, file: 'wire.jsonl' }
+    yield { id: 'msg3', sid: null, ts: '2026-06-18T02:00:00Z', input: 150, output: 70, cacheCreate: 45, cacheRead: 55, file: 'wire.jsonl' }
+  },
+}
+const pmResult = await tokenpull({ adapter: mockPerMessage, now: NOW })
+const pmAll = pmResult.windows.find((w) => w.window === 'all')
+assert.strictEqual(pmResult.totalMessages, 3, 'per-message: 3 distinct messages → 3 records (not collapsed)')
+assert.strictEqual(pmAll.pillars.input, 450, 'per-message: input summed correctly (100+200+150=450)')
+assert.strictEqual(pmAll.pillars.output, 200, 'per-message: output summed correctly (50+80+70=200)')
+
+console.log('✓ goose: cumulative double-count regression · multi-session sum · per-message adapters unaffected')
+
 // ── rank_windows + watch_tokenpull TESTS ─────────────────────────────────────
 
 // --- 26. rank_windows: scores all 4 windows independently from named pastes ---
