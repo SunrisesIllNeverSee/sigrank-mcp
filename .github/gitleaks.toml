@@ -1,0 +1,23 @@
+# Gitleaks config — extends default rules with allow-lists for known safe paths.
+# This repo holds ed25519 key generation + signing code (keystore.mjs, sign.mjs).
+# Test fixtures and example public keys are not secrets.
+# https://github.com/gitleaks/gitleaks#configuration
+
+[extend]
+useDefault = true
+
+# Allow-list: test files + sign.test.mjs (uses generated test keys, not real).
+[[allowlist]]
+description = "Test files with generated/example keys (not real secrets)"
+paths = [
+  '''test\.mjs''',
+  '''sign\.test\.mjs''',
+  '''__tests__/.*''',
+]
+
+# Allow-list: ed25519 public keys in source (public keys are not secrets).
+[[allowlist]]
+description = "ed25519 public keys (public, not secret)"
+regexes = [
+  '''ed25519:[A-Za-z0-9+/]+''',
+]
