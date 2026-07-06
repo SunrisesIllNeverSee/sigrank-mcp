@@ -113,7 +113,7 @@ smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.14.2
+⊙ SigRank CLI  v0.15.5
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board
@@ -128,11 +128,12 @@ Commands
   compare --platform codex compare for a specific platform
   tui                      full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect
   tui --platform codex     TUI with a different default platform
-  watch                    live tune meter — re-reads local logs every 30s
-  watch --window 7d        watch a specific window
+  watch                    live tune meter — ALL active platforms × all windows, every 30s
+  watch --platform codex   watch only one platform (optional filter)
+  watch --window 7d        watch only one window (optional filter)
 
 Options
-  --window    7d · 30d · 90d · all  (default: 30d for board, 7d for watch)
+  --window    7d · 30d · 90d · all  (default: 30d for board; all windows for watch)
   --platform  claude · codex · amp · gemini · opencode · goose · …
   --refresh   poll interval in seconds (default: 30)
   --once      print once and exit (board only)
@@ -223,6 +224,10 @@ Or if installed globally:
 | `watch_tokenpull` | `{platform?, interval_s?}` | One cascade snapshot per call (interval_s advisory) |
 | `submit_verified` | `{window?, platform?, dry_run?}` | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
 | `enroll` | `{code, device_label?}` | Bind this device with a connect code from signalaf.com → Settings |
+| `diagnose_cascade` | `{text?}` | Diagnoses where your token cascade is leaking efficiency — ranked findings with severity + estimated Υ impact |
+| `simulate_change` | `{text?, changes}` | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing |
+| `suggest_improvements` | `{text?}` | Generates ranked, simulated improvement suggestions — tests strategies and returns them sorted by Υ yield impact |
+| `self_improve` | `{text?}` | One-click optimize: diagnoses, suggests, and simulates the best change in a single call |
 
 ---
 
@@ -312,11 +317,12 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 ## Dev / test
 
 ```bash
-node test.mjs          # 29 unit tests (no network, no fs writes)
+node test.mjs          # 13 test groups, 200 assertions (no network, no fs writes)
+node sign.test.mjs     # ed25519 signing + canon parity
 node index.mjs         # stdio MCP server directly (pipe to MCP client)
 ```
 
-Tests verify (29 assertions):
+Tests verify (13 groups, 200 assertions):
 - `rank_paste` canon: MO§ES `(1251211, 11296121, 128196310, 2555179769)` → Υ 18436.98 · TRANSMITTER
 - `submit_paste` preview (no codename) + POST shape (injected fetch, no live writes)
 - `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
@@ -324,8 +330,12 @@ Tests verify (29 assertions):
 - `tokenpullCodex` io_ratio conversion per-window
 - Adapter registry (15 platforms) + per-adapter shape contracts
 - `rank_windows` 4-window paste scoring, partial input, no-network
-- `watch_tokenpull` cascade snapshot, interval_s, TODO(AUTH.WIRE) stub
+- `watch_tokenpull` cascade snapshot, interval_s, submit path
+- `enroll` posts identity (public key only), maps 201 enrolled + 410 code_invalid
+- `submit_verified` signs Schema 1.0, server-verifiable
+- `simulate_change` relative + absolute deltas, quadratic penalty, JSON input
 - Hardening: div-by-zero guards, parsePillars warnings, fetch timeout, EXCLUDE_TOOLING regex, narrate safety
+- `sign.test.mjs` ed25519 round-trip + canonical 926-byte payload parity
 
 ---
 
@@ -345,4 +355,6 @@ Tests verify (29 assertions):
 | `submit.mjs` | Verified submit flow (signs + POSTs to board) |
 | `sign.mjs` | Schema 1.0 signing (X-Agent-Signature) |
 | `narrate.mjs` | Deterministic prose narration card |
+| `preflight.mjs` | Plausibility checks (Benford, bounds, anomaly detection) |
 | `test.mjs` | Unit tests (no external deps) |
+| `sign.test.mjs` | ed25519 signing + canon parity test |
