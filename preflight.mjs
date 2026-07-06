@@ -23,6 +23,11 @@
 const GATE_LIMITS = {
   TOTALS_TOLERANCE_FRAC: 0.01,
   MAX_OUTPUT_TOKENS_PER_MIN: 20_000,
+  // Tightened range-plausibility bounds (deviewreview3)
+  MAX_CACHE_REUSE_RATIO: 35,
+  MIN_CACHE_WRITE_RATIO: 0.5,
+  MIN_INPUT_SHARE_FRAC: 0.0003,
+  MAX_CADENCE_PER_MIN: 15,
 }
 
 /**
@@ -62,13 +67,20 @@ export function plausibilityCheck(rt, window) {
   }
 
   // Cross-field ratio checks (defense-in-depth — also in the plausibility gate)
+  // Bounds tightened (deviewreview3): original 100:1 + 50/min were too loose.
   if (rt.tokens_cache_read > 1_000 && rt.tokens_cache_creation === 0) {
     out.push({ severity: 'flag', code: 'cache_without_creation', detail: `${rt.tokens_cache_read} cache_read with 0 cache_creation (impossible cascade)` })
   }
-  if (rt.tokens_cache_creation > 0 && rt.tokens_cache_read / rt.tokens_cache_creation > 100) {
+  if (rt.tokens_cache_creation > 0 && rt.tokens_cache_read / rt.tokens_cache_creation > GATE_LIMITS.MAX_CACHE_REUSE_RATIO) {
     out.push({ severity: 'flag', code: 'extreme_cache_ratio', detail: `cache_read/cache_creation = ${(rt.tokens_cache_read / rt.tokens_cache_creation).toFixed(1)}:1 (real max ~30:1)` })
   }
-  if (rt.active_minutes_est > 0 && rt.turns_total / rt.active_minutes_est > 50) {
+  if (rt.tokens_output > 1_000 && rt.tokens_cache_creation / rt.tokens_output < GATE_LIMITS.MIN_CACHE_WRITE_RATIO) {
+    out.push({ severity: 'flag', code: 'low_cache_write_ratio', detail: `cache_creation/output = ${(rt.tokens_cache_creation / rt.tokens_output).toFixed(2)}:1 (real min ~1.5:1)` })
+  }
+  if (pillars > 10_000 && rt.tokens_input_fresh / pillars < GATE_LIMITS.MIN_INPUT_SHARE_FRAC) {
+    out.push({ severity: 'flag', code: 'implausible_input_share', detail: `input is ${(rt.tokens_input_fresh / pillars * 100).toFixed(3)}% of total (real min ~0.3%)` })
+  }
+  if (rt.active_minutes_est > 0 && rt.turns_total / rt.active_minutes_est > GATE_LIMITS.MAX_CADENCE_PER_MIN) {
     out.push({ severity: 'flag', code: 'implausible_cadence', detail: `${(rt.turns_total / rt.active_minutes_est).toFixed(1)} turns/min (real: 0.5-10)` })
   }
 
