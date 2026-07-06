@@ -10,6 +10,7 @@
 // the display signa_rate reflects true session shape (the ranked Υ is already exact).
 
 import { snapshotHash, signPayload } from './sign.mjs'
+import { preflight } from './preflight.mjs'
 
 const WINDOW_TYPE = { '7d': '7d', '30d': '30d', '90d': '90d', all: 'all_time' }
 const WINDOW_SPAN_DAYS = { '7d': 7, '30d': 30, '90d': 90, all_time: 3650 }
@@ -128,6 +129,33 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
     return fetch(url, { ...init, signal: init.signal || ctrl.signal }).finally(() => clearTimeout(timer))
   })
   const payload = buildPayload(windowKey, pillars, messages, identity, opts.platform || 'claude', opts)
+
+  // Preflight: run the same anti-gaming checks the server will run, locally.
+  // If the payload would be rejected or downgraded, warn the operator BEFORE
+  // submitting. The server always runs its own checks — this is a preview.
+  const pre = preflight(payload)
+  if (!pre.pass && !opts.skipPreflight) {
+    if (pre.wouldReject) {
+      return {
+        status: 'preflight_rejected',
+        window: WINDOW_TYPE[windowKey] || windowKey,
+        preflight: pre,
+        detail: `Submission would be REJECTED by the server: ${pre.summary}. Fix the issue or re-run with skipPreflight.`,
+      }
+    }
+    // Flags downgrade verified → flagged (not ranked). Warn but don't block
+    // unless the caller explicitly asked for strict mode.
+    if (opts.strictPreflight) {
+      return {
+        status: 'preflight_flagged',
+        window: WINDOW_TYPE[windowKey] || windowKey,
+        preflight: pre,
+        detail: `Submission would be DOWNGRADED (not ranked): ${pre.summary}. Fix the issue or re-run with skipPreflight.`,
+      }
+    }
+    // Non-strict: attach the preflight warning to the result but proceed.
+  }
+
   const signature = signPayload(payload, identity.private_key_pkcs8_b64)
 
   // Dry run: build + sign exactly as a real publish, then STOP before the POST.
@@ -140,6 +168,7 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
       would_post: `${apiBase}/api/v1/snapshots`,
       payload,
       signature,
+      preflight: pre,
       detail: 'Nothing sent. Re-run without dry_run to publish.',
     }
   }
@@ -177,5 +206,6 @@ export async function submitSignedWindow(windowKey, pillars, messages, identity,
     snapshot_hash: payload.agent.snapshot_hash,
     reason: res.ok ? null : ack.reason || ack.status || `http_${res.status}`,
     detail: ack.detail ?? null,
+    preflight: pre,
   }
 }
