@@ -3,13 +3,13 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "Ranks AI coding operators by token cascade efficiency. Live leaderboard + signed submission.",
   "title": "SigRank — Token Efficiency Leaderboard",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "sigrank",
-      "version": "0.15.1",
+      "version": "0.16.0",
       "transport": {
         "type": "stdio"
       },
