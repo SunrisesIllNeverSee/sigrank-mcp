@@ -1,0 +1,62 @@
+name: Snapshot Archive
+
+# Every 5 days: tag the current state + upload the npm tarball as a release
+# artifact. This gives rollback points — you can `npm install sigrank@<tag>`
+# or grab the tarball from GitHub Releases to restore any snapshot.
+#
+# Schedule: runs on the 1st, 6th, 11th, 16th, 21st, 26th of each month at 00:00 UTC.
+# Also runnable manually via workflow_dispatch.
+
+on:
+  schedule:
+    - cron: '0 0 1,6,11,16,21,26 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          DATE=$(date -u +%Y-%m-%d)
+          TAG="snapshot-${DATE}-v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "date=${DATE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Snapshot ${{ steps.version.outputs.date }} (v${{ steps.version.outputs.version }})"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: npm pack
+        run: |
+          npm pack
+          mv sigrank-*.tgz sigrank-snapshot.tgz
+
+      - name: Create GitHub release with tarball
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "Snapshot ${{ steps.version.outputs.date }} (v${{ steps.version.outputs.version }})" \
+            --notes "Automated 5-day snapshot. Version: v${{ steps.version.outputs.version }}.
+
+          Rollback:
+          - npm: \`npm install sigrank@${{ steps.version.outputs.version }}\`
+          - Tarball: download \`sigrank-snapshot.tgz\` below
+          - Git: \`git checkout ${{ steps.version.outputs.tag }}\`" \
+            sigrank-snapshot.tgz
