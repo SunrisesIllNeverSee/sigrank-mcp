@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "0.15.5",
+  "version": "0.16.0",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "type": "module",
@@ -23,7 +23,7 @@
   },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node test.mjs && node sign.test.mjs"
+    "test": "node test.mjs && node sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs"
   },
   "files": [
     "index.mjs",
@@ -38,6 +38,8 @@
     "keystore.mjs",
     "submit.mjs",
     "connect.mjs",
+    "badges.mjs",
+    "preflight.mjs",
     "banner.svg",
     "README.md",
     "LICENSE"

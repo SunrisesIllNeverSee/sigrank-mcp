@@ -856,7 +856,7 @@ function renderSubmissions(boardData, window = '30d', filterCodename = null, hig
   const emit = (s = '') => { if (used < budget) { writeln(s); used++ } }
 
   // Defensive field readers (server shape is new / not yet pinned).
-  const gName = (e) => e.codename ?? e.operator_codename ?? '—'
+  const gName = (e) => e.display_name || e.codename || e.operator_codename || '—'
   const gPlat = (e) => e.platform ?? e.platform_primary ?? '—'
   const gWin  = (e) => e.window ?? e.window_type ?? '—'
   const gYield = (e) => e.yield_ ?? e.yield ?? e.y ?? null
@@ -992,7 +992,7 @@ function renderBoard(boardData, window = '30d', filterCodename = null, highlight
     // FIX I2: highlight the signed-in operator's row (global mode) with a cyan bg-tint.
     const isYou = highlightCodename && (e.codename ?? '').toLowerCase() === highlightCodename.toLowerCase()
     const rk  = idx === 0 ? gold(`#${idx+1}`) : idx < 3 ? cyan(`#${idx+1}`) : `#${idx+1}`
-    const nmRaw = trunc(e.codename ?? '—', 22)
+    const nmRaw = trunc(e.display_name || e.codename || '—', 22)
     // FIX I2: pad the visible content INSIDE the ANSI codes so the cyan bg fills
     // the full column width (padEnd after reset would leave uncolored trailing spaces).
     const nm  = isYou

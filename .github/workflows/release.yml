@@ -1,0 +1,24 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          release-type: node
+          package-name: sigrank
+          # Conventional commits → auto-bump + changelog + tag + GitHub release.
+          # The PR that release-please opens also bumps package.json version.
+          # Merge the PR to cut a release. npm publish is still manual (owner
+          # runs `npm publish` from inside the repo dir — the service role key
+          # is not in GitHub Actions).
+          include-component-in-tag: false

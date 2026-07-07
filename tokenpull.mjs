@@ -164,6 +164,14 @@ export async function tokenpull({ adapter = claudeAdapter, root, now } = {}) {
 
   const windows = WINDOWS.map((w) => {
     const cutoff = w.days === Infinity ? -Infinity : nowMs - w.days * DAY_MS
+    // NULL-TIMESTAMP WINDOW ASYMMETRY: the `all` window returns true unconditionally,
+    // so records whose adapter cannot supply a timestamp (ts: null or unparseable)
+    // appear in all-time but disappear from 7d/30d/90d. This is intentional — we do
+    // not fabricate timestamps. Session-granularity adapters (goose/droid/hermes)
+    // typically have created_at/updated_at, but if those columns are absent the row
+    // is all-time-only. A file-mtime fallback was considered but rejected: mtime
+    // reflects the log file, not the session, and would misattribute old sessions
+    // to recent file-touch times.
     const inWin = msgs.filter((m) => {
       if (w.days === Infinity) return true
       const t = m.ts ? Date.parse(m.ts) : NaN
@@ -250,6 +258,8 @@ export async function tokenpullCodex({ adapter = codexAdapter, root, now, ioRati
 
   const windows = WINDOWS.map((w) => {
     const cutoff = w.days === Infinity ? -Infinity : nowMs - w.days * DAY_MS
+    // NULL-TIMESTAMP WINDOW ASYMMETRY: see tokenpull() above — same behavior.
+    // Records without a parseable ts appear in `all` only, not in 7d/30d/90d.
     const inWin = recs.filter((m) => {
       if (w.days === Infinity) return true
       const t = m.ts ? Date.parse(m.ts) : NaN
@@ -284,7 +294,9 @@ export async function tokenpullAny(platform, opts = {}) {
     let ioRatio = opts.ioRatio || 2.0
     if (!opts.ioRatio) {
       try {
-        const c = await tokenpull({ adapter: claudeAdapter })
+        // Forward root/now from opts so the Beta-ratio derivation is testable
+        // (without this, it always reads the real ~/.claude and can't be injected).
+        const c = await tokenpull({ adapter: claudeAdapter, root: opts.root, now: opts.now })
         const all = c.windows.find((w) => w.window === 'all')
         if (all && all.pillars.output > 0) ioRatio = all.pillars.input / all.pillars.output
       } catch { /* no Claude data → Alpha 2.0 */ }

@@ -8,7 +8,8 @@
  * narration card in ./narrate.mjs. Token-only, no transcript content.
  */
 
-import { cascade, parsePillars } from './cascade.mjs'
+import { cascade, parsePillars, detectMode, qualityScore, MODE_EXPECTED_YIELD } from './cascade.mjs'
+import { computeBadges } from './badges.mjs'
 import { narrate } from './narrate.mjs'
 import { tokenpull as pullLocal, tokenpullCodex as pullCodex, tokenpullAny } from './tokenpull.mjs'
 import { ALL_PLATFORMS } from './adapters.mjs'
@@ -649,7 +650,7 @@ export const TOOLS = [
   {
     name: 'self_improve',
     description:
-      "Runs the full self-improvement cycle in one call: (1) gets your current token pillars — either from the provided text or by running tokenpull on your local logs, (2) diagnoses where you're leaking efficiency (diagnose_cascade), (3) generates ranked improvement suggestions (suggest_improvements), (4) simulates the top suggestion (simulate_change), and (5) returns the complete cycle: diagnosis + suggestions + the simulated impact of the best change. This is the 'one-click optimize' tool — call it at the end of a session to see what to improve next time. If you provide pillars in `text`, it skips the tokenpull step. If you omit `text`, it runs tokenpull first (requires local ccusage logs). Pure local math — no network, no submission.",
+      "Runs the full self-improvement cycle in one call: (1) gets your current token pillars — either from the provided text or by running tokenpull on your local logs, (2) diagnoses where you're leaking efficiency (diagnose_cascade), (3) generates ranked improvement suggestions (suggest_improvements), (4) simulates the top suggestion (simulate_change), and (5) returns the complete cycle: diagnosis + suggestions + the simulated impact of the best change. This is the 'one-click optimize' tool — call it at the end of a session to see what to improve next time. If you provide pillars in `text`, it skips the tokenpull step. If you omit `text`, it runs tokenpull first (requires local ccusage logs). Pure local math — no network, no submission. The `scope` parameter adds mode detection (BUILD/EDIT/DEBUG/MAINTAIN/IDLE) and scoped analysis: 'daily' (default — current behavior + mode), 'weekly' (compound into weekly snapshots + report artifact), 'trend' (30d/90d trajectory analysis).",
     annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.idempotentHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: 'object',
@@ -663,6 +664,11 @@ export const TOOLS = [
           enum: ['7d', '30d', '90d', 'all'],
           description: 'Which time window to pull when running tokenpull (default: 30d). Ignored if `text` is provided.',
         },
+        scope: {
+          type: 'string',
+          enum: ['daily', 'weekly', 'trend'],
+          description: 'Analysis scope: "daily" (default — current behavior + mode detection), "weekly" (compound daily rows into weekly snapshots + report artifact with badges), "trend" (30d/90d trajectory + phase patterns). Daily modes never leave the machine — only weekly distribution goes in submitted reports.',
+        },
       },
     },
     outputSchema: {
@@ -674,6 +680,13 @@ export const TOOLS = [
         suggestions: { type: 'array', description: 'Ranked improvements (from suggest_improvements)' },
         best_simulation: { type: 'object', description: 'Simulated result of the top suggestion' },
         cycle_summary: { type: 'string', description: 'One-line summary of the full cycle' },
+        // Scope-specific fields
+        mode: { type: 'object', description: 'Detected mode { mode, confidence } — present when scope is daily/weekly/trend' },
+        quality_score: { type: 'number', description: 'Yield relative to mode expectation (daily scope)' },
+        assessment: { type: 'string', description: 'One-line assessment for daily scope' },
+        advice: { type: 'string', description: 'Advice for next session (daily scope)' },
+        report: { type: 'object', description: 'Weekly report artifact (weekly scope)' },
+        trend: { type: 'object', description: 'Trend analysis (trend scope)' },
       },
     },
   },
@@ -834,7 +847,8 @@ export async function callTool(name, args, opts = {}) {
           msgs += w.messages || 0
         }
         if (sum.input + sum.output + sum.cacheCreate + sum.cacheRead <= 0) continue // skip empty window
-        const r = await submitSignedWindow(wk, sum, msgs, id, { apiBase, fetchImpl: doFetch, platform: 'multi', now: opts.now, dryRun: !!args?.dry_run })
+        const report = _computeReportBlock(sum)
+        const r = await submitSignedWindow(wk, sum, msgs, id, { apiBase, fetchImpl: doFetch, platform: 'multi', now: opts.now, dryRun: !!args?.dry_run, report })
         out.push({ window: wk, pillars: sum, ...r })
       }
       return { platform: 'multi', codename: id.codename, operator_id: id.operator_id, sources: detected.map((d) => d.platform), windows: out }
@@ -844,12 +858,16 @@ export async function callTool(name, args, opts = {}) {
     const targets = args?.window ? pulled.windows.filter((w) => w.window === args.window) : pulled.windows
     const out = []
     for (const w of targets) {
+      // Compute the cascade report block (mode + badges + health) for this window.
+      // Pure math, computed locally, submitted alongside the 4 token pillars.
+      const report = _computeReportBlock(w.pillars)
       const r = await submitSignedWindow(w.window, w.pillars, w.messages, id, {
         apiBase,
         fetchImpl: doFetch,
         platform: pulled.platform,
         now: opts.now,
         dryRun: !!args?.dry_run,
+        report,
       })
       out.push({ window: w.window, pillars: w.pillars, ...r })
     }
@@ -1632,6 +1650,78 @@ export async function callTool(name, args, opts = {}) {
       ? `Pulled from ${pulledFrom}. Υ ${currentResult.yield} (${currentResult.class}). ${criticalCount} critical, ${diagnosis.length - criticalCount} other findings. Best: ${best.action} → Υ ${best.simulated_yield} (+${best.yield_delta}).`
       : `Pulled from ${pulledFrom}. Υ ${currentResult.yield} (${currentResult.class}). ${diagnosis.length} findings. No improvements suggested — cascade is optimized.`
 
+    // ── Step 5: Scope-specific analysis ───────────────────────────────
+    const scope = args?.scope || 'daily'
+    const modeInfo = currentResult.mode // { mode, confidence }
+    const scopeResult = {}
+
+    if (scope === 'daily') {
+      // Daily: mode + quality score + assessment + advice
+      const qs = qualityScore(currentResult.yield ?? 0, modeInfo.mode)
+      const expected = MODE_EXPECTED_YIELD[modeInfo.mode] ?? 0
+      const assessment = _dailyAssessment(modeInfo.mode, currentResult.yield, qs, expected)
+      const advice = _dailyAdvice(modeInfo.mode, currentResult.yield, qs)
+      scopeResult.mode = modeInfo
+      scopeResult.quality_score = Math.round(qs * 100) / 100
+      scopeResult.assessment = assessment
+      scopeResult.advice = advice
+    }
+
+    if (scope === 'weekly' || scope === 'trend') {
+      // Pull daily rows from ccusage to build weekly snapshots
+      const dailyRows = await _pullDailyRows(opts)
+      const weeklySnapshots = _compoundWeekly(dailyRows)
+      const modeDistribution = _modeDistribution(weeklySnapshots)
+      const modeWeightedYield = _modeWeightedYield(weeklySnapshots)
+
+      // Compute badges
+      const historyForBadges = weeklySnapshots.map(w => ({
+        date: w.weekStart,
+        mode: w.mode,
+        yield: w.yield,
+        pillars: w.pillars,
+      }))
+      const badges = computeBadges({
+        pillars,
+        cascade: currentResult,
+        history: historyForBadges,
+        isVerified: false, // set by submit_verified
+        rank: null, // server-side
+      })
+
+      if (scope === 'weekly') {
+        scopeResult.mode = modeInfo
+        // Strip dailyModes from weekly_snapshots — privacy boundary (daily modes never leave the machine)
+        const safeSnapshots = weeklySnapshots.map(({ dailyModes, ...rest }) => rest)
+        scopeResult.report = {
+          current_mode: modeInfo.mode,
+          mode_confidence: modeInfo.confidence,
+          mode_distribution: modeDistribution,
+          mode_weighted_yield: modeWeightedYield,
+          peak_yield: _peakYield(weeklySnapshots),
+          health_score: _healthScore(weeklySnapshots, modeWeightedYield),
+          weekly_snapshots: safeSnapshots,
+          badges,
+        }
+      }
+
+      if (scope === 'trend') {
+        const yield7d = _yieldForDays(weeklySnapshots, 7)
+        const yield30d = _yieldForDays(weeklySnapshots, 30)
+        const yield90d = _yieldForDays(weeklySnapshots, 90)
+        const trajectory = _trajectory(yield7d, yield30d, yield90d)
+        scopeResult.mode = modeInfo
+        scopeResult.trend = {
+          yield_7d: yield7d,
+          yield_30d: yield30d,
+          yield_90d: yield90d,
+          trajectory,
+          mode_distribution: modeDistribution,
+          phase_pattern: _phasePattern(weeklySnapshots),
+        }
+      }
+    }
+
     return {
       pillars,
       current_cascade: {
@@ -1641,14 +1731,240 @@ export async function callTool(name, args, opts = {}) {
         velocity: currentResult.velocity,
         tenx_dev: currentResult.dev10x,
         class: currentResult.class,
+        mode: modeInfo,
         warnings: currentResult.warnings,
       },
       diagnosis,
       suggestions,
       best_simulation: bestSimulation,
       cycle_summary: cycleSummary,
+      ...scopeResult,
     }
   }
 
   throw new Error(`Unknown tool: ${name}`)
+}
+
+// ── self_improve scope helpers ──────────────────────────────────────────────
+
+/** Pull daily rows from ccusage to build mode history. Returns array of { date, pillars, yield, mode }. */
+async function _pullDailyRows(opts = {}) {
+  try {
+    const raw = await execFileAsync('ccusage', ['claude', 'daily', '--json'], 15000)
+    const rows = JSON.parse(raw)?.daily ?? JSON.parse(raw)
+    if (!Array.isArray(rows)) return []
+    return rows.map(r => {
+      const pillars = {
+        input: r.inputTokens ?? r.input_tokens ?? 0,
+        output: r.outputTokens ?? r.output_tokens ?? 0,
+        cacheCreate: r.cacheCreationTokens ?? r.cache_create_tokens ?? 0,
+        cacheRead: r.cacheReadTokens ?? r.cache_read_tokens ?? 0,
+      }
+      const cas = cascade(pillars)
+      const mode = detectMode(pillars)
+      return {
+        date: r.date ?? r.day ?? null,
+        pillars,
+        yield: cas.yield ?? 0,
+        mode: mode.mode,
+        mode_confidence: mode.confidence,
+      }
+    }).filter(r => r.date)
+  } catch {
+    return []
+  }
+}
+
+/** Compound daily rows into weekly snapshots. Each week = 7 days, starting Monday. */
+function _compoundWeekly(dailyRows) {
+  if (!dailyRows || dailyRows.length === 0) return []
+  // Group by ISO week (week starts Monday)
+  const weeks = new Map()
+  for (const row of dailyRows) {
+    const d = new Date(row.date)
+    const day = d.getDay() || 7 // Sunday=0 → 7
+    const monday = new Date(d)
+    monday.setDate(d.getDate() - day + 1)
+    const weekKey = monday.toISOString().slice(0, 10)
+    if (!weeks.has(weekKey)) {
+      weeks.set(weekKey, { weekStart: weekKey, days: [] })
+    }
+    weeks.get(weekKey).days.push(row)
+  }
+  // Compound each week
+  return Array.from(weeks.values()).map(w => {
+    const pillars = w.days.reduce((acc, d) => ({
+      input: acc.input + d.pillars.input,
+      output: acc.output + d.pillars.output,
+      cacheCreate: acc.cacheCreate + d.pillars.cacheCreate,
+      cacheRead: acc.cacheRead + d.pillars.cacheRead,
+    }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 })
+    const cas = cascade(pillars)
+    const mode = detectMode(pillars)
+    return {
+      weekStart: w.weekStart,
+      pillars,
+      yield: cas.yield ?? 0,
+      mode: mode.mode,
+      mode_confidence: mode.confidence,
+      dayCount: w.days.length,
+      dailyModes: w.days.map(d => d.mode), // stays local — not in submitted report
+    }
+  }).sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+}
+
+/** Compute mode distribution from weekly snapshots (weekly granularity = privacy boundary). */
+function _modeDistribution(weeklySnapshots) {
+  if (!weeklySnapshots || weeklySnapshots.length === 0) return {}
+  const counts = { BUILD: 0, EDIT: 0, DEBUG: 0, MAINTAIN: 0, IDLE: 0 }
+  for (const w of weeklySnapshots) {
+    counts[w.mode] = (counts[w.mode] || 0) + 1
+  }
+  const total = weeklySnapshots.length
+  const dist = {}
+  for (const [mode, count] of Object.entries(counts)) {
+    if (count > 0) dist[mode] = Math.round((count / total) * 100) / 100
+  }
+  return dist
+}
+
+/** Mode-weighted yield — average yield weighted by mode distribution. */
+function _modeWeightedYield(weeklySnapshots) {
+  if (!weeklySnapshots || weeklySnapshots.length === 0) return 0
+  const total = weeklySnapshots.length
+  const sum = weeklySnapshots.reduce((acc, w) => acc + (w.yield || 0), 0)
+  return Math.round(sum / total)
+}
+
+/** Peak yield across all weekly snapshots. */
+function _peakYield(weeklySnapshots) {
+  if (!weeklySnapshots || weeklySnapshots.length === 0) return 0
+  return Math.max(...weeklySnapshots.map(w => w.yield || 0))
+}
+
+/** Health score (0-100) — weighted composite of consistency, momentum, quality. */
+function _healthScore(weeklySnapshots, modeWeightedYield) {
+  if (!weeklySnapshots || weeklySnapshots.length === 0) return 0
+  // Simplified Phase 1 formula:
+  //  40% — consistency (how often in MAINTAIN)
+  //  30% — momentum (recent yield vs older yield)
+  //  30% — quality (mode-weighted yield relative to MAINTAIN expected)
+  const dist = _modeDistribution(weeklySnapshots)
+  const maintainShare = dist.MAINTAIN || 0
+  const consistency = Math.min(maintainShare, 1) * 40
+
+  // Momentum: compare last 3 weeks to first 3 weeks
+  const recent = weeklySnapshots.slice(-3)
+  const older = weeklySnapshots.slice(0, 3)
+  const recentAvg = recent.reduce((a, w) => a + (w.yield || 0), 0) / (recent.length || 1)
+  const olderAvg = older.reduce((a, w) => a + (w.yield || 0), 0) / (older.length || 1)
+  const momentumRatio = olderAvg > 0 ? recentAvg / olderAvg : 1
+  const momentum = Math.min(momentumRatio, 2) / 2 * 30
+
+  // Quality: mode-weighted yield vs MAINTAIN expected (5000)
+  const quality = Math.min(modeWeightedYield / 5000, 1) * 30
+
+  return Math.round(consistency + momentum + quality)
+}
+
+/** Yield for the last N days (from weekly snapshots — approximates by summing recent weeks). */
+function _yieldForDays(weeklySnapshots, days) {
+  if (!weeklySnapshots || weeklySnapshots.length === 0) return 0
+  const weeksNeeded = Math.ceil(days / 7)
+  const recent = weeklySnapshots.slice(-weeksNeeded)
+  if (recent.length === 0) return 0
+  const sum = recent.reduce((a, w) => a + (w.yield || 0), 0)
+  return Math.round(sum / recent.length) // average weekly yield
+}
+
+/** Trajectory description from 7d/30d/90d yields. */
+function _trajectory(y7, y30, y90) {
+  if (y90 === 0) return 'insufficient_data'
+  const r7v30 = y30 > 0 ? y7 / y30 : 1
+  const r30v90 = y90 > 0 ? y30 / y90 : 1
+  if (r7v30 > 1.2 && r30v90 > 1.0) return 'accelerating'
+  if (r7v30 > 1.2) return 'recent_surge'
+  if (r7v30 < 0.8 && r30v90 < 0.8) return 'declining'
+  if (r7v30 < 0.8) return 'recent_dip'
+  if (r30v90 > 1.1) return 'steady_growth'
+  return 'stable'
+}
+
+/** Phase pattern description from mode distribution over time. */
+function _phasePattern(weeklySnapshots) {
+  if (!weeklySnapshots || weeklySnapshots.length < 2) return 'insufficient_data'
+  const modes = weeklySnapshots.map(w => w.mode)
+  const transitions = []
+  for (let i = 1; i < modes.length; i++) {
+    if (modes[i] !== modes[i - 1]) {
+      transitions.push(`${modes[i - 1]}→${modes[i]}`)
+    }
+  }
+  if (transitions.length === 0) return `consistent_${modes[0].toLowerCase()}`
+  // Check for smooth transitions (BUILD→MAINTAIN without DEBUG)
+  const smooth = transitions.every(t => !t.includes('DEBUG'))
+  if (smooth && transitions.some(t => t === 'BUILD→MAINTAIN')) return 'smooth_ramp'
+  if (transitions.filter(t => t.includes('DEBUG')).length > 2) return 'erratic'
+  return 'cyclical'
+}
+
+/** Daily assessment string. */
+function _dailyAssessment(mode, yieldVal, qualityScoreVal, expectedYield) {
+  const qsPct = Math.round(qualityScoreVal * 100)
+  if (mode === 'IDLE') return 'You\'re idle — no significant token activity today.'
+  if (mode === 'MAINTAIN') {
+    if (qualityScoreVal >= 0.5) return `You're in MAINTAIN mode. Yield ${yieldVal} is ${qsPct}% of MAINTAIN norm. The cascade is compounding.`
+    return `You're in MAINTAIN mode but yield ${yieldVal} is only ${qsPct}% of expected (${expectedYield}). You may be coasting — push for more output.`
+  }
+  if (mode === 'BUILD') {
+    if (qualityScoreVal >= 0.5) return `You're in BUILD mode. Yield ${yieldVal} is ${qsPct}% of BUILD norm. Greenfield work — expected to be low.`
+    return `You're in BUILD mode. Yield ${yieldVal} is ${qsPct}% of expected (${expectedYield}). Building is slow — keep going.`
+  }
+  if (mode === 'EDIT') {
+    if (qualityScoreVal >= 0.5) return `You're in EDIT mode. Yield ${yieldVal} is ${qsPct}% of EDIT norm. Fresh input but producing — good.`
+    return `You're in EDIT mode. Yield ${yieldVal} is ${qsPct}% of expected (${expectedYield}). Push for more output per input.`
+  }
+  if (mode === 'DEBUG') {
+    if (qualityScoreVal >= 0.5) return `You're in DEBUG mode. Yield ${yieldVal} is ${qsPct}% of DEBUG norm. Investigating — yield is expected to be low.`
+    return `You're in DEBUG mode. Yield ${yieldVal} is ${qsPct}% of expected (${expectedYield}). Debugging is slow — consider loading prior context.`
+  }
+  return `Mode: ${mode}. Yield: ${yieldVal}. Quality: ${qsPct}%.`
+}
+
+/** Daily advice string. */
+function _dailyAdvice(mode, yieldVal, qs) {
+  if (mode === 'MAINTAIN' && qs >= 0.5) return 'Keep the cascade going. Don\'t reset context — let it compound.'
+  if (mode === 'MAINTAIN') return 'You\'re in MAINTAIN but underperforming. Push the agent for more output per turn.'
+  if (mode === 'BUILD') return 'When you\'re done building, load prior context to transition to MAINTAIN. The cascade rewards reuse.'
+  if (mode === 'EDIT') return 'You\'re producing but using fresh input. Try to reuse prior context to boost leverage.'
+  if (mode === 'DEBUG') return 'When you\'re done debugging, load prior context to return to MAINTAIN. Don\'t let the debug phase drag on.'
+  if (mode === 'IDLE') return 'No activity detected. Start a session to build your cascade.'
+  return 'Keep working — the cascade will compound as you build context.'
+}
+
+/**
+ * Compute the cascade report block for a submission payload.
+ * Pure math — mode detection + badges + health score from the current pillars.
+ * The server stores this as-is (does NOT recompute modes).
+ * Weekly granularity is the privacy boundary — no daily modes in the report.
+ */
+function _computeReportBlock(pillars) {
+  const cas = cascade(pillars)
+  const modeInfo = detectMode(pillars)
+  const badges = computeBadges({
+    pillars,
+    cascade: cas,
+    history: [], // no history available at submit time — badges computed from current pillars only
+    isVerified: true, // submit_verified is the signed agent path
+    rank: null,
+  })
+  return {
+    current_mode: modeInfo.mode,
+    mode_confidence: modeInfo.confidence,
+    mode_distribution: { [modeInfo.mode]: 1.0 }, // single-window submission
+    mode_weighted_yield: cas.yield ?? 0,
+    peak_yield: cas.yield ?? 0,
+    health_score: _healthScore([{ mode: modeInfo.mode, yield: cas.yield ?? 0 }], cas.yield ?? 0),
+    badges,
+  }
 }
