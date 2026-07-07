@@ -57,6 +57,7 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
     velocity: round(velocity, 3),
     dev10x: round(dev10x, 2),
     class: classify(yield_, dev10x),
+    mode: detectMode({ input: i, output: o, cacheCreate: cw, cacheRead: cr }),
   }
   if (warnings.length > 0) result.warnings = warnings
   return result
@@ -73,6 +74,74 @@ export function classify(yieldVal, dev10x) {
   if (dev10x >= 0) return 'SEEKER'
   if (dev10x >= -0.3) return 'REFINER'
   return 'IGNITER'
+}
+
+/**
+ * detectMode — classify an operator's current working mode from 4 token pillars.
+ *
+ * Pure ratio math, first-match-wins (same pattern as classify() — descending
+ * cuts preserve edge semantics). MAINTAIN checked first (high leverage is
+ * strongest signal), then DEBUG (low velocity is distinctive), then EDIT,
+ * then BUILD as fallback.
+ *
+ * Modes:
+ *   BUILD    — high input, low/zero cacheRead, output rising (greenfield)
+ *   EDIT     — high input, low cacheRead, high output (polishing)
+ *   DEBUG    — high input, low output, low cacheRead (investigating)
+ *   MAINTAIN — low input, high cacheRead, high output (compounding)
+ *   IDLE     — near-zero tokens (not working)
+ *
+ * Returns { mode, confidence }.
+ */
+export function detectMode({ input, output, cacheCreate, cacheRead }) {
+  const i = Number(input), o = Number(output), cw = Number(cacheCreate), cr = Number(cacheRead)
+  const total = i + o + cw + cr
+
+  // IDLE: near-zero tokens
+  if (total < 1000) return { mode: 'IDLE', confidence: 1.0 }
+
+  const leverage    = i > 0 ? cr / i : 0
+  const velocity    = i > 0 ? o / i : 0
+  const input_share = total > 0 ? i / total : 0
+
+  // MAINTAIN: high leverage + high velocity (the cascade is compounding)
+  if (leverage > 10 && velocity > 1)  return { mode: 'MAINTAIN', confidence: 0.9 }
+  if (leverage > 3  && velocity > 0.5) return { mode: 'MAINTAIN', confidence: 0.7 }
+
+  // DEBUG: low velocity + high input share (reading, not producing)
+  if (velocity < 0.3 && input_share > 0.5) return { mode: 'DEBUG', confidence: 0.8 }
+
+  // EDIT: high input share + high velocity (fresh input but producing)
+  if (input_share > 0.4 && velocity > 0.5) return { mode: 'EDIT', confidence: 0.7 }
+
+  // DEBUG (secondary): high input share + low velocity
+  if (input_share > 0.4 && velocity < 0.5) return { mode: 'DEBUG', confidence: 0.6 }
+
+  // BUILD: fallback (high input, no cache reuse yet)
+  return { mode: 'BUILD', confidence: 0.6 }
+}
+
+/**
+ * Expected yield per mode — global defaults used before personal baselines
+ * exist (needs 7+ days of history). Used by the quality score computation.
+ */
+export const MODE_EXPECTED_YIELD = {
+  BUILD: 15,
+  EDIT: 45,
+  DEBUG: 10,
+  MAINTAIN: 5000,
+  IDLE: 0,
+}
+
+/**
+ * qualityScore — actual yield relative to mode expectation.
+ * Fixes the "debug is bad" problem: a DEBUG session at 80% quality is good.
+ * Returns a number 0+ (can exceed 1.0 if outperforming the expected yield).
+ */
+export function qualityScore(actualYield, mode) {
+  const expected = MODE_EXPECTED_YIELD[mode] ?? 1
+  if (expected === 0) return actualYield === 0 ? 1.0 : 0
+  return actualYield / expected
 }
 
 /**

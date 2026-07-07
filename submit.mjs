@@ -100,6 +100,14 @@ export function buildPayload(windowKey, pillars, messages, identity, platform, o
       public_key: identity.public_key,
     },
   }
+
+  // Cascade Report block (Phase 1 — mode detection + badges + health).
+  // Computed locally (pure math), submitted alongside the 4 token pillars.
+  // The server stores it as-is — does NOT recompute modes.
+  // Weekly granularity is the privacy boundary — daily modes never leave the machine.
+  if (opts.report && typeof opts.report === 'object') {
+    payload.report = opts.report
+  }
   payload.agent.snapshot_hash = snapshotHash(payload)
   return payload
 }
