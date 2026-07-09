@@ -1,3 +1,5 @@
+# SigRank MCP
+
 > **🏆 SigRank is live: [signalaf.com](https://signalaf.com)** — the leaderboard for how
 > efficiently you use AI, not how much. See your projected rank in 60 seconds at
 > [signalaf.com/score](https://signalaf.com/score). *Token counts only. Never your prompts.*
@@ -22,6 +24,23 @@ For all builders, burners and 10xers.
 [![Smithery](https://smithery.ai/badge/burnmydays/sigrank-mcp)](https://smithery.ai/servers/burnmydays/sigrank-mcp)
 
 </div>
+
+## Table of Contents
+
+- [Quickstart](#quickstart--3-steps-to-the-board)
+- [Install from GitHub](#install-from-github)
+- [Install via Smithery](#install-via-smithery)
+- [Commands](#commands)
+- [MCP Server mode](#mcp-server-mode)
+- [Cascade math](#cascade-math)
+- [Token Pillars](#token-pillars--sources)
+- [Platform adapters](#platform-adapters)
+- [Privacy](#privacy)
+- [Env vars](#env-vars)
+- [Dev / test](#dev--test)
+- [File map](#file-map)
+- [Contributing](#contributing)
+- [License](#license)
 
 | The board | Your operator profile |
 |:---:|:---:|
@@ -358,3 +377,18 @@ Tests verify (13 groups, 200 assertions):
 | `preflight.mjs` | Plausibility checks (Benford, bounds, anomaly detection) |
 | `test.mjs` | Unit tests (no external deps) |
 | `sign.test.mjs` | ed25519 signing + canon parity test |
+
+---
+
+## Contributing
+
+Contributions welcome. SigRank MCP is built in the open.
+
+- [Contributing guide](./.github/CONTRIBUTING.md)
+- [Security policy](https://github.com/SunrisesIllNeverSee/sigrank-mcp/security/policy)
+- Report bugs via [GitHub Issues](https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues)
+- PRs: fork → branch → `node test.mjs` passes → open PR against `main`
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
