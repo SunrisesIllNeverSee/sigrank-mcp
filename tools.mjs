@@ -527,7 +527,7 @@ export const TOOLS = [
     name: 'watch_tokenpull',
     description:
       'One poll per call: pulls your local token logs and returns the current cascade for the watched window — the tool never blocks or loops. Re-call at your desired cadence to watch for changes (interval_s is advisory only and echoed back as poll_interval_s). With submit:true (and an enrolled device) each call may also sign + publish the watched window to the board, rate-limited to once per 5 min per platform+window; default is preview-only (no submit).',
-    annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.idempotentHint, ...ANNOTATIONS.openWorldHint },
+    annotations: { ...ANNOTATIONS.idempotentHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: 'object',
       properties: {
