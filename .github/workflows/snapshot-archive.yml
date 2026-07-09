@@ -9,7 +9,7 @@ name: Snapshot Archive
 
 on:
   schedule:
-    - cron: '0 0 1,6,11,16,21,26 * *'
+    - cron: "0 0 1,6,11,16,21,26 * *"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Read version
         id: version

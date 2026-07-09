@@ -2,7 +2,7 @@
 
 > **🏆 SigRank is live: [signalaf.com](https://signalaf.com)** — the leaderboard for how
 > efficiently you use AI, not how much. See your projected rank in 60 seconds at
-> [signalaf.com/score](https://signalaf.com/score). *Token counts only. Never your prompts.*
+> [signalaf.com/score](https://signalaf.com/score). _Token counts only. Never your prompts._
 
 <div align="center">
 
@@ -42,10 +42,10 @@ For all builders, burners and 10xers.
 - [Contributing](#contributing)
 - [License](#license)
 
-| The board | Your operator profile |
-|:---:|:---:|
-| [![SigRank leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all) | [![SigRank operator profile](./.github/assets/profile.png)](https://signalaf.com) |
-| Every operator ranked by **Υ Yield** — the architecture of the cascade, not raw spend | Cascade layer, class, and fingerprint — derived from four token counts |
+|                                       The board                                       |                               Your operator profile                               |
+| :-----------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------: |
+| [![SigRank leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all)  | [![SigRank operator profile](./.github/assets/profile.png)](https://signalaf.com) |
+| Every operator ranked by **Υ Yield** — the architecture of the cascade, not raw spend |      Cascade layer, class, and fingerprint — derived from four token counts       |
 
 > **Run [`sigrank enroll`](#sign-in--submit) then [`sigrank submit`](#sign-in--submit) to get ranked and claim your public profile at [signalaf.com](https://signalaf.com).**
 
@@ -181,14 +181,14 @@ npx sigrank
 
 Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
 
-| Tab | Key | Content |
-|---|---|---|
-| **Dashboard** | `1` | Cascade table (all platforms × windows + combined) · Υ sparklines · token composition bars · mini board |
-| **Trends** | `2` | Every metric across windows — sub-views: You / Platform / Field |
-| **Compare** | `3` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
-| **Board** | `4` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all) |
-| **Watch** | `5` | In-TUI landing panel · `[Enter]` launches the live watcher (big numbers + pillar bars + Υ trend, auto-refreshes 30s) |
-| **Connect** | `6` | Sign in / switch device — paste a connect code from signalaf.com → Settings. Then `[S]` submits. |
+| Tab           | Key | Content                                                                                                                              |
+| ------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Dashboard** | `1` | Cascade table (all platforms × windows + combined) · Υ sparklines · token composition bars · mini board                              |
+| **Trends**    | `2` | Every metric across windows — sub-views: You / Platform / Field                                                                      |
+| **Compare**   | `3` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
+| **Board**     | `4` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all)                                                              |
+| **Watch**     | `5` | In-TUI landing panel · `[Enter]` launches the live watcher (big numbers + pillar bars + Υ trend, auto-refreshes 30s)                 |
+| **Connect**   | `6` | Sign in / switch device — paste a connect code from signalaf.com → Settings. Then `[S]` submits.                                     |
 
 ### Sign in + submit
 
@@ -207,6 +207,7 @@ Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit
 When stdout is not a TTY (i.e. piped to an AI client), `sigrank` starts an MCP stdio server automatically. AI clients (Claude Code, Cursor, Windsurf, etc.) use this path.
 
 Add to `.mcp.json` or equivalent:
+
 ```json
 {
   "mcpServers": {
@@ -217,7 +218,9 @@ Add to `.mcp.json` or equivalent:
   }
 }
 ```
+
 Or if installed globally:
+
 ```json
 {
   "mcpServers": {
@@ -230,23 +233,23 @@ Or if installed globally:
 
 ### MCP Tools
 
-| Tool | Args | What |
-|---|---|---|
-| `rank_paste(text)` | `{input, output, cacheCreate, cacheRead}` JSON or 4 whitespace-delimited numbers | Scores token pillars → Υ Yield / SNR / Leverage / Velocity / 10xDEV / Class + prose narration card |
-| `get_leaderboard()` | `{window?}` | Live board from signalaf.com — sorted by Υ Yield |
-| `get_operator(codename)` | `{codename}` | One operator's live profile |
-| `submit_paste(text, codename)` | `{text, codename?}` | Rank locally then POST to board. Omit codename for preview-only |
-| `tokenpull(platform?)` | `{platform?}` | On-device local reader: scans local logs → 4-window cascade. Zero paste, token-only |
-| `tokenpull_submit(codename, window?)` | `{codename?, window?}` | `tokenpull` → publish to board. Omit codename for preview |
-| `tokenpull_compare(platform?)` | `{platform?}` | All four sources side-by-side: tokenpull + ccusage + token-dash + tokscale. Returns pillars, cascade metrics, and delta % vs tokenpull per window |
-| `rank_windows` | `{platform?, window?}` | Multi-window cascade from local logs |
-| `watch_tokenpull` | `{platform?, interval_s?}` | One cascade snapshot per call (interval_s advisory) |
-| `submit_verified` | `{window?, platform?, dry_run?}` | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
-| `enroll` | `{code, device_label?}` | Bind this device with a connect code from signalaf.com → Settings |
-| `diagnose_cascade` | `{text?}` | Diagnoses where your token cascade is leaking efficiency — ranked findings with severity + estimated Υ impact |
-| `simulate_change` | `{text?, changes}` | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing |
-| `suggest_improvements` | `{text?}` | Generates ranked, simulated improvement suggestions — tests strategies and returns them sorted by Υ yield impact |
-| `self_improve` | `{text?}` | One-click optimize: diagnoses, suggests, and simulates the best change in a single call |
+| Tool                                  | Args                                                                             | What                                                                                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rank_paste(text)`                    | `{input, output, cacheCreate, cacheRead}` JSON or 4 whitespace-delimited numbers | Scores token pillars → Υ Yield / SNR / Leverage / Velocity / 10xDEV / Class + prose narration card                                                                         |
+| `get_leaderboard()`                   | `{window?}`                                                                      | Live board from signalaf.com — sorted by Υ Yield                                                                                                                           |
+| `get_operator(codename)`              | `{codename}`                                                                     | One operator's live profile                                                                                                                                                |
+| `submit_paste(text, codename)`        | `{text, codename?}`                                                              | Rank locally then POST to board. Omit codename for preview-only                                                                                                            |
+| `tokenpull(platform?)`                | `{platform?}`                                                                    | On-device local reader: scans local logs → 4-window cascade. Zero paste, token-only                                                                                        |
+| `tokenpull_submit(codename, window?)` | `{codename?, window?}`                                                           | `tokenpull` → publish to board. Omit codename for preview                                                                                                                  |
+| `tokenpull_compare(platform?)`        | `{platform?}`                                                                    | All four sources side-by-side: tokenpull + ccusage + token-dash + tokscale. Returns pillars, cascade metrics, and delta % vs tokenpull per window                          |
+| `rank_windows`                        | `{platform?, window?}`                                                           | Multi-window cascade from local logs                                                                                                                                       |
+| `watch_tokenpull`                     | `{platform?, interval_s?}`                                                       | One cascade snapshot per call (interval_s advisory)                                                                                                                        |
+| `submit_verified`                     | `{window?, platform?, dry_run?}`                                                 | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
+| `enroll`                              | `{code, device_label?}`                                                          | Bind this device with a connect code from signalaf.com → Settings                                                                                                          |
+| `diagnose_cascade`                    | `{text?}`                                                                        | Diagnoses where your token cascade is leaking efficiency — ranked findings with severity + estimated Υ impact                                                              |
+| `simulate_change`                     | `{text?, changes}`                                                               | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing                                                           |
+| `suggest_improvements`                | `{text?}`                                                                        | Generates ranked, simulated improvement suggestions — tests strategies and returns them sorted by Υ yield impact                                                           |
+| `self_improve`                        | `{text?}`                                                                        | One-click optimize: diagnoses, suggests, and simulates the best change in a single call                                                                                    |
 
 ---
 
@@ -269,19 +272,21 @@ Canon check: `MO§ES (1251211, 11296121, 128196310, 2555179769) → Υ 18436.98`
 
 The dashboard pulls from multiple sources and shows them side-by-side for verification:
 
-| Source | What | Platform |
-|---|---|---|
-| `tokenpull` | On-device JSONL scanner (canon source) | claude, codex, amp, … |
-| `ccusage` | `ccusage <platform> daily --json` CLI (bundled) | claude, codex |
-| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite (bundled) | claude only |
-| `tokscale` | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex |
+| Source            | What                                                                           | Platform              |
+| ----------------- | ------------------------------------------------------------------------------ | --------------------- |
+| `tokenpull`       | On-device JSONL scanner (canon source)                                         | claude, codex, amp, … |
+| `ccusage`         | `ccusage <platform> daily --json` CLI (bundled)                                | claude, codex         |
+| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite (bundled)                                | claude only           |
+| `tokscale`        | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex         |
 
 **Codex input is estimated** — Codex logs don't expose true input tokens directly. The formula:
+
 ```
 input       = output × ioRatio         (ioRatio derived from Claude ratio, else 2.0)
 cacheCreate = uncached − input         (uncached = input_tokens − cached_input_tokens)
 cacheRead   = exact (from logs)
 ```
+
 Verifier numbers (ccusage/tokscale for codex) show **raw uncached input** (`input_tokens − cached`) — a different field than the estimated input above. The discrepancy is expected and explained inline in the dashboard.
 
 ---
@@ -290,25 +295,25 @@ Verifier numbers (ccusage/tokscale for codex) show **raw uncached input** (`inpu
 
 All adapters are token-only (no message content, no cost fields, no credentials).
 
-| Platform | Path | Notes |
-|---|---|---|
-| Claude Code | ✅ `~/.claude/projects` | Native; dedup by `(session_id, message_id)`; subagents included |
-| Codex | ✅ `~/.codex/sessions` | Estimated input via `io_ratio`; verified vs ccusage |
-| Amp | ✅ `~/.local/share/amp/threads` | Full 4-pillar; per-message |
-| Kimi | ✅ `~/.kimi/sessions` | Full 4-pillar; `StatusUpdate` lines only |
-| pi-agent | ✅ `~/.pi/agent/sessions` | Full 4-pillar; per-message JSONL |
-| OpenClaw | ✅ `~/.openclaw` | Full 4-pillar; per-message JSONL |
-| Droid | ✅ `~/.factory/sessions/*.settings.json` | Full 4-pillar; thinking→output |
-| Codebuff | ✅ `~/.config/manicode` | Full 4-pillar; `chat-messages.json` |
-| Hermes | ✅ `~/.hermes/state.db` | Full 4-pillar; SQLite; reasoning→output |
-| Kilo | ✅ `~/.local/share/kilo/kilo.db` | Full 4-pillar; SQLite |
-| Qwen | ✅ `~/.qwen/projects` | `cacheCreate=0` estimated; thought→output |
-| Goose | ✅ `~/.local/share/goose/sessions/sessions.db` | `cacheCreate=cacheRead=0` estimated; SQLite |
-| Gemini CLI | ✅ `~/.gemini/tmp` | `cacheCreate=0` estimated; cache extracted from input field |
-| GitHub Copilot CLI | ✅ `~/.copilot/otel` | OTel JSONL; requires `COPILOT_OTEL_ENABLED=true` |
-| OpenCode | ⚠️ `~/.local/share/opencode` | Raw token counts not persisted in log format |
-| Cursor | 🔜 | Chat log path TBD |
-| Windsurf | 🔜 | Session logs at `~/.codeium/windsurf/` |
+| Platform           | Path                                           | Notes                                                           |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
+| Claude Code        | ✅ `~/.claude/projects`                        | Native; dedup by `(session_id, message_id)`; subagents included |
+| Codex              | ✅ `~/.codex/sessions`                         | Estimated input via `io_ratio`; verified vs ccusage             |
+| Amp                | ✅ `~/.local/share/amp/threads`                | Full 4-pillar; per-message                                      |
+| Kimi               | ✅ `~/.kimi/sessions`                          | Full 4-pillar; `StatusUpdate` lines only                        |
+| pi-agent           | ✅ `~/.pi/agent/sessions`                      | Full 4-pillar; per-message JSONL                                |
+| OpenClaw           | ✅ `~/.openclaw`                               | Full 4-pillar; per-message JSONL                                |
+| Droid              | ✅ `~/.factory/sessions/*.settings.json`       | Full 4-pillar; thinking→output                                  |
+| Codebuff           | ✅ `~/.config/manicode`                        | Full 4-pillar; `chat-messages.json`                             |
+| Hermes             | ✅ `~/.hermes/state.db`                        | Full 4-pillar; SQLite; reasoning→output                         |
+| Kilo               | ✅ `~/.local/share/kilo/kilo.db`               | Full 4-pillar; SQLite                                           |
+| Qwen               | ✅ `~/.qwen/projects`                          | `cacheCreate=0` estimated; thought→output                       |
+| Goose              | ✅ `~/.local/share/goose/sessions/sessions.db` | `cacheCreate=cacheRead=0` estimated; SQLite                     |
+| Gemini CLI         | ✅ `~/.gemini/tmp`                             | `cacheCreate=0` estimated; cache extracted from input field     |
+| GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | OTel JSONL; requires `COPILOT_OTEL_ENABLED=true`                |
+| OpenCode           | ⚠️ `~/.local/share/opencode`                   | Raw token counts not persisted in log format                    |
+| Cursor             | 🔜                                             | Chat log path TBD                                               |
+| Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                          |
 
 `estimated=true` means one or more pillars are derived, not native. The server re-scores all submitted pillars authoritatively; local preview Υ is indicative only.
 
@@ -326,10 +331,10 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 
 ## Env vars
 
-| Var | Default | Description |
-|---|---|---|
-| `SIGRANK_API_BASE` | `https://signalaf.com` | Override the board host |
-| `SIGRANK_FETCH_TIMEOUT` | `10000` | Board API fetch timeout (ms) |
+| Var                     | Default                | Description                  |
+| ----------------------- | ---------------------- | ---------------------------- |
+| `SIGRANK_API_BASE`      | `https://signalaf.com` | Override the board host      |
+| `SIGRANK_FETCH_TIMEOUT` | `10000`                | Board API fetch timeout (ms) |
 
 ---
 
@@ -342,6 +347,7 @@ node index.mjs         # stdio MCP server directly (pipe to MCP client)
 ```
 
 Tests verify (13 groups, 200 assertions):
+
 - `rank_paste` canon: MO§ES `(1251211, 11296121, 128196310, 2555179769)` → Υ 18436.98 · TRANSMITTER
 - `submit_paste` preview (no codename) + POST shape (injected fetch, no live writes)
 - `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
@@ -360,23 +366,23 @@ Tests verify (13 groups, 200 assertions):
 
 ## File map
 
-| File | Responsibility |
-|---|---|
-| `index.mjs` | Entry point — TTY detection, routes to CLI or MCP server |
-| `cli.mjs` | CLI commands: board, compare, watch, enroll, submit, help |
-| `tui.mjs` | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
-| `cascade.mjs` | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class) |
-| `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform |
-| `adapters.mjs` | Platform adapter registry (15+ platforms) |
-| `tools.mjs` | MCP tool table + dispatcher |
-| `connect.mjs` | Connect-code enrollment + device identity |
-| `keystore.mjs` | Local key management (paste-keys, not API keys) |
-| `submit.mjs` | Verified submit flow (signs + POSTs to board) |
-| `sign.mjs` | Schema 1.0 signing (X-Agent-Signature) |
-| `narrate.mjs` | Deterministic prose narration card |
-| `preflight.mjs` | Plausibility checks (Benford, bounds, anomaly detection) |
-| `test.mjs` | Unit tests (no external deps) |
-| `sign.test.mjs` | ed25519 signing + canon parity test |
+| File            | Responsibility                                                          |
+| --------------- | ----------------------------------------------------------------------- |
+| `index.mjs`     | Entry point — TTY detection, routes to CLI or MCP server                |
+| `cli.mjs`       | CLI commands: board, compare, watch, enroll, submit, help               |
+| `tui.mjs`       | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
+| `cascade.mjs`   | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class)           |
+| `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform                   |
+| `adapters.mjs`  | Platform adapter registry (15+ platforms)                               |
+| `tools.mjs`     | MCP tool table + dispatcher                                             |
+| `connect.mjs`   | Connect-code enrollment + device identity                               |
+| `keystore.mjs`  | Local key management (paste-keys, not API keys)                         |
+| `submit.mjs`    | Verified submit flow (signs + POSTs to board)                           |
+| `sign.mjs`      | Schema 1.0 signing (X-Agent-Signature)                                  |
+| `narrate.mjs`   | Deterministic prose narration card                                      |
+| `preflight.mjs` | Plausibility checks (Benford, bounds, anomaly detection)                |
+| `test.mjs`      | Unit tests (no external deps)                                           |
+| `sign.test.mjs` | ed25519 signing + canon parity test                                     |
 
 ---
 

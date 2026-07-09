@@ -10,73 +10,84 @@
 // and prefix "ed25519:". The server re-adds the SPKI prefix to verify. Round-trip is
 // locked by sign.test.mjs + the canon-parity fixture.
 
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync, unlinkSync } from 'node:fs'
-import { generateKeyPairSync, randomUUID } from 'node:crypto'
+import { homedir } from "node:os";
+import { join } from "node:path";
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  chmodSync,
+  unlinkSync,
+} from "node:fs";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 
-const DIR = join(homedir(), '.sigrank-mcp')
-const PATH = join(DIR, 'identity.json')
+const DIR = join(homedir(), ".sigrank-mcp");
+const PATH = join(DIR, "identity.json");
 
 /** SPKI DER prefix length for an ed25519 public key (12 bytes before the raw 32). */
-const SPKI_PREFIX_LEN = 12
+const SPKI_PREFIX_LEN = 12;
 
 /** Resolve this package's version for the agent_version stamp (best-effort). */
 function agentVersion() {
   try {
-    const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
-    return `sigrank-mcp/${pkg.version}`
+    const pkg = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+    );
+    return `sigrank-mcp/${pkg.version}`;
   } catch {
-    return 'sigrank-mcp'
+    return "sigrank-mcp";
   }
 }
 
 export function keystorePath() {
-  return PATH
+  return PATH;
 }
 
 /** Read the stored identity, or null if absent/corrupt. */
 export function loadIdentity() {
-  if (!existsSync(PATH)) return null
+  if (!existsSync(PATH)) return null;
   try {
-    return JSON.parse(readFileSync(PATH, 'utf-8'))
+    return JSON.parse(readFileSync(PATH, "utf-8"));
   } catch {
-    return null
+    return null;
   }
 }
 
 /** Write the identity with strict perms (dir 0700, file 0600). */
 export function persistIdentity(identity) {
-  mkdirSync(DIR, { recursive: true })
+  mkdirSync(DIR, { recursive: true });
   try {
-    chmodSync(DIR, 0o700)
+    chmodSync(DIR, 0o700);
   } catch {
     /* best-effort on platforms without chmod */
   }
-  writeFileSync(PATH, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 })
+  writeFileSync(PATH, `${JSON.stringify(identity, null, 2)}\n`, {
+    mode: 0o600,
+  });
   try {
-    chmodSync(PATH, 0o600)
+    chmodSync(PATH, 0o600);
   } catch {
     /* best-effort */
   }
-  return identity
+  return identity;
 }
 
 /** Build a fresh keypair record (pure — no fs). Exposed for tests. */
 export function generateIdentity({ device_id } = {}) {
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-  const spki = publicKey.export({ type: 'spki', format: 'der' })
-  const rawPub = Buffer.from(spki).subarray(SPKI_PREFIX_LEN) // the raw 32 bytes
-  const pkcs8 = privateKey.export({ type: 'pkcs8', format: 'der' })
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const spki = publicKey.export({ type: "spki", format: "der" });
+  const rawPub = Buffer.from(spki).subarray(SPKI_PREFIX_LEN); // the raw 32 bytes
+  const pkcs8 = privateKey.export({ type: "pkcs8", format: "der" });
   return {
     device_id: device_id || randomUUID(),
     codename: null,
     operator_id: null,
-    public_key: `ed25519:${rawPub.toString('base64')}`,
-    private_key_pkcs8_b64: Buffer.from(pkcs8).toString('base64'),
+    public_key: `ed25519:${rawPub.toString("base64")}`,
+    private_key_pkcs8_b64: Buffer.from(pkcs8).toString("base64"),
     agent_version: agentVersion(),
     enrolled_at: null,
-  }
+  };
 }
 
 /**
@@ -91,16 +102,17 @@ export function generateIdentity({ device_id } = {}) {
  * tests (no fs, so the owner's live identity is never at risk during a test run).
  */
 export function bindingForFreshIdentity(existing, fresh) {
-  if (!existing) return { codename: null, operator_id: null, enrolled_at: null }
+  if (!existing)
+    return { codename: null, operator_id: null, enrolled_at: null };
   if (existing.device_id && fresh.device_id === existing.device_id) {
     return {
       codename: existing.codename ?? null,
       operator_id: existing.operator_id ?? null,
       enrolled_at: existing.enrolled_at ?? null,
-    }
+    };
   }
   // device_id changed → the old binding belongs to a different device; drop it.
-  return { codename: null, operator_id: null, enrolled_at: null }
+  return { codename: null, operator_id: null, enrolled_at: null };
 }
 
 /**
@@ -108,35 +120,43 @@ export function bindingForFreshIdentity(existing, fresh) {
  * complete existing identity is returned untouched (never rotates a live key).
  */
 export function ensureIdentity() {
-  const existing = loadIdentity()
-  if (existing?.private_key_pkcs8_b64 && existing?.public_key && existing?.device_id) {
-    return existing
+  const existing = loadIdentity();
+  if (
+    existing?.private_key_pkcs8_b64 &&
+    existing?.public_key &&
+    existing?.device_id
+  ) {
+    return existing;
   }
   // Regeneration path: a partial/corrupt record. The binding is tied to device_id —
   // if a new device_id is generated, the old codename/operator MUST NOT carry over
   // (bindingForFreshIdentity drops them). Only a reused device_id keeps its binding.
-  const fresh = generateIdentity({ device_id: existing?.device_id })
-  const binding = bindingForFreshIdentity(existing, fresh)
-  fresh.codename = binding.codename
-  fresh.operator_id = binding.operator_id
-  fresh.enrolled_at = binding.enrolled_at
-  return persistIdentity(fresh)
+  const fresh = generateIdentity({ device_id: existing?.device_id });
+  const binding = bindingForFreshIdentity(existing, fresh);
+  fresh.codename = binding.codename;
+  fresh.operator_id = binding.operator_id;
+  fresh.enrolled_at = binding.enrolled_at;
+  return persistIdentity(fresh);
 }
 
 /** Record a successful enrollment (codename/operator_id + enrolled_at) into the keystore. */
 export function recordEnrollment({ codename, operator_id }) {
-  const id = ensureIdentity()
+  const id = ensureIdentity();
   // OVERWRITE from the server's enroll response — a new enroll is a new binding, full
   // stop. Never `??`-preserve a stale codename/operator onto this device (the other
   // half of the Frankenstein bug: a re-enroll used to keep the old codename when the
   // new one was absent). A 201 enrolled always carries both.
-  id.codename = codename ?? null
-  id.operator_id = operator_id ?? null
-  id.enrolled_at = new Date().toISOString()
-  return persistIdentity(id)
+  id.codename = codename ?? null;
+  id.operator_id = operator_id ?? null;
+  id.enrolled_at = new Date().toISOString();
+  return persistIdentity(id);
 }
 
 /** Clear the local identity (sign out). Next enroll provisions a fresh device_id. */
 export function clearIdentity() {
-  try { if (existsSync(PATH)) unlinkSync(PATH) } catch { /* best-effort */ }
+  try {
+    if (existsSync(PATH)) unlinkSync(PATH);
+  } catch {
+    /* best-effort */
+  }
 }

@@ -12,54 +12,64 @@
 // The canon-parity fixture (tests/fixtures/canon_parity.json) + sign.test.mjs + the
 // sigrank-app canon_parity gate together lock this byte-for-byte.
 
-import { createHash, createPrivateKey, createPublicKey, sign as edSign, verify as edVerify } from 'node:crypto'
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign as edSign,
+  verify as edVerify,
+} from "node:crypto";
 
 /** Agent fields excluded from the canonical (signed/hashed) body — they derive from it. */
-const DERIVED_AGENT_FIELDS = ['signature', 'snapshot_hash']
+const DERIVED_AGENT_FIELDS = ["signature", "snapshot_hash"];
 
 /** Recursively sort object keys (matches the server's Object.keys(...).sort()); arrays keep order. */
 function sortDeep(v) {
-  if (Array.isArray(v)) return v.map(sortDeep)
-  if (v && typeof v === 'object') {
-    const out = {}
-    for (const k of Object.keys(v).sort()) out[k] = sortDeep(v[k])
-    return out
+  if (Array.isArray(v)) return v.map(sortDeep);
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = sortDeep(v[k]);
+    return out;
   }
-  return v
+  return v;
 }
 
 /** Canonical JSON string the agent signs/hashes (derived agent fields stripped). */
 export function canonicalJson(payload) {
-  const clone = JSON.parse(JSON.stringify(payload))
-  const agent = clone.agent
-  if (agent && typeof agent === 'object') {
-    for (const f of DERIVED_AGENT_FIELDS) delete agent[f]
+  const clone = JSON.parse(JSON.stringify(payload));
+  const agent = clone.agent;
+  if (agent && typeof agent === "object") {
+    for (const f of DERIVED_AGENT_FIELDS) delete agent[f];
   }
-  return JSON.stringify(sortDeep(clone))
+  return JSON.stringify(sortDeep(clone));
 }
 
 /** UTF-8 bytes of the canonical JSON — the exact bytes that get signed. */
 export function canonicalBytes(payload) {
-  return Buffer.from(canonicalJson(payload), 'utf-8')
+  return Buffer.from(canonicalJson(payload), "utf-8");
 }
 
 /** "sha256:<hex>" over the canonical bytes (matches the server snapshotHash). */
 export function snapshotHash(payload) {
-  return `sha256:${createHash('sha256').update(canonicalBytes(payload)).digest('hex')}`
+  return `sha256:${createHash("sha256").update(canonicalBytes(payload)).digest("hex")}`;
 }
 
 /** SPKI DER prefix for a raw 32-byte ed25519 public key. */
-const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 /** Build a node KeyObject from an "ed25519:<base64>" (or bare base64) public key, or null. */
 function publicKeyFrom(pk) {
   try {
-    const body = pk.startsWith('ed25519:') ? pk.slice('ed25519:'.length) : pk
-    const raw = Buffer.from(body, 'base64')
-    if (raw.length !== 32) return null
-    return createPublicKey({ key: Buffer.concat([ED25519_SPKI_PREFIX, raw]), format: 'der', type: 'spki' })
+    const body = pk.startsWith("ed25519:") ? pk.slice("ed25519:".length) : pk;
+    const raw = Buffer.from(body, "base64");
+    if (raw.length !== 32) return null;
+    return createPublicKey({
+      key: Buffer.concat([ED25519_SPKI_PREFIX, raw]),
+      format: "der",
+      type: "spki",
+    });
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -68,8 +78,12 @@ function publicKeyFrom(pk) {
  * The returned string is the X-Agent-Signature header value.
  */
 export function signPayload(payload, privateKeyPkcs8B64) {
-  const key = createPrivateKey({ key: Buffer.from(privateKeyPkcs8B64, 'base64'), format: 'der', type: 'pkcs8' })
-  return edSign(null, canonicalBytes(payload), key).toString('base64')
+  const key = createPrivateKey({
+    key: Buffer.from(privateKeyPkcs8B64, "base64"),
+    format: "der",
+    type: "pkcs8",
+  });
+  return edSign(null, canonicalBytes(payload), key).toString("base64");
 }
 
 /**
@@ -77,11 +91,16 @@ export function signPayload(payload, privateKeyPkcs8B64) {
  * and as a pre-send sanity check. Returns false on any malformation, never throws.
  */
 export function verifyPayload(payload, signatureB64, publicKey) {
-  const key = publicKeyFrom(publicKey)
-  if (!key) return false
+  const key = publicKeyFrom(publicKey);
+  if (!key) return false;
   try {
-    return edVerify(null, canonicalBytes(payload), key, Buffer.from(signatureB64, 'base64'))
+    return edVerify(
+      null,
+      canonicalBytes(payload),
+      key,
+      Buffer.from(signatureB64, "base64"),
+    );
   } catch {
-    return false
+    return false;
   }
 }

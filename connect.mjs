@@ -4,10 +4,10 @@
 
 /** True iff this device identity is signed in (bound to an operator). */
 export function isSignedIn(id) {
-  return !!(id && id.codename && id.operator_id)
+  return !!(id && id.codename && id.operator_id);
 }
 
 /** True iff `s` is a single character a connect code can contain ([A-Za-z0-9-]). */
 export function isCodeChar(s) {
-  return typeof s === 'string' && /^[A-Za-z0-9-]$/.test(s)
+  return typeof s === "string" && /^[A-Za-z0-9-]$/.test(s);
 }
