@@ -9,7 +9,10 @@
     "url": "https://github.com/SunrisesIllNeverSee"
   },
   "homepage": "https://signalaf.com",
-  "repository": "https://github.com/SunrisesIllNeverSee/sigrank-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SunrisesIllNeverSee/sigrank-mcp"
+  },
   "license": "MIT",
   "server": {
     "type": "node",
