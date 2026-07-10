@@ -1,6 +1,7 @@
 {
   "name": "sigrank",
   "version": "0.16.1",
+  "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "type": "module",

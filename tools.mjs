@@ -553,6 +553,7 @@ export const TOOLS = [
     description:
       'Computes the SigRank yield cascade from a paste of token counts. Parses the input, runs the full cascade math locally (no network calls), and returns: Υ Yield (the headline efficiency metric, Υ = Cache Reads × Output / Input²), SNR (signal-to-noise ratio), Leverage ratio (Cr/I = cache reads divided by input), Velocity (O/I = output divided by input), 10xDEV score, operator class tier (Burner / Builder / 10xer), and a deterministic prose "card" summarizing the result in plain English. Accepts two input formats: (1) JSON object {"input":N,"output":N,"cacheCreate":N,"cacheRead":N} or (2) four whitespace-separated numbers in order: input output cacheCreate cacheRead. Returns an error if the input is malformed or has negative values. Use this for a quick one-off ranking without submitting to the board. Do NOT use this to submit your score — use submit_paste instead, which both ranks and publishes. Do NOT use this if you want to rank all four time windows at once — use rank_windows for that. After calling this, use submit_paste to publish the result if you want to appear on the leaderboard.',
     annotations: {
+      title: "Rank a paste",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.destructiveHint,
       ...ANNOTATIONS.idempotentHint,
@@ -577,7 +578,7 @@ export const TOOLS = [
     name: "get_leaderboard",
     description:
       "Fetches the live public SigRank leaderboard from signalaf.com. Reads all ranked operators sorted by yield (Υ = Cache Reads × Output / Input²) and returns an array of operator summaries. Each entry contains: codename (public display name), yield (Υ, the headline efficiency metric), leverage ratio (Cr/I = cache reads divided by input), velocity (O/I = output divided by input), class tier (Burner / Builder / 10xer), and rank position (integer, 1-based). Returns an empty array if no operators have submitted yet. Use this to see where operators stand overall, to find specific codenames for get_operator lookups, or to display the current rankings. Do NOT use this to check your own rank if you already know your codename — use get_operator instead for a single-operator profile with per-window breakdowns. After calling this, follow up with get_operator to get detailed metrics for any operator of interest.",
-    annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    annotations: { title: "Get leaderboard", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: "object",
       properties: {},
@@ -590,7 +591,7 @@ export const TOOLS = [
     name: "get_operator",
     description:
       "Fetches one operator's live profile from the SigRank board by their codename. Reads the operator's current submission data from signalaf.com and returns their detailed metrics: yield (Υ), leverage ratio (Cr/I), velocity (O/I), class tier (Burner / Builder / 10xer), rank position (integer, 1-based), and per-window breakdowns for each time range (7d, 30d, 90d, all-time) with the four canonical pillars (input, output, cacheCreate, cacheRead) per window. Returns an error if the codename is not found on the board. Use this to look up any operator who has submitted to the board — codenames are public and visible on the leaderboard. Do NOT use this to browse all operators — use get_leaderboard for that. After calling this, you can use simulate_change to model what would happen if the operator adjusted their token mix.",
-    annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    annotations: { title: "Get operator profile", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: "object",
       properties: {
@@ -611,6 +612,7 @@ export const TOOLS = [
     description:
       "Ranks a paste of token counts AND publishes it to the live SigRank board at signalaf.com in one call. First computes the cascade locally for an instant preview (yield, leverage, velocity, class, card), then submits the raw paste to the board's web-paste endpoint, which re-parses and re-scores it server-side. The server score is authoritative — it may differ from the local preview if the board applies additional validation. Returns both the local preview and the server response (including the operator's new rank if accepted). A codename is required to publish — omit it for a local preview only (no board submission). Token-only, no auth required. Use this when you have token counts from ccusage or a dashboard and want to both see your score and publish it. Do NOT use this if you want to pull your local usage automatically — use tokenpull_submit for the zero-paste flow. Do NOT use this for multi-window dashboard pastes — use rank_windows to rank them first, then submit each window. After calling this, use get_operator with your codename to verify your submission appeared on the board.",
     annotations: {
+      title: "Submit paste to board",
       ...ANNOTATIONS.destructiveHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -639,7 +641,7 @@ export const TOOLS = [
     name: "tokenpull",
     description:
       "Pull your LOCAL token usage from the platform's session logs and rank it across the four windows (7d/30d/90d/all-time) with the cascade — zero paste. Token-only: reads usage counts not message content. The numbers stay on your machine unless you submit them. Some platforms may have partial data (estimated=true when cacheCreate isn't available) or a dataGap note when the log format doesn't expose raw token counts.",
-    annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    annotations: { title: "Pull local token usage", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: "object",
       properties: {
@@ -657,6 +659,7 @@ export const TOOLS = [
     description:
       "Pull your LOCAL token usage from session logs AND publish it to the SigRank board in one call — the zero-paste flow. Reads the four canonical pillars (input, output, cacheCreate, cacheRead) per window from your local logs, computes the cascade, and submits each window to the board where it is re-scored server-side and tagged with the source platform. Requires a codename to publish; omit for a local preview only. Token-only — no prompt content is read or transmitted.",
     annotations: {
+      title: "Pull and submit tokens",
       ...ANNOTATIONS.destructiveHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -689,6 +692,7 @@ export const TOOLS = [
     description:
       "Rank all four time windows (7d/30d/90d/all-time) in one call from a dashboard paste — paste the full table from ccusage, tokscale, or the Claude Max usage dashboard and get the cascade (Υ, SNR, Leverage, Velocity, 10xDEV, class, card) for each window. Each window is parsed and scored independently. Named keys required (input/output/cacheCreate/cacheRead); positional order is NOT safe here (dashboards list cache_read before cache_create — see WINDOWED_PROFILES gotcha). Omit windows you don't have — partial input is allowed (1–4 windows). Does NOT submit to the board; use tokenpull_submit for zero-paste publishing.",
     annotations: {
+      title: "Rank all time windows",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -759,6 +763,7 @@ export const TOOLS = [
     description:
       "One poll per call: pulls your local token logs and returns the current cascade for the watched window — the tool never blocks or loops. Re-call at your desired cadence to watch for changes (interval_s is advisory only and echoed back as poll_interval_s). With submit:true (and an enrolled device) each call may also sign + publish the watched window to the board, rate-limited to once per 5 min per platform+window; default is preview-only (no submit).",
     annotations: {
+      title: "Watch token pull",
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
     },
@@ -794,7 +799,7 @@ export const TOOLS = [
     name: "tokenpull_compare",
     description:
       "Pull token usage from ALL four local sources in parallel — tokenpull (JSONL canon), ccusage CLI, token-dashboard SQLite, and tokscale report — and return them side-by-side with delta % vs tokenpull as the baseline. Also computes the cascade (Υ, SNR, Leverage, class) for each source so you can see how each verifier scores. Useful for validating your numbers before submitting, or understanding discrepancies between tools. Claude only for token-dash; codex and others use tokenpull + ccusage + tokscale. Token-only, on-device.",
-    annotations: { ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    annotations: { title: "Compare token sources", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
     inputSchema: {
       type: "object",
       properties: {
@@ -813,6 +818,7 @@ export const TOOLS = [
     description:
       'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the key from signalaf.com → Settings → "New key" (or "Generate connect code"). On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
     annotations: {
+      title: "Enroll device identity",
       ...ANNOTATIONS.destructiveHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -840,6 +846,7 @@ export const TOOLS = [
     description:
       "Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Pass dry_run:true to inspect the exact signed payload without publishing.",
     annotations: {
+      title: "Submit verified score",
       ...ANNOTATIONS.destructiveHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -872,6 +879,7 @@ export const TOOLS = [
     description:
       "The first PRESCRIPTIVE SigRank tool — 'what if I changed my token mix?' Takes your current 4 pillars (input/output/cacheCreate/cacheRead) and one or more proposed changes, runs the canonical cascade on BOTH the current and simulated values, and returns the exact Υ Yield delta, class change, and per-metric diffs. This is the 'show me the payoff before I do the work' primitive: no network, no submission, pure local math. Use it to answer 'would increasing my cache-read by 50k tokens actually move my class?' before you change your workflow. Accepts the current pillars as JSON or 4 numbers (same as rank_paste) plus a `changes` object with any of the 4 pillar names mapped to new absolute values OR relative deltas (e.g. {cacheRead: '+50000'} or {input: 800000}).",
     annotations: {
+      title: "Simulate metric change",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -921,6 +929,7 @@ export const TOOLS = [
     description:
       "Analyzes your token cascade and diagnoses where you're leaking efficiency. Takes your 4 pillars (input/output/cacheCreate/cacheRead) and produces a ranked list of efficiency leaks with severity (critical/warning/info), findings, and recommendations. Checks: cache leverage (are you rereading what you wrote?), velocity (are you generating enough output per input?), SNR (is your signal drowning in noise?), cache creation ratio (are you over-committing?), input bloat (is fresh input too high?), and 10xDEV (is the full cascade compounding?). Each finding includes an estimated Υ impact. Pure local math — no network, no submission. Use this BEFORE simulate_change to understand what's wrong, then use simulate_change to test fixes. Accepts the same input formats as rank_paste (JSON or 4 whitespace numbers).",
     annotations: {
+      title: "Diagnose cascade breakdown",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -943,6 +952,7 @@ export const TOOLS = [
     description:
       "Generates ranked, simulated improvement suggestions for your token cascade. Takes your 4 pillars, tests multiple improvement strategies (increase cache reads, reduce fresh input, increase output, optimize cache creation), simulates each with the canonical cascade engine, and returns them ranked by Υ yield impact. Each suggestion includes: the action, which pillar to change, how much to change it, the projected Υ after the change, the yield delta, the projected class tier, and a rationale. Also returns the single highest-impact change (best_single_change). Pure local math — no network, no submission. Use this after diagnose_cascade to get actionable next steps, then use simulate_change to fine-tune before committing. Accepts the same input formats as rank_paste.",
     annotations: {
+      title: "Suggest improvements",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
@@ -965,6 +975,7 @@ export const TOOLS = [
     description:
       "Runs the full self-improvement cycle in one call: (1) gets your current token pillars — either from the provided text or by running tokenpull on your local logs, (2) diagnoses where you're leaking efficiency (diagnose_cascade), (3) generates ranked improvement suggestions (suggest_improvements), (4) simulates the top suggestion (simulate_change), and (5) returns the complete cycle: diagnosis + suggestions + the simulated impact of the best change. This is the 'one-click optimize' tool — call it at the end of a session to see what to improve next time. If you provide pillars in `text`, it skips the tokenpull step. If you omit `text`, it runs tokenpull first (requires local ccusage logs). Pure local math — no network, no submission. The `scope` parameter adds mode detection (BUILD/EDIT/DEBUG/MAINTAIN/IDLE) and scoped analysis: 'daily' (default — current behavior + mode), 'weekly' (compound into weekly snapshots + report artifact), 'trend' (30d/90d trajectory analysis).",
     annotations: {
+      title: "Self-improve plan",
       ...ANNOTATIONS.readOnlyHint,
       ...ANNOTATIONS.idempotentHint,
       ...ANNOTATIONS.openWorldHint,
