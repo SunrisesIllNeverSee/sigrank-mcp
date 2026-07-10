@@ -28,6 +28,8 @@ import {
   ListToolsRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   McpError,
   ErrorCode,
 } from "@modelcontextprotocol/sdk/types.js";
@@ -67,7 +69,7 @@ process.on("unhandledRejection", (reason) => {
 async function startMcpServer() {
   const server = new Server(
     { name: "sigrank", version: serverVersion() },
-    { capabilities: { tools: {}, prompts: {} } },
+    { capabilities: { tools: {}, prompts: {}, resources: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS,
@@ -170,6 +172,202 @@ async function startMcpServer() {
       };
     }
     throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
+  });
+
+  // --- Resources: static context agents can read without calling a tool ---
+  const RESOURCES = [
+    {
+      uri: "sigrank://scoring-formula",
+      name: "SigRank Scoring Formula",
+      description:
+        "The yield cascade formula and all derived metrics: Υ (Yield = Cache Reads × Output / Input²), SNR (signal-to-noise), Leverage (Cr/I), Velocity (O/I), 10xDEV score, and class tier thresholds (Burner / Builder / 10xer).",
+      mimeType: "text/markdown",
+    },
+    {
+      uri: "sigrank://class-tiers",
+      name: "Class Tier Definitions",
+      description:
+        "Definitions and thresholds for the three SigRank operator classes: Burner (raw volume), Builder (balanced efficiency), and 10xer (cascade-optimized). Includes the yield ranges that define each tier.",
+      mimeType: "text/markdown",
+    },
+    {
+      uri: "sigrank://install-guide",
+      name: "Quick Start Guide",
+      description:
+        "Step-by-step install and first submission: npx sigrank → enroll → submit. Covers ccusage/tokscale/tokendash bundled deps, privacy model (token counts only, never prompts), and dry-run workflow.",
+      mimeType: "text/markdown",
+    },
+    {
+      uri: "sigrank://privacy-model",
+      name: "Privacy Model",
+      description:
+        "How SigRank protects user privacy: runs locally, only four token counts (input, output, cacheCreate, cacheRead) leave the machine, ed25519-signed submissions, no prompt content ever transmitted.",
+      mimeType: "text/markdown",
+    },
+  ];
+
+  const RESOURCE_CONTENT = {
+    "sigrank://scoring-formula": `# SigRank Scoring Formula
+
+## Yield (Υ) — the headline metric
+
+\`\`\`
+Υ = Cache Reads × Output / Input²
+\`\`\`
+
+Yield rewards operators who maximize output while minimizing input — and who build cache to amortize that input across sessions. A high yield means you're getting more done with less, efficiently.
+
+## Derived Metrics
+
+| Metric | Formula | Meaning |
+|--------|---------|---------|
+| **SNR** | Output / (Input + CacheCreate) | Signal-to-noise: how much of your token spend is productive output vs. overhead |
+| **Leverage** | Cache Reads / Input | How well you reuse cached context — higher = better cache utilization |
+| **Velocity** | Output / Input | Raw output efficiency — how much output you generate per token of input |
+| **10xDEV** | Composite score | Weighted blend of yield, leverage, and velocity for cross-platform comparison |
+
+## Class Tier Thresholds
+
+| Tier | Yield Range | Profile |
+|------|-------------|---------|
+| **Burner** | Υ < 1.0 | Raw volume — high input, low cache reuse, brute-force output |
+| **Builder** | 1.0 ≤ Υ < 10.0 | Balanced — moderate cache, decent output efficiency |
+| **10xer** | Υ ≥ 10.0 | Cascade-optimized — high cache reads, minimal input, efficient output |
+
+The formula is deterministic and computed locally. No network calls needed for scoring.
+`,
+
+    "sigrank://class-tiers": `# SigRank Class Tiers
+
+Every operator is classified into one of three tiers based on their Yield (Υ = Cache Reads × Output / Input²).
+
+## Burner (Υ < 1.0)
+- **Profile:** Raw volume operators. High input tokens, low cache reuse.
+- **Behavior:** Brute-force — lots of context fed in, relatively little output back.
+- **Typical:** New AI users, verbose prompters, no session continuity.
+- **Fix:** Build cache across sessions. Stop re-explaining context. Use --continue.
+
+## Builder (1.0 ≤ Υ < 10.0)
+- **Profile:** Balanced operators. Moderate cache, decent output efficiency.
+- **Behavior:** Productive — reasonable input-to-output ratio, some cache leverage.
+- **Typical:** Experienced AI coders who use CLAUDE.md, project context, and session continuity.
+- **Fix:** Increase cache reads by reusing sessions. Reduce input by trimming unnecessary context.
+
+## 10xer (Υ ≥ 10.0)
+- **Profile:** Cascade-optimized operators. High cache reads, minimal input, efficient output.
+- **Behavior:** Surgical — minimal new input, maximum cache reuse, high-yield output.
+- **Typical:** Power users with long-running sessions, tight context windows, and aggressive cache strategies.
+- **Maintain:** Keep cache hit rate high. Avoid context bloat. Monitor with watch_tokenpull.
+
+Tiers are recalculated on every submission. Your tier can change between windows (7d, 30d, 90d, all-time).
+`,
+
+    "sigrank://install-guide": `# SigRank Quick Start
+
+## Install
+
+\`\`\`bash
+npx sigrank
+\`\`\`
+
+No global install needed. The MCP server starts automatically when an AI client (Claude, Cursor, Cline) connects.
+
+## First Submission
+
+1. **Enroll** — register your operator codename:
+   \`\`\`bash
+   npx sigrank enroll
+   \`\`\`
+
+2. **Pull + Submit** — scan your local AI session logs and publish:
+   \`\`\`bash
+   npx sigrank submit
+   \`\`\`
+
+3. **Dry Run** — see exactly what would be sent before publishing:
+   \`\`\`bash
+   npx sigrank submit --dry-run
+   \`\`\`
+
+## Token Pull Sources (bundled)
+
+SigRank bundles three token readers as dependencies:
+- **ccusage** — Claude Code session logs
+- **tokscale** — multi-platform token telemetry
+- **tokendash** — dashboard + TUI for token usage
+
+No separate install needed. All three are called automatically by the tokenpull tools.
+
+## MCP Client Setup
+
+Add to your MCP client config:
+\`\`\`json
+{
+  "mcpServers": {
+    "sigrank": {
+      "command": "npx",
+      "args": ["sigrank"]
+    }
+  }
+}
+\`\`\`
+
+## Live Board
+
+Visit https://signalaf.com to see the global leaderboard.
+`,
+
+    "sigrank://privacy-model": `# SigRank Privacy Model
+
+## What leaves your machine
+
+**Only four numbers per submission:**
+- Input tokens
+- Output tokens
+- Cache create tokens
+- Cache read tokens
+
+**That's it.** No prompts, no code, no file contents, no conversation text.
+
+## How it works
+
+1. **Local-first:** All token pulling happens on your machine. SigRank reads session logs from ~/.claude, ~/.codex, ~/.local/share/amp, etc.
+2. **Token counts only:** The MCP tools extract integer counts from log metadata. The actual content of your conversations is never read, parsed, or transmitted.
+3. **Signed submission:** Submissions are ed25519-signed. The board verifies authenticity without seeing your data.
+4. **No auth required:** No API keys, no OAuth, no account needed to read the leaderboard. Enrollment only requires a codename.
+
+## What SigRank can NOT see
+
+- Your prompts or messages
+- Your code or file contents
+- Your tool calls or their results
+- Which AI platform you use (beyond token counts)
+- Your identity (only your chosen codename)
+
+## Verification
+
+The submit_verified tool uses ed25519 signing. The board's source_attestations table records the signature for audit. You can verify your own submissions via get_operator.
+`,
+  };
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: RESOURCES,
+  }));
+  server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+    const uri = req.params.uri;
+    const content = RESOURCE_CONTENT[uri];
+    if (!content) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+    }
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "text/markdown",
+          text: content,
+        },
+      ],
+    };
   });
 
   await server.connect(new StdioServerTransport());
