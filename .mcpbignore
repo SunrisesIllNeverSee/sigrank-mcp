@@ -1,6 +1,41 @@
-node_modules/
-.github/assets/
+# Heavy platform-specific CLI binaries (called via execFile, not imported)
+node_modules/@tokscale/
+node_modules/@zhangferry-dev/
+node_modules/@ccusage/
+node_modules/ccusage/
+
+# UI/chart libraries (only used by tokendash TUI, not by MCP server)
+node_modules/react-dom/
+node_modules/react/
+node_modules/recharts/
+node_modules/d3-array/
+node_modules/d3-color/
+node_modules/d3-ease/
+node_modules/d3-format/
+node_modules/d3-interpolate/
+node_modules/d3-path/
+node_modules/d3-scale/
+node_modules/d3-shape/
+node_modules/d3-time/
+node_modules/d3-time-format/
+node_modules/d3-timer/
+node_modules/victory-vendor/
+node_modules/scheduler/
+node_modules/prop-types/
+node_modules/react-smooth/
+node_modules/react-transition-group/
+node_modules/dom-helpers/
+node_modules/decimal.js-light/
+node_modules/internmap/
+
+# lodash (large, not needed for MCP introspection)
+node_modules/lodash/
+
+# Test files
 __tests__/
 _parked/
 test.mjs
 sign.test.mjs
+
+# Heavy GitHub assets
+.github/assets/

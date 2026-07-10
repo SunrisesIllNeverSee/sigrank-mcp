@@ -21,7 +21,7 @@ For all builders, burners and 10xers.
 [![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
 [![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
 [![SunrisesIllNeverSee/sigrank-mcp MCP server](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp/badges/score.svg)](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
-[![Smithery](https://smithery.ai/badge/burnmydays/sigrank-mcp)](https://smithery.ai/servers/burnmydays/sigrank-mcp)
+[![Smithery](https://smithery.ai/badge/burnmydays/sigrank)](https://smithery.ai/servers/burnmydays/sigrank)
 
 </div>
 
@@ -95,14 +95,14 @@ sigrank
 **Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
 **Site:** [signalaf.com](https://signalaf.com)
 **npm:** [sigrank](https://www.npmjs.com/package/sigrank)
-**Smithery:** [smithery.ai/servers/burnmydays/sigrank-mcp](https://smithery.ai/servers/burnmydays/sigrank-mcp)
+**Smithery:** [smithery.ai/servers/burnmydays/sigrank](https://smithery.ai/servers/burnmydays/sigrank)
 **Glama:** [glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
 
 ---
 
 ## Install via Smithery
 
-SigRank is available on [Smithery](https://smithery.ai/servers/burnmydays/sigrank-mcp) as a stdio MCP bundle — one-click install for Claude Desktop, Cursor, and other MCP clients.
+SigRank is available on [Smithery](https://smithery.ai/servers/burnmydays/sigrank) as a stdio MCP bundle — one-click install for Claude Desktop, Cursor, and other MCP clients.
 
 ### Smithery CLI
 
@@ -111,7 +111,7 @@ SigRank is available on [Smithery](https://smithery.ai/servers/burnmydays/sigran
 npm install -g smithery
 
 # Connect to SigRank (downloads the MCPB bundle locally)
-smithery mcp add burnmydays/sigrank-mcp --id sigrank
+smithery mcp add burnmydays/sigrank --id sigrank
 
 # List available tools
 smithery tool list sigrank
@@ -123,7 +123,7 @@ smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
 
 ### Claude Desktop (via Smithery)
 
-1. Go to [smithery.ai/servers/burnmydays/sigrank-mcp](https://smithery.ai/servers/burnmydays/sigrank-mcp)
+1. Go to [smithery.ai/servers/burnmydays/sigrank](https://smithery.ai/servers/burnmydays/sigrank)
 2. Click **Install**
 3. Smithery handles the rest — no manual config editing
 

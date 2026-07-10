@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "sigrank",
   "version": "0.16.1",
-  "description": "Operator leaderboard measuring users, not models — 15 tools, TUI, signed submit, privacy-first. Ranks AI coding operators by token cascade efficiency (Yield = cache_read × output / input²). Tools for yield calculation, leaderboard queries, operator lookups, local token usage pulls, and signed token-count submission. Privacy-first: runs locally, only four token counts leave the machine (ed25519-signed).",
+  "description": "Ranks AI coding operators by token cascade efficiency (Yield = cache_read × output / input²). 15 tools for yield calculation, leaderboard queries, operator lookups, local token usage pulls, and signed submission. Privacy-first: runs locally, only four token counts leave the machine.",
   "author": {
     "name": "SunrisesIllNeverSee",
     "url": "https://github.com/SunrisesIllNeverSee"
