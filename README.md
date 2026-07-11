@@ -27,6 +27,7 @@ For all builders, burners and 10xers.
 
 ## Table of Contents
 
+- [The SigRank ecosystem](#the-sigrank-ecosystem)
 - [Quickstart](#quickstart--3-steps-to-the-board)
 - [Install from GitHub](#install-from-github)
 - [Install via Smithery](#install-via-smithery)
@@ -50,6 +51,16 @@ For all builders, burners and 10xers.
 > **Run [`sigrank enroll`](#sign-in--submit) then [`sigrank submit`](#sign-in--submit) to get ranked and claim your public profile at [signalaf.com](https://signalaf.com).**
 
 ---
+
+## The SigRank ecosystem
+
+| Repo | What it is | Install |
+|------|-----------|---------|
+| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | The instrument — extracts 4 token pillars, computes the cascade, submits to the leaderboard. MCP server + TUI dashboard. | `npx sigrank` |
+| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | The leaderboard — signalaf.com. Privacy-preserving operator profiles, class tiers, board rankings. | [signalaf.com](https://signalaf.com) |
+| **[signaf](https://github.com/SunrisesIllNeverSee/signa)** | The coach — reads your session logs, builds a taste profile, measures ASI, coaches you on token efficiency. | `npx @burnmydays/signaf` |
+| **[sigrank-vscode](https://github.com/SunrisesIllNeverSee/sigrank-vscode)** | The IDE extension — see your cascade metrics inline in VS Code. | `code --install-extension sigrank.sigrank` |
+| **[fundscore](https://github.com/SunrisesIllNeverSee/fundscore)** | The repo scorer — investor-readiness scoring for GitHub repos. CLI + MCP server. | `npx fundscore` |
 
 ## Quickstart — 3 steps to the board
 
