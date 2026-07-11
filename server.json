@@ -3,14 +3,14 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "Operator leaderboard measuring users, not models — 15 tools, TUI, signed submit, privacy-first.",
   "title": "SigRank — Token Efficiency Leaderboard",
-  "version": "0.16.1",
+  "version": "0.17.1",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "0.16.1",
+      "version": "0.17.1",
       "transport": {
         "type": "stdio"
       },
