@@ -351,6 +351,106 @@ const OPERATOR_OUTPUT = {
   },
 };
 
+const BEST_OPERATOR_OUTPUT = {
+  type: "object",
+  properties: {
+    top_operators: {
+      type: "array",
+      description: "Top N operators ranked by yield",
+      items: {
+        type: "object",
+        properties: {
+          codename: { type: "string", description: "Public display name" },
+          yield_: { type: "number", description: "Υ Yield metric" },
+          leverage: { type: "number", description: "Cr/I ratio" },
+          velocity: { type: "number", description: "O/I ratio" },
+          class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+          rank: { type: "integer", description: "1-based rank position" },
+          behavioral_framing: {
+            type: "string",
+            description: "Plain-language interpretation of the operator's cascade in power-user terms",
+          },
+        },
+      },
+    },
+    total_operators: { type: "integer", description: "Total operators on the board" },
+    summary: {
+      type: "string",
+      description: "One-line summary of the top operator's achievement in behavioral terms",
+    },
+  },
+};
+
+const COMPARE_SELF_OUTPUT = {
+  type: "object",
+  properties: {
+    your_metrics: {
+      type: "object",
+      description: "Your cascade metrics",
+      properties: {
+        codename: { type: "string" },
+        yield_: { type: "number", description: "Υ Yield metric" },
+        leverage: { type: "number", description: "Cr/I ratio" },
+        velocity: { type: "number", description: "O/I ratio" },
+        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        rank: { type: "integer", description: "1-based rank position" },
+      },
+    },
+    power_user_assessment: {
+      type: "string",
+      description: "Behavioral interpretation: are you an AI power user? Maps class tier to power-user language.",
+    },
+    comparison: {
+      type: "object",
+      description: "How you compare to board averages and archetypes",
+      properties: {
+        your_yield_vs_avg: { type: "string", description: "Your yield vs board average" },
+        your_class_meaning: { type: "string", description: "What your class tier means in power-user terms" },
+        percentile: { type: "number", description: "Your percentile rank (0-100)" },
+      },
+    },
+    suggestion: {
+      type: "string",
+      description: "One actionable suggestion to improve your cascade efficiency",
+    },
+  },
+};
+
+const COMPARE_OPERATORS_OUTPUT = {
+  type: "object",
+  properties: {
+    operator_a: {
+      type: "object",
+      description: "First operator's metrics",
+      properties: {
+        codename: { type: "string" },
+        yield_: { type: "number" },
+        leverage: { type: "number" },
+        velocity: { type: "number" },
+        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        rank: { type: "integer" },
+      },
+    },
+    operator_b: {
+      type: "object",
+      description: "Second operator's metrics",
+      properties: {
+        codename: { type: "string" },
+        yield_: { type: "number" },
+        leverage: { type: "number" },
+        velocity: { type: "number" },
+        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        rank: { type: "integer" },
+      },
+    },
+    verdict: {
+      type: "string",
+      description: "Who is more efficient and why, in behavioral terms",
+    },
+    yield_delta: { type: "number", description: "Yield difference (A - B)" },
+  },
+};
+
 const SUBMIT_OUTPUT = {
   type: "object",
   properties: {
@@ -1051,6 +1151,76 @@ export const TOOLS = [
         trend: { type: "object", description: "Trend analysis (trend scope)" },
       },
     },
+  },
+  {
+    name: "get_best_operator",
+    description:
+      "Returns the top N operators on the SigRank leaderboard with behavioral framing in power-user language. Wraps get_leaderboard and adds plain-language interpretation of each top operator's cascade: what their yield, leverage, and velocity mean in terms of AI power-user behavior (cache reuse, input economy, output productivity). Use this when users ask 'who is the best AI user?' or 'who tops the SigRank leaderboard?' or 'show me the AI user leaderboard'. Do NOT use get_leaderboard if you want the raw array without interpretation — use this for the power-user framing. Intent: BEST_OPERATOR.",
+    annotations: { title: "Get best operator", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {
+        n: {
+          type: "integer",
+          description:
+            "Number of top operators to return (default: 5, max: 20). Returns the top N by yield.",
+          minimum: 1,
+          maximum: 20,
+        },
+      },
+      description:
+        "Optional: how many top operators to return. Defaults to 5.",
+    },
+    outputSchema: BEST_OPERATOR_OUTPUT,
+  },
+  {
+    name: "compare_self",
+    description:
+      "Compares an operator's metrics against board averages and power-user archetypes, returning a behavioral assessment. Accepts either a codename (fetches from the board) or raw token pillars (computes locally). Returns: your yield/leverage/velocity/class/rank, a power-user assessment mapping your class tier to AI power-user language, comparison vs board averages (your percentile), and one actionable suggestion to improve. Use this when users ask 'how do I measure up to other AI users?' or 'am I a power user?' or 'compare me to others'. Intent: COMPARE_SELF.",
+    annotations: { title: "Compare self to board", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {
+        codename: {
+          type: "string",
+          description:
+            "Your codename on the SigRank leaderboard. If provided, fetches your live profile from the board. Case-insensitive.",
+        },
+        text: {
+          type: "string",
+          description:
+            'Alternative: raw token pillars to score locally (ccusage JSON or "input output cacheCreate cacheRead"). Use this if you are not on the board yet but want to see how you would compare.',
+        },
+      },
+      description:
+        "Provide either `codename` (to fetch from the board) or `text` (to score locally). At least one is required.",
+    },
+    outputSchema: COMPARE_SELF_OUTPUT,
+  },
+  {
+    name: "compare_operators",
+    description:
+      "Compares two operators side-by-side with a behavioral verdict. Fetches both profiles from the board and returns their yield, leverage, velocity, class, and rank side-by-side, plus a verdict explaining who is more efficient and why in power-user language. Use this when users ask 'compare operator X vs Y' or 'who is more efficient' or 'how do two AI users compare'. Intent: COMPARE_OPERATORS.",
+    annotations: { title: "Compare two operators", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {
+        codename_a: {
+          type: "string",
+          description:
+            "First operator's codename from the SigRank leaderboard. Case-insensitive.",
+        },
+        codename_b: {
+          type: "string",
+          description:
+            "Second operator's codename from the SigRank leaderboard. Case-insensitive.",
+        },
+      },
+      required: ["codename_a", "codename_b"],
+      description:
+        "Requires both codenames. Both must exist on the board.",
+    },
+    outputSchema: COMPARE_OPERATORS_OUTPUT,
   },
 ];
 
@@ -2474,7 +2644,193 @@ export async function callTool(name, args, opts = {}) {
     };
   }
 
+  // ── Intent-based tools (get_best_operator, compare_self, compare_operators) ──
+  // These wrap existing primitives with behavioral framing in power-user language.
+  // See artifacts/004_sigrank-mcp-intent-tools-spec.md for the intent taxonomy.
+
+  if (name === "get_best_operator") {
+    const n = Math.min(20, Math.max(1, Number(args?.n) || 5));
+    const board = await fetchJson("/api/v1/leaderboard?metric=yield_");
+    const ops = (board.operators || board || []).slice(0, n);
+    const total = Array.isArray(board.operators || board)
+      ? (board.operators || board).length
+      : 0;
+
+    const top = ops.map((op) => ({
+      ...op,
+      behavioral_framing: _behavioralFraming(op),
+    }));
+
+    const best = top[0];
+    const summary = best
+      ? `${best.codename} tops the SigRank leaderboard at Υ ${best.yield_?.toLocaleString?.() || best.yield_} — ${_behavioralFraming(best)}`
+      : "No operators on the board yet.";
+
+    return { top_operators: top, total_operators: total, summary };
+  }
+
+  if (name === "compare_self") {
+    const codename = String(args?.codename || "").trim();
+    const text = String(args?.text || "").trim();
+
+    if (!codename && !text)
+      throw new Error(
+        "compare_self requires either `codename` (to fetch from the board) or `text` (raw token pillars to score locally).",
+      );
+
+    let yourMetrics;
+    if (codename) {
+      yourMetrics = await fetchJson(
+        `/api/v1/operators/${encodeURIComponent(codename)}`,
+      );
+    } else {
+      if (text.length > MAX_INPUT) {
+        return {
+          error: "input_too_large",
+          detail: `text exceeds ${MAX_INPUT} chars.`,
+        };
+      }
+      const pillars = parsePillars(text);
+      const c = withParseWarnings(pillars, cascade(pillars));
+      yourMetrics = {
+        codename: "you (local)",
+        yield_: c.yield,
+        leverage: c.leverage,
+        velocity: c.velocity,
+        class: c.class,
+        rank: null,
+      };
+    }
+
+    // Fetch board for comparison
+    const board = await fetchJson("/api/v1/leaderboard?metric=yield_");
+    const allOps = board.operators || board || [];
+    const yields = allOps.map((o) => o.yield_ || 0).sort((a, b) => a - b);
+    const avgYield = yields.length
+      ? yields.reduce((s, y) => s + y, 0) / yields.length
+      : 0;
+    const yourYield = yourMetrics.yield_ || 0;
+    const percentile = yields.length
+      ? Math.round(
+          (yields.filter((y) => y < yourYield).length / yields.length) * 100,
+        )
+      : 0;
+
+    const klass = yourMetrics.class || "Burner";
+    const powerUserAssessment = _powerUserAssessment(klass, yourMetrics);
+    const classMeaning = _classMeaning(klass);
+
+    const yieldVsAvg = yields.length
+      ? yourYield > avgYield
+        ? `${(yourYield / avgYield).toFixed(1)}× the board average`
+        : `${((yourYield / avgYield) * 100).toFixed(0)}% of the board average`
+      : "board has no other operators";
+
+    const suggestion = _improvementSuggestion(klass, yourMetrics);
+
+    return {
+      your_metrics: yourMetrics,
+      power_user_assessment: powerUserAssessment,
+      comparison: {
+        your_yield_vs_avg: yieldVsAvg,
+        your_class_meaning: classMeaning,
+        percentile,
+      },
+      suggestion,
+    };
+  }
+
+  if (name === "compare_operators") {
+    const nameA = String(args?.codename_a || "").trim();
+    const nameB = String(args?.codename_b || "").trim();
+    if (!nameA || !nameB)
+      throw new Error(
+        "compare_operators requires both `codename_a` and `codename_b`.",
+      );
+
+    const [opA, opB] = await Promise.all([
+      fetchJson(`/api/v1/operators/${encodeURIComponent(nameA)}`),
+      fetchJson(`/api/v1/operators/${encodeURIComponent(nameB)}`),
+    ]);
+
+    const yieldA = opA.yield_ || 0;
+    const yieldB = opB.yield_ || 0;
+    const delta = yieldA - yieldB;
+
+    const winner = yieldA > yieldB ? opA : opB;
+    const loser = yieldA > yieldB ? opB : opA;
+    const verdict = `${winner.codename} is more token-efficient (${winner.yield_?.toLocaleString?.() || winner.yield_} vs ${loser.yield_?.toLocaleString?.() || loser.yield_} Υ). ${_behavioralFraming(winner)} ${loser.codename} ${_classMeaning(loser.class).toLowerCase()}`;
+
+    return {
+      operator_a: {
+        codename: opA.codename,
+        yield_: opA.yield_,
+        leverage: opA.leverage,
+        velocity: opA.velocity,
+        class: opA.class,
+        rank: opA.rank,
+      },
+      operator_b: {
+        codename: opB.codename,
+        yield_: opB.yield_,
+        leverage: opB.leverage,
+        velocity: opB.velocity,
+        class: opB.class,
+        rank: opB.rank,
+      },
+      verdict,
+      yield_delta: delta,
+    };
+  }
+
   throw new Error(`Unknown tool: ${name}`);
+}
+
+// ── Intent tool helpers — behavioral framing in power-user language ──────────
+
+function _behavioralFraming(op) {
+  const y = op.yield_ || 0;
+  const l = op.leverage || 0;
+  const v = op.velocity || 0;
+  const klass = op.class || "Burner";
+
+  if (klass === "10xer")
+    return `Disciplined, system-level reuse: ${l.toFixed(1)}× leverage means heavy cache reuse over fresh input, ${v.toFixed(2)} velocity means more output per token spent. This is the AI power-user archetype.`;
+  if (klass === "Builder")
+    return `Building cascade momentum: moderate cache reuse (${l.toFixed(1)}× leverage) with ${v.toFixed(2)} output velocity. Approaching power-user patterns — increase cache reuse to push into 10xer territory.`;
+  return `Early-stage cascade: ${v.toFixed(2)} output velocity with ${l.toFixed(1)}× leverage. Tokens are being burned more than compounded. Focus on reusing prior context (templates, prompts, workflows) to build leverage.`;
+}
+
+function _powerUserAssessment(klass, metrics) {
+  const l = metrics.leverage || 0;
+  const v = metrics.velocity || 0;
+  if (klass === "10xer")
+    return `You are an AI power user. Your SigRank class (10xer) indicates you reuse prior work heavily (${l.toFixed(1)}× leverage), get more out of each token (${v.toFixed(2)} velocity), and keep input lean. This is consistent with AI power-user behavior: iterative, efficient, multi-use patterns.`;
+  if (klass === "Builder")
+    return `You are becoming an AI power user. Your Builder class shows growing cache reuse (${l.toFixed(1)}× leverage) and ${v.toFixed(2)} output velocity. You're building the habits — increase context reuse to push into 10xer territory.`;
+  return `You are not yet an AI power user. Your Burner class means tokens are being spent without compounding. The power-user shift: reuse prior context (prompts, templates, cached results) instead of starting fresh each time. Your leverage (${l.toFixed(1)}×) is the key metric to improve.`;
+}
+
+function _classMeaning(klass) {
+  if (klass === "10xer")
+    return "AI power user archetype — disciplined, system-level reuse, high output per input.";
+  if (klass === "Builder")
+    return "Building momentum — moderate reuse, approaching power-user patterns.";
+  return "Early-stage — tokens burned more than compounded. Focus on cache reuse.";
+}
+
+function _improvementSuggestion(klass, metrics) {
+  const l = metrics.leverage || 0;
+  const v = metrics.velocity || 0;
+  if (klass === "10xer")
+    return v < 1
+      ? "Your leverage is excellent but velocity is under 1.0 — you're reading more cache than producing output. Push for more output per session."
+      : "You're at the top tier. Maintain your cache architecture and experiment with longer sessions to compound yield further.";
+  if (klass === "Builder")
+    return l < 5
+      ? "Increase cache reuse: reuse prompts, templates, and workflows instead of starting from scratch. Each reused token multiplies your yield."
+      : "Your leverage is solid. Focus on output velocity — produce more per session to push your yield up.";
+  return "Start by reusing prior context. Instead of fresh prompts each time, build on cached results. Even a 2× increase in cache_read will dramatically improve your yield because input² is in the denominator.";
 }
 
 // ── self_improve scope helpers ──────────────────────────────────────────────

@@ -2,8 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
   "manifest_version": "0.4",
   "name": "sigrank",
-  "version": "0.17.0",
-  "description": "Ranks AI coding operators by token cascade efficiency (Yield = cache_read × output / input²). 15 tools for yield calculation, leaderboard queries, operator lookups, local token usage pulls, and signed submission. Privacy-first: runs locally, only four token counts leave the machine.",
+  "version": "0.18.0",
+  "description": "Ranks AI coding operators by token cascade efficiency (Yield = cache_read × output / input²). 18 tools for yield calculation, leaderboard queries, operator lookups, local token usage pulls, and signed submission. Privacy-first: runs locally, only four token counts leave the machine.",
   "author": {
     "name": "SunrisesIllNeverSee",
     "url": "https://github.com/SunrisesIllNeverSee"

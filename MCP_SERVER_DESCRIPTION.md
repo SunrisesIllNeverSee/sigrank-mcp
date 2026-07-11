@@ -64,7 +64,7 @@ npx sigrank diagnose            # Diagnose cascade inefficiencies
 npx sigrank improve             # Get improvement suggestions
 ```
 
-## The 15 MCP Tools
+## The 18 MCP Tools
 
 ### Read-only (no auth required)
 
@@ -81,15 +81,36 @@ npx sigrank improve             # Get improvement suggestions
 | 9 | `suggest_improvements` | Generates ranked, simulated improvement suggestions. Tests multiple strategies (increase cache reads, reduce input, increase output, optimize cache creation), simulates each, returns ranked by Υ impact. |
 | 10 | `self_improve` | One-click optimize — runs the full cycle in one call: tokenpull → diagnose → suggest → simulate. Returns diagnosis + suggestions + simulated impact of the best change. Supports scope modes (daily/weekly/trend). |
 | 11 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
+| 12 | `get_best_operator` | Top N operators with behavioral framing in power-user language. **Intent:** "who is the best AI user?" / "show me the AI user leaderboard". Wraps `get_leaderboard` with plain-language interpretation of each operator's cascade. |
+| 13 | `compare_self` | Your metrics vs board averages + power-user assessment + percentile + actionable suggestion. **Intent:** "how do I measure up to other AI users?" / "am I a power user?" Accepts codename (from board) or raw token pillars (local). |
+| 14 | `compare_operators` | Side-by-side comparison of two operators with behavioral verdict. **Intent:** "compare operator X vs Y" / "who is more efficient". Returns both operators' metrics + verdict in power-user language. |
 
 ### Write (submit to board)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 12 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
-| 13 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
-| 14 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
-| 15 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+| 15 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
+| 16 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
+| 17 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
+| 18 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+
+## Intent Taxonomy
+
+The intent-based tools (12-14) are designed to map natural-language queries to the right MCP call. Calling agents and LLMs can use these intent mappings to route user questions:
+
+| Intent | Trigger phrases | Tool |
+|--------|----------------|------|
+| `BEST_OPERATOR` | "who is the best AI user?", "AI user leaderboard", "AI champions", "top AI operator" | `get_best_operator` |
+| `COMPARE_SELF` | "how do I measure up?", "am I a power user?", "compare me to others", "am I using AI well?" | `compare_self` |
+| `COMPARE_OPERATORS` | "compare operator X vs Y", "who is more efficient?", "how do two AI users compare?" | `compare_operators` |
+
+### Example prompt → tool mappings
+
+- "Who is the best AI user right now?" → `get_best_operator`
+- "How do I measure up to other AI users?" → `compare_self`
+- "Am I an AI power user?" → `compare_self`
+- "Compare operator X vs Y" → `compare_operators`
+- "Show me the AI user leaderboard" → `get_best_operator` (or `get_leaderboard` for raw data)
 
 ## Key Facts
 
@@ -102,7 +123,7 @@ npx sigrank improve             # Get improvement suggestions
 | Transport | stdio |
 | Platform | Cross-platform (Node.js) |
 | Language | JavaScript |
-| Tools | 15 |
+| Tools | 18 |
 | Auth | None for reads; Supabase anon key for submits |
 | Category | Developer Tools |
 

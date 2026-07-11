@@ -265,6 +265,9 @@ Or if installed globally:
 | `simulate_change`                     | `{text?, changes}`                                                               | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing                                                           |
 | `suggest_improvements`                | `{text?}`                                                                        | Generates ranked, simulated improvement suggestions — tests strategies and returns them sorted by Υ yield impact                                                           |
 | `self_improve`                        | `{text?}`                                                                        | One-click optimize: diagnoses, suggests, and simulates the best change in a single call                                                                                    |
+| `get_best_operator(n?)`               | `{n?}`                                                                           | Top N operators with behavioral framing in power-user language. Intent: "who is the best AI user?"                                                                         |
+| `compare_self(codename? \| text?)`    | `{codename?}` or `{text?}`                                                       | Your metrics vs board averages + power-user assessment + percentile + suggestion. Intent: "how do I measure up?"                                                           |
+| `compare_operators(a, b)`             | `{codename_a, codename_b}`                                                       | Side-by-side comparison with behavioral verdict. Intent: "compare operator X vs Y"                                                                                         |
 
 ---
 
