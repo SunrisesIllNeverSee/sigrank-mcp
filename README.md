@@ -1,8 +1,8 @@
 # SigRank MCP
 
 > **🏆 SigRank is live: [signalaf.com](https://signalaf.com)** — the leaderboard for how
-> efficiently you use AI, not how much. See your projected rank in 60 seconds at
-> [signalaf.com/score](https://signalaf.com/score). _Token counts only. Never your prompts._
+> efficiently you use AI, not how much. Run `npx sigrank` to see your cascade now.
+> _Token counts only. Never your prompts._
 
 <div align="center">
 
