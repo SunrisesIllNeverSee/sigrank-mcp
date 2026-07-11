@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "Operator leaderboard measuring users, not models — 20 tools, TUI, signed submit, privacy-first.",
-  "title": "SigRank — Token Efficiency Leaderboard",
-  "version": "0.18.1",
+  "description": "Operator leaderboard measuring users, not models \u2014 20 tools, TUI, signed submit, privacy-first.",
+  "title": "SigRank \u2014 Token Efficiency Leaderboard",
+  "version": "0.17.2",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "0.18.1",
+      "version": "0.17.2",
       "transport": {
         "type": "stdio"
       },
@@ -26,7 +26,14 @@
     "io.modelcontextprotocol.registry/publisher-provided": {
       "tool": "mcp-publisher",
       "category": "developer-tools",
-      "tags": ["token-efficiency", "leaderboard", "ai-agents", "telemetry", "yield-cascade", "coding-metrics"]
+      "tags": [
+        "token-efficiency",
+        "leaderboard",
+        "ai-agents",
+        "telemetry",
+        "yield-cascade",
+        "coding-metrics"
+      ]
     }
   }
 }

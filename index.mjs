@@ -69,7 +69,7 @@ process.on("unhandledRejection", (reason) => {
 async function startMcpServer() {
   const server = new Server(
     { name: "sigrank", version: serverVersion() },
-    { capabilities: { tools: { listChanged: false } } },
+    { capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false } } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS,
