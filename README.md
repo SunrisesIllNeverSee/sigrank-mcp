@@ -268,6 +268,8 @@ Or if installed globally:
 | `get_best_operator(n?)`               | `{n?}`                                                                           | Top N operators with behavioral framing in power-user language. Intent: "who is the best AI user?"                                                                         |
 | `compare_self(codename? \| text?)`    | `{codename?}` or `{text?}`                                                       | Your metrics vs board averages + power-user assessment + percentile + suggestion. Intent: "how do I measure up?"                                                           |
 | `compare_operators(a, b)`             | `{codename_a, codename_b}`                                                       | Side-by-side comparison with behavioral verdict. Intent: "compare operator X vs Y"                                                                                         |
+| `describe_power_user()`               | `{}`                                                                             | Static explanation of AI power user archetype + metrics explained. Intent: "what is an AI power user?"                                                                     |
+| `optimize_efficiency(codename? \| text?)` | `{codename?}` or `{text?}`                                                   | Ranked efficiency suggestions tied to your cascade shape. Intent: "how can I use AI more efficiently?"                                                                     |
 
 ---
 

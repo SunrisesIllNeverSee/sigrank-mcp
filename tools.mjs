@@ -1222,6 +1222,96 @@ export const TOOLS = [
     },
     outputSchema: COMPARE_OPERATORS_OUTPUT,
   },
+  {
+    name: "describe_power_user",
+    description:
+      "Returns an explanatory description of what makes an AI power user, anchored in SigRank's metrics and operator classes. Explains the yield metric, leverage, velocity, and how class tiers (Burner/Builder/10xer) map to power-user behavior patterns. Use this when users ask 'what is an AI power user?' or 'what makes a good AI user?' or 'describe advanced AI user behavior'. Intent: DESCRIBE_POWER_USER (Informational).",
+    annotations: { title: "Describe power user", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.idempotentHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description:
+        "This tool takes no parameters. It returns a static explanatory response about AI power users.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        description: { type: "string", description: "What is an AI power user" },
+        metrics_explained: {
+          type: "object",
+          description: "How SigRank metrics map to power-user behavior",
+          properties: {
+            yield_: { type: "string", description: "What yield measures in power-user terms" },
+            leverage: { type: "string", description: "What leverage means for power users" },
+            velocity: { type: "string", description: "What velocity means for power users" },
+          },
+        },
+        class_tiers: {
+          type: "array",
+          description: "Operator class tiers and their power-user meaning",
+          items: {
+            type: "object",
+            properties: {
+              class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+              meaning: { type: "string" },
+            },
+          },
+        },
+        link: { type: "string", description: "URL to learn more" },
+      },
+    },
+  },
+  {
+    name: "optimize_efficiency",
+    description:
+      "Returns actionable suggestions for improving your token cascade efficiency, tied to your current metrics. Accepts either a codename (fetches from board) or raw token pillars (computes locally). Returns: your current metrics, ranked efficiency suggestions tied to cascade shape (increase cache reuse, reduce input, increase output), and references to power-user practices. Use this when users ask 'how can I use AI more efficiently?' or 'reduce token burn' or 'optimize token usage' or 'stop tokenmaxxing'. Intent: OPTIMIZE_EFFICIENCY (Informational + Transactional).",
+    annotations: { title: "Optimize efficiency", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.idempotentHint },
+    inputSchema: {
+      type: "object",
+      properties: {
+        codename: {
+          type: "string",
+          description:
+            "Your codename on the SigRank leaderboard. If provided, fetches your live profile from the board.",
+        },
+        text: {
+          type: "string",
+          description:
+            'Alternative: raw token pillars to score locally (ccusage JSON or "input output cacheCreate cacheRead"). Use this if you are not on the board yet.',
+        },
+      },
+      description:
+        "Provide either `codename` (to fetch from the board) or `text` (to score locally). At least one is required.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        your_metrics: {
+          type: "object",
+          description: "Your current cascade metrics",
+          properties: {
+            yield_: { type: "number" },
+            leverage: { type: "number" },
+            velocity: { type: "number" },
+            class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+          },
+        },
+        suggestions: {
+          type: "array",
+          description: "Ranked efficiency suggestions",
+          items: {
+            type: "object",
+            properties: {
+              action: { type: "string", description: "What to change" },
+              why: { type: "string", description: "Why this helps your yield" },
+              power_user_practice: { type: "string", description: "The power-user practice this maps to" },
+            },
+          },
+        },
+        summary: { type: "string", description: "One-line summary of your efficiency status" },
+      },
+    },
+  },
 ];
 
 // tokenpull window key → the board's window_type enum.
@@ -2649,7 +2739,8 @@ export async function callTool(name, args, opts = {}) {
   // See artifacts/004_sigrank-mcp-intent-tools-spec.md for the intent taxonomy.
 
   if (name === "get_best_operator") {
-    const n = Math.min(20, Math.max(1, Number(args?.n) || 5));
+    const rawN = args?.n;
+    const n = Math.min(20, Math.max(1, rawN == null ? 5 : Number(rawN)));
     const board = await fetchJson("/api/v1/leaderboard?metric=yield_");
     const ops = (board.operators || board || []).slice(0, n);
     const total = Array.isArray(board.operators || board)
@@ -2780,6 +2871,106 @@ export async function callTool(name, args, opts = {}) {
       },
       verdict,
       yield_delta: delta,
+    };
+  }
+
+  if (name === "describe_power_user") {
+    return {
+      description:
+        "An AI power user isn't someone who sends the most tokens — it's someone who compounds signal. " +
+        "Power users build workflows where cached context does the heavy lifting, fresh input stays lean, " +
+        "and output per session is high. SigRank quantifies this with the yield metric (Υ = cache_read × output / input²).",
+      metrics_explained: {
+        yield_: "Yield (Υ) measures how well you compound signal, not how much you burn. High yield = your cached context is doing work for you.",
+        leverage: "Leverage (Cr/I) measures how much you reuse prior work vs starting fresh. High leverage = you're building on cached results, not re-explaining everything.",
+        velocity: "Velocity (O/I) measures how much output you get per token spent. High velocity = you're productive, not just active.",
+      },
+      class_tiers: [
+        { class: "10xer", meaning: "AI power user archetype — disciplined, system-level reuse, high output per input. Leverage > 10×, high velocity." },
+        { class: "Builder", meaning: "Building momentum — moderate cache reuse, approaching power-user patterns. Growing leverage and velocity." },
+        { class: "Burner", meaning: "Early-stage — tokens burned more than compounded. Low leverage, low velocity. The shift: reuse prior context." },
+      ],
+      link: "https://signalaf.com/score — check your class tier and yield",
+    };
+  }
+
+  if (name === "optimize_efficiency") {
+    const codename = String(args?.codename || "").trim();
+    const text = String(args?.text || "").trim();
+
+    if (!codename && !text)
+      throw new Error(
+        "optimize_efficiency requires either `codename` (to fetch from the board) or `text` (raw token pillars to score locally).",
+      );
+
+    let metrics;
+    if (codename) {
+      metrics = await fetchJson(
+        `/api/v1/operators/${encodeURIComponent(codename)}`,
+      );
+    } else {
+      if (text.length > MAX_INPUT) {
+        return { error: "input_too_large", detail: `text exceeds ${MAX_INPUT} chars.` };
+      }
+      const pillars = parsePillars(text);
+      const c = withParseWarnings(pillars, cascade(pillars));
+      metrics = {
+        codename: "you (local)",
+        yield_: c.yield,
+        leverage: c.leverage,
+        velocity: c.velocity,
+        class: c.class,
+      };
+    }
+
+    const klass = metrics.class || "Burner";
+    const l = metrics.leverage || 0;
+    const v = metrics.velocity || 0;
+    const y = metrics.yield_ || 0;
+
+    // Build ranked suggestions based on current cascade shape
+    const suggestions = [];
+
+    if (l < 5) {
+      suggestions.push({
+        action: "Increase cache reuse — reuse prompts, templates, and workflows instead of starting from scratch",
+        why: "Your leverage is " + l.toFixed(1) + "×, meaning most of your context is fresh input. Each reused cached token multiplies your yield because input² is in the denominator.",
+        power_user_practice: "Power users build template libraries and workflow patterns they invoke repeatedly, letting cached context accumulate.",
+      });
+    }
+    if (v < 1) {
+      suggestions.push({
+        action: "Increase output per session — produce more, don't just read",
+        why: "Your velocity is " + v.toFixed(2) + ", meaning you're consuming more input than producing output. Yield rewards output production.",
+        power_user_practice: "Power users maximize output per session — they ask AI to generate, transform, and produce, not just explain.",
+      });
+    }
+    if (l >= 5 && v >= 1 && klass !== "10xer") {
+      suggestions.push({
+        action: "Extend session length to compound cached context further",
+        why: "Your leverage (" + l.toFixed(1) + "×) and velocity (" + v.toFixed(2) + ") are solid. Longer sessions with consistent context will push your yield higher.",
+        power_user_practice: "Power users maintain long, context-rich sessions where the cache grows and compounds.",
+      });
+    }
+    if (suggestions.length === 0) {
+      suggestions.push({
+        action: "Maintain your cascade architecture — you're at the top tier",
+        why: "Your yield (" + y.toLocaleString() + "), leverage (" + l.toFixed(1) + "×), and velocity (" + v.toFixed(2) + ") are all strong. Keep doing what you're doing.",
+        power_user_practice: "Power users don't rest on their metrics — they experiment with new workflow patterns and measure the impact.",
+      });
+    }
+
+    const summary = `Your Υ Yield is ${y.toLocaleString()} (${klass}). ${_improvementSuggestion(klass, metrics)}`;
+
+    return {
+      your_metrics: {
+        yield_: y,
+        leverage: l,
+        velocity: v,
+        class: klass,
+      },
+      suggestions,
+      summary,
     };
   }
 

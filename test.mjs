@@ -1520,3 +1520,164 @@ assert.strictEqual(
 console.log(
   "✓ simulate_change: relative + absolute deltas · quadratic penalty · JSON input · negative guard · empty-changes guard",
 );
+
+// ── 14. Intent tools: get_best_operator, compare_self, compare_operators ─────
+// Mock board data for intent tool tests
+const MOCK_BOARD = {
+  operators: [
+    { codename: "Alpha", yield_: 50000, leverage: 100, velocity: 5.0, class: "10xer", rank: 1 },
+    { codename: "Beta", yield_: 30000, leverage: 50, velocity: 3.0, class: "10xer", rank: 2 },
+    { codename: "Gamma", yield_: 10000, leverage: 10, velocity: 2.0, class: "Builder", rank: 3 },
+    { codename: "Delta", yield_: 5000, leverage: 5, velocity: 1.0, class: "Builder", rank: 4 },
+    { codename: "Epsilon", yield_: 1000, leverage: 2, velocity: 0.5, class: "Burner", rank: 5 },
+  ],
+};
+
+const mockBoardFetch = async (url) => {
+  if (url.includes("/api/v1/leaderboard")) {
+    return { ok: true, status: 200, json: async () => MOCK_BOARD };
+  }
+  if (url.includes("/api/v1/operators/")) {
+    const name = decodeURIComponent(url.split("/operators/")[1]);
+    const op = MOCK_BOARD.operators.find(
+      (o) => o.codename.toLowerCase() === name.toLowerCase(),
+    );
+    if (!op) return { ok: false, status: 404, json: async () => ({ error: "not found" }) };
+    return { ok: true, status: 200, json: async () => op };
+  }
+  return { ok: false, status: 404, json: async () => ({ error: "not found" }) };
+};
+
+// get_best_operator: default n=5, returns behavioral_framing + summary
+const bestDefault = await callTool(
+  "get_best_operator",
+  {},
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(bestDefault.top_operators.length, 5, "get_best_operator: default returns 5");
+assert.strictEqual(bestDefault.total_operators, 5, "get_best_operator: total_operators correct");
+assert.ok(bestDefault.summary.includes("Alpha"), "get_best_operator: summary names top operator");
+assert.ok(
+  bestDefault.top_operators[0].behavioral_framing.includes("power-user"),
+  "get_best_operator: 10xer framing mentions power-user",
+);
+
+// get_best_operator: n=3
+const best3 = await callTool(
+  "get_best_operator",
+  { n: 3 },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(best3.top_operators.length, 3, "get_best_operator: n=3 returns 3");
+
+// get_best_operator: n=0 clamps to 1
+const best1 = await callTool(
+  "get_best_operator",
+  { n: 0 },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(best1.top_operators.length, 1, "get_best_operator: n=0 clamps to 1");
+
+// compare_self: via codename
+const selfByCodename = await callTool(
+  "compare_self",
+  { codename: "Gamma" },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(selfByCodename.your_metrics.codename, "Gamma", "compare_self: codename fetched");
+assert.ok(
+  selfByCodename.power_user_assessment.includes("power user"),
+  "compare_self: assessment mentions power user",
+);
+assert.ok(
+  typeof selfByCodename.comparison.percentile === "number",
+  "compare_self: percentile is a number",
+);
+assert.ok(
+  selfByCodename.suggestion.length > 10,
+  "compare_self: suggestion is non-trivial",
+);
+
+// compare_self: via text (local parse)
+const selfByText = await callTool(
+  "compare_self",
+  { text: MOSES },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(selfByText.your_metrics.codename, "you (local)", "compare_self: text → local parse");
+assert.ok(
+  selfByText.your_metrics.yield_ > 0,
+  "compare_self: text → yield computed",
+);
+
+// compare_self: missing both args → throws
+assert.rejects(
+  callTool("compare_self", {}, { apiBase: "http://test.local", fetchImpl: mockBoardFetch }),
+  /requires either/,
+  "compare_self: missing args throws",
+);
+
+// compare_operators: canon
+const cmp = await callTool(
+  "compare_operators",
+  { codename_a: "Alpha", codename_b: "Beta" },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.strictEqual(cmp.operator_a.codename, "Alpha", "compare_operators: operator_a fetched");
+assert.strictEqual(cmp.operator_b.codename, "Beta", "compare_operators: operator_b fetched");
+assert.ok(cmp.yield_delta > 0, "compare_operators: yield_delta positive (Alpha > Beta)");
+assert.ok(cmp.verdict.includes("Alpha"), "compare_operators: verdict names winner");
+
+// compare_operators: missing arg → throws
+assert.rejects(
+  callTool("compare_operators", { codename_a: "Alpha" }, { apiBase: "http://test.local", fetchImpl: mockBoardFetch }),
+  /requires both/,
+  "compare_operators: missing codename_b throws",
+);
+
+console.log(
+  "✓ intent tools: get_best_operator (default/n=3/clamp) · compare_self (codename/text/missing) · compare_operators (canon/missing)",
+);
+
+// ── 15. Optional intent tools: describe_power_user, optimize_efficiency ──────
+
+// describe_power_user: static response, no params needed
+const descPower = await callTool("describe_power_user", {});
+assert.ok(descPower.description.includes("power user"), "describe_power_user: description mentions power user");
+assert.ok(descPower.metrics_explained.yield_.includes("Yield"), "describe_power_user: yield explained");
+assert.ok(descPower.metrics_explained.leverage.includes("reuse"), "describe_power_user: leverage explained");
+assert.ok(descPower.class_tiers.length === 3, "describe_power_user: 3 class tiers");
+assert.ok(descPower.class_tiers[0].class === "10xer", "describe_power_user: first tier is 10xer");
+assert.ok(descPower.link.includes("signalaf.com"), "describe_power_user: link to signalaf.com");
+
+// optimize_efficiency: via codename (Builder class, low leverage)
+const optByCodename = await callTool(
+  "optimize_efficiency",
+  { codename: "Gamma" },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.ok(optByCodename.your_metrics.class === "Builder", "optimize_efficiency: class fetched");
+assert.ok(optByCodename.suggestions.length > 0, "optimize_efficiency: suggestions returned");
+assert.ok(optByCodename.suggestions[0].action.length > 10, "optimize_efficiency: suggestion has action");
+assert.ok(optByCodename.suggestions[0].power_user_practice.length > 10, "optimize_efficiency: suggestion has power-user practice");
+assert.ok(optByCodename.summary.includes("Yield"), "optimize_efficiency: summary mentions yield");
+
+// optimize_efficiency: via text (local parse — MOSES = high leverage)
+const optByText = await callTool(
+  "optimize_efficiency",
+  { text: MOSES },
+  { apiBase: "http://test.local", fetchImpl: mockBoardFetch },
+);
+assert.ok(optByText.your_metrics.yield_ > 0, "optimize_efficiency: text → yield computed");
+assert.ok(optByText.suggestions.length > 0, "optimize_efficiency: text → suggestions returned");
+
+// optimize_efficiency: missing both args → throws
+assert.rejects(
+  callTool("optimize_efficiency", {}, { apiBase: "http://test.local", fetchImpl: mockBoardFetch }),
+  /requires either/,
+  "optimize_efficiency: missing args throws",
+);
+
+console.log(
+  "✓ optional intent tools: describe_power_user (static) · optimize_efficiency (codename/text/missing)",
+);

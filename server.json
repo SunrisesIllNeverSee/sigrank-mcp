@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "Operator leaderboard measuring users, not models — 18 tools, TUI, signed submit, privacy-first.",
+  "description": "Operator leaderboard measuring users, not models — 20 tools, TUI, signed submit, privacy-first.",
   "title": "SigRank — Token Efficiency Leaderboard",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "0.18.0",
+      "version": "0.18.1",
       "transport": {
         "type": "stdio"
       },

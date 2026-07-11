@@ -64,7 +64,7 @@ npx sigrank diagnose            # Diagnose cascade inefficiencies
 npx sigrank improve             # Get improvement suggestions
 ```
 
-## The 18 MCP Tools
+## The 20 MCP Tools
 
 ### Read-only (no auth required)
 
@@ -84,25 +84,29 @@ npx sigrank improve             # Get improvement suggestions
 | 12 | `get_best_operator` | Top N operators with behavioral framing in power-user language. **Intent:** "who is the best AI user?" / "show me the AI user leaderboard". Wraps `get_leaderboard` with plain-language interpretation of each operator's cascade. |
 | 13 | `compare_self` | Your metrics vs board averages + power-user assessment + percentile + actionable suggestion. **Intent:** "how do I measure up to other AI users?" / "am I a power user?" Accepts codename (from board) or raw token pillars (local). |
 | 14 | `compare_operators` | Side-by-side comparison of two operators with behavioral verdict. **Intent:** "compare operator X vs Y" / "who is more efficient". Returns both operators' metrics + verdict in power-user language. |
+| 15 | `describe_power_user` | Static explanation of what makes an AI power user, with metrics explained and class tier meanings. **Intent:** "what is an AI power user?" / "what makes a good AI user?" |
+| 16 | `optimize_efficiency` | Ranked efficiency suggestions tied to your current cascade shape. **Intent:** "how can I use AI more efficiently?" / "reduce token burn" / "stop tokenmaxxing". Accepts codename or raw token pillars. |
 
 ### Write (submit to board)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 15 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
-| 16 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
-| 17 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
-| 18 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+| 17 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
+| 18 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
+| 19 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
+| 20 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
 
 ## Intent Taxonomy
 
-The intent-based tools (12-14) are designed to map natural-language queries to the right MCP call. Calling agents and LLMs can use these intent mappings to route user questions:
+The intent-based tools (12-16) are designed to map natural-language queries to the right MCP call. Calling agents and LLMs can use these intent mappings to route user questions:
 
 | Intent | Trigger phrases | Tool |
 |--------|----------------|------|
 | `BEST_OPERATOR` | "who is the best AI user?", "AI user leaderboard", "AI champions", "top AI operator" | `get_best_operator` |
 | `COMPARE_SELF` | "how do I measure up?", "am I a power user?", "compare me to others", "am I using AI well?" | `compare_self` |
 | `COMPARE_OPERATORS` | "compare operator X vs Y", "who is more efficient?", "how do two AI users compare?" | `compare_operators` |
+| `DESCRIBE_POWER_USER` | "what is an AI power user?", "what makes a good AI user?", "describe advanced AI user behavior" | `describe_power_user` |
+| `OPTIMIZE_EFFICIENCY` | "optimize token usage", "reduce token burn", "use AI efficiently", "stop tokenmaxxing" | `optimize_efficiency` |
 
 ### Example prompt → tool mappings
 
@@ -110,6 +114,8 @@ The intent-based tools (12-14) are designed to map natural-language queries to t
 - "How do I measure up to other AI users?" → `compare_self`
 - "Am I an AI power user?" → `compare_self`
 - "Compare operator X vs Y" → `compare_operators`
+- "What is an AI power user?" → `describe_power_user`
+- "How can I use AI more efficiently?" → `optimize_efficiency`
 - "Show me the AI user leaderboard" → `get_best_operator` (or `get_leaderboard` for raw data)
 
 ## Key Facts
@@ -123,7 +129,7 @@ The intent-based tools (12-14) are designed to map natural-language queries to t
 | Transport | stdio |
 | Platform | Cross-platform (Node.js) |
 | Language | JavaScript |
-| Tools | 18 |
+| Tools | 20 |
 | Auth | None for reads; Supabase anon key for submits |
 | Category | Developer Tools |
 
