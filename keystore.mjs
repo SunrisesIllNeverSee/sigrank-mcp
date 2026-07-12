@@ -19,11 +19,15 @@ import {
   existsSync,
   chmodSync,
   unlinkSync,
+  readdirSync,
+  copyFileSync,
 } from "node:fs";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 
 const DIR = join(homedir(), ".sigrank-mcp");
 const PATH = join(DIR, "identity.json");
+const BACKUP_PREFIX = "identity.json.bak-";
+const MAX_BACKUPS = 5;
 
 /** SPKI DER prefix length for an ed25519 public key (12 bytes before the raw 32). */
 const SPKI_PREFIX_LEN = 12;
@@ -54,13 +58,25 @@ export function loadIdentity() {
   }
 }
 
-/** Write the identity with strict perms (dir 0700, file 0600). */
+/** Write the identity with strict perms (dir 0700, file 0600). Backs up the existing
+ * file before overwriting so a corrupt write or accidental reset can be recovered. */
 export function persistIdentity(identity) {
   mkdirSync(DIR, { recursive: true });
   try {
     chmodSync(DIR, 0o700);
   } catch {
     /* best-effort on platforms without chmod */
+  }
+  // Back up the existing identity before overwriting (resilience: if the write
+  // fails or the file is later lost, the backup carries the binding + keys).
+  if (existsSync(PATH)) {
+    try {
+      const stamp = Date.now();
+      copyFileSync(PATH, join(DIR, `${BACKUP_PREFIX}${stamp}`));
+      pruneBackups();
+    } catch {
+      /* best-effort — don't block the write */
+    }
   }
   writeFileSync(PATH, `${JSON.stringify(identity, null, 2)}\n`, {
     mode: 0o600,
@@ -118,6 +134,9 @@ export function bindingForFreshIdentity(existing, fresh) {
 /**
  * Load the existing identity, or generate + persist a fresh one. Idempotent: a
  * complete existing identity is returned untouched (never rotates a live key).
+ * Self-healing: if the identity has keys + device_id but no codename (binding
+ * lost via partial write / version transition), scans backups for a matching
+ * device_id and restores the binding before returning.
  */
 export function ensureIdentity() {
   const existing = loadIdentity();
@@ -126,6 +145,16 @@ export function ensureIdentity() {
     existing?.public_key &&
     existing?.device_id
   ) {
+    // Self-healing: keys present but binding lost → try to restore from backups.
+    if (!existing.codename || !existing.operator_id) {
+      const restored = restoreBindingFromBackups(existing.device_id);
+      if (restored) {
+        existing.codename = restored.codename;
+        existing.operator_id = restored.operator_id;
+        existing.enrolled_at = restored.enrolled_at;
+        return persistIdentity(existing);
+      }
+    }
     return existing;
   }
   // Regeneration path: a partial/corrupt record. The binding is tied to device_id —
@@ -159,4 +188,55 @@ export function clearIdentity() {
   } catch {
     /* best-effort */
   }
+}
+
+/** Keep at most MAX_BACKUPS backup files (oldest deleted first). */
+function pruneBackups() {
+  try {
+    const files = readdirSync(DIR)
+      .filter((f) => f.startsWith(BACKUP_PREFIX))
+      .sort(); // timestamp-suffixed → lexicographic = chronological
+    while (files.length > MAX_BACKUPS) {
+      unlinkSync(join(DIR, files.shift()));
+    }
+  } catch {
+    /* best-effort */
+  }
+}
+
+/** Scan backup files for one with the same device_id that carries a codename +
+ * operator_id binding. Returns { codename, operator_id, enrolled_at } or null.
+ * Used by ensureIdentity() to self-heal when the live file lost its binding
+ * (e.g. a partial write or version transition that preserved keys but dropped
+ * the binding metadata). Only restores from a backup with the SAME device_id —
+ * never crosses device boundaries (Frankenstein-identity guard). */
+export function restoreBindingFromBackups(device_id) {
+  if (!device_id) return null;
+  try {
+    const files = readdirSync(DIR)
+      .filter((f) => f.startsWith(BACKUP_PREFIX))
+      .sort()
+      .reverse(); // newest first — prefer the most recent binding
+    for (const f of files) {
+      try {
+        const bak = JSON.parse(readFileSync(join(DIR, f), "utf-8"));
+        if (
+          bak.device_id === device_id &&
+          bak.codename &&
+          bak.operator_id
+        ) {
+          return {
+            codename: bak.codename,
+            operator_id: bak.operator_id,
+            enrolled_at: bak.enrolled_at ?? null,
+          };
+        }
+      } catch {
+        /* skip corrupt backups */
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return null;
 }

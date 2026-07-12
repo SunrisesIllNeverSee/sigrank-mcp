@@ -16,6 +16,7 @@ import {
   generateIdentity,
   bindingForFreshIdentity,
   clearIdentity,
+  restoreBindingFromBackups,
 } from "./keystore.mjs";
 import { verifyPayload } from "./sign.mjs";
 import { isSignedIn, isCodeChar } from "./connect.mjs";
@@ -1375,6 +1376,90 @@ assert.strictEqual(
 console.log(
   "✓ A-REAL: binding invalidation on device_id change · clearIdentity exported",
 );
+
+// ── RESILIENCE (0.17.3): keystore self-healing + device_already_enrolled recovery ──
+// restoreBindingFromBackups is the pure scan: given a device_id, find a backup
+// with a matching device_id that carries a codename+operator_id. Returns null
+// when no match, null when device_id is null, and never crosses device boundaries.
+// (Pure read — no writes to the live identity.)
+assert.strictEqual(
+  restoreBindingFromBackups(null),
+  null,
+  "RESILIENCE: null device_id → null",
+);
+assert.strictEqual(
+  restoreBindingFromBackups("nonexistent-device-id-12345"),
+  null,
+  "RESILIENCE: no matching backup → null",
+);
+console.log("✓ RESILIENCE: restoreBindingFromBackups null/no-match guards");
+
+// device_already_enrolled recovery: if the server returns this reason WITH
+// codename+operator_id, enroll should recover the binding (status: enrolled,
+// recovered: true) instead of erroring.
+const alreadyEnrolledFetch = async () => ({
+  ok: false,
+  status: 409,
+  json: async () => ({
+    reason: "device_already_enrolled",
+    codename: "RecoveredOperator",
+    operator_id: "op_recovered",
+    trust_status: "trusted",
+  }),
+});
+const recovered = await callTool(
+  "enroll",
+  { code: "SIGR-RECOVER-TEST" },
+  {
+    apiBase: "http://test.local",
+    fetchImpl: alreadyEnrolledFetch,
+    identity: testIdentity,
+  },
+);
+assert.strictEqual(
+  recovered.status,
+  "enrolled",
+  "RESILIENCE: device_already_enrolled with binding → recovered as enrolled",
+);
+assert.strictEqual(
+  recovered.codename,
+  "RecoveredOperator",
+  "RESILIENCE: recovered codename surfaced",
+);
+assert.strictEqual(
+  recovered.recovered,
+  true,
+  "RESILIENCE: recovered flag set",
+);
+console.log("✓ RESILIENCE: device_already_enrolled recovery path");
+
+// device_already_enrolled WITHOUT binding → still errors (server doesn't know
+// the binding, can't recover).
+const alreadyEnrolledNoBindingFetch = async () => ({
+  ok: false,
+  status: 409,
+  json: async () => ({ reason: "device_already_enrolled" }),
+});
+const notRecovered = await callTool(
+  "enroll",
+  { code: "SIGR-NO-BINDING" },
+  {
+    apiBase: "http://test.local",
+    fetchImpl: alreadyEnrolledNoBindingFetch,
+    identity: testIdentity,
+  },
+);
+assert.strictEqual(
+  notRecovered.status,
+  "error",
+  "RESILIENCE: device_already_enrolled without binding → error (no recovery possible)",
+);
+assert.strictEqual(
+  notRecovered.reason,
+  "device_already_enrolled",
+  "RESILIENCE: reason preserved when no binding to recover",
+);
+console.log("✓ RESILIENCE: device_already_enrolled without binding → error");
 
 // ── E2 (0.12.0): 1MB oversized-input guard — reject before any parse / network ──
 const big = "x".repeat(1_000_001);

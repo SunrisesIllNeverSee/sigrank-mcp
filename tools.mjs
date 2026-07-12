@@ -1461,6 +1461,30 @@ export async function callTool(name, args, opts = {}) {
         trust_status: ack.trust_status ?? "trusted",
       };
     }
+    // Recovery: if the server says device_already_enrolled but includes the
+    // codename/operator_id, the device IS bound server-side — record it locally
+    // and return enrolled instead of erroring. This handles the case where the
+    // local binding was lost (partial write, version transition) but the device
+    // is still enrolled server-side.
+    if (
+      ack.reason === "device_already_enrolled" &&
+      ack.codename &&
+      ack.operator_id
+    ) {
+      if (!opts.identity)
+        recordEnrollment({
+          codename: ack.codename,
+          operator_id: ack.operator_id,
+        });
+      return {
+        status: "enrolled",
+        codename: ack.codename,
+        operator_id: ack.operator_id,
+        device_id: id.device_id,
+        trust_status: ack.trust_status ?? "trusted",
+        recovered: true,
+      };
+    }
     return {
       status: "error",
       httpStatus: res.status,

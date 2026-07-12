@@ -2049,7 +2049,7 @@ export async function runTui({
       renderConnect(connectId, codeBuf, connectMsg);
       const signOutHint = isSignedIn(connectId)
         ? `   ${dim("[X]")} sign out`
-        : "";
+        : "   " + dim("[X]") + " reset device";
       setFooter([
         `  ${hr()}`,
         `  ${dim("[Enter]")} sign in   ${dim("[Esc]")} clear/back${signOutHint}   ${dim("← →")} tabs   ${dim("[Q]")} quit`,
@@ -2166,14 +2166,16 @@ export async function runTui({
           try {
             const out = await callTool("enroll", { code });
             if (out.status === "enrolled") {
-              connectMsg = `${green("✓")} signed in as ${cyan(out.codename || "(operator)")}`;
+              connectMsg = out.recovered
+                ? `${green("✓")} recovered account: ${cyan(out.codename || "(operator)")} ${dim("(device was already bound)")}`
+                : `${green("✓")} signed in as ${cyan(out.codename || "(operator)")}`;
               codeBuf = "";
             } else {
               const reasons = {
                 code_invalid:
                   "that code is invalid, expired, or already used — generate a fresh one.",
                 device_already_enrolled:
-                  'this device is already signed in. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
+                  'this device is already bound. Press [X] to reset the device, then paste a fresh code from signalaf.com → Settings → "New key".',
                 bad_request: "the code or device key was malformed.",
                 rate_limited:
                   "too many attempts — wait a few minutes and retry.",
@@ -2214,14 +2216,20 @@ export async function runTui({
           await redraw();
           return;
         } // backspace
-        // [X] sign out / reset — only when signed in AND the code field is empty (so an
-        // 'x' typed mid-code still feeds the buffer). Drops the stale local credential so
-        // a server-revoked device stops reading as "signed in" + the next enroll provisions
-        // a fresh device_id (escapes the Frankenstein-identity / 409-re-enroll deadlock).
-        if (k === "x" && !codeBuf && isSignedIn(loadIdentity())) {
+        // [X] sign out / reset — when the code field is empty (so an 'x' typed mid-code
+        // still feeds the buffer). Drops the local credential so a server-revoked OR
+        // server-enrolled-but-locally-unbound device stops holding a stale device_id,
+        // and the next enroll provisions a fresh device_id (escapes the Frankenstein-
+        // identity / 409-re-enroll deadlock). Works whether or not isSignedIn() —
+        // otherwise a device enrolled server-side but unbound locally is un-escapable
+        // (can't sign in: device_already_enrolled; can't sign out: X gated off).
+        if (k === "x" && !codeBuf) {
+          const wasSignedIn = isSignedIn(loadIdentity());
           clearIdentity();
           codeBuf = "";
-          connectMsg = `${green("✓")} signed out — paste a new code to sign in`;
+          connectMsg = wasSignedIn
+            ? `${green("✓")} signed out — paste a new code to sign in`
+            : `${green("✓")} device reset — paste a new code to sign in`;
           await redraw();
           return;
         }
