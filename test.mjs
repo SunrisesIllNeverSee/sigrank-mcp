@@ -1733,7 +1733,13 @@ assert.ok(descPower.metrics_explained.yield_.includes("Yield"), "describe_power_
 assert.ok(descPower.metrics_explained.leverage.includes("reuse"), "describe_power_user: leverage explained");
 assert.ok(descPower.class_tiers.length === 3, "describe_power_user: 3 class tiers");
 assert.ok(descPower.class_tiers[0].class === "10xer", "describe_power_user: first tier is 10xer");
-assert.ok(descPower.link.includes("signalaf.com"), "describe_power_user: link to signalaf.com");
+// Parse the URL properly instead of substring check (CodeQL: js/incomplete-url-substring-sanitization)
+const _descLinkUrl = new URL(descPower.link);
+assert.ok(
+  _descLinkUrl.hostname === "signalaf.com" ||
+    _descLinkUrl.hostname.endsWith(".signalaf.com"),
+  "describe_power_user: link hostname is signalaf.com",
+);
 
 // optimize_efficiency: via codename (Builder class, low leverage)
 const optByCodename = await callTool(
