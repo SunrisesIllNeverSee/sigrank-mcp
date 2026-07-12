@@ -2192,9 +2192,11 @@ export async function runTui({
                   "sign-in is temporarily unavailable — try again shortly.",
               };
               connectMsg = `${red("✗")} ${reasons[out.reason] || `sign-in failed (${out.reason || "unknown"}).`}`;
+              codeBuf = ""; // auto-clear on failure — the code is consumed/invalid
             }
           } catch (e) {
             connectMsg = `${red("✗")} ${e.message}`;
+            codeBuf = ""; // auto-clear on error too
           }
           await redraw();
           return;
@@ -2225,13 +2227,13 @@ export async function runTui({
           await redraw();
           return;
         } // backspace
-        // [X] sign out / reset — when the code field is empty (so an 'x' typed mid-code
-        // still feeds the buffer). Drops the local credential so a server-revoked OR
-        // server-enrolled-but-locally-unbound device stops holding a stale device_id,
-        // and the next enroll provisions a fresh device_id (escapes the Frankenstein-
-        // identity / 409-re-enroll deadlock). Works whether or not isSignedIn() —
-        // otherwise a device enrolled server-side but unbound locally is un-escapable
-        // (can't sign in: device_already_enrolled; can't sign out: X gated off).
+        // [X] sign out / reset — only when the code field is empty (so 'x'/'X' typed
+        // mid-code still feeds the buffer — codes can contain X). The auto-clear on
+        // sign-in failure (above) ensures the buffer is empty after a failed attempt,
+        // so X works immediately when the user wants to reset. Drops the local
+        // credential so a server-revoked OR server-enrolled-but-locally-unbound device
+        // stops holding a stale device_id, and the next enroll provisions a fresh
+        // device_id (escapes the Frankenstein-identity / 409-re-enroll deadlock).
         if (k === "x" && !codeBuf) {
           const wasSignedIn = isSignedIn(loadIdentity());
           clearIdentity();
