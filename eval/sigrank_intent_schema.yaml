@@ -1,0 +1,133 @@
+# sigrank_intent_schema.yaml — Intent taxonomy for SigRank MCP server
+#
+# Source: Perplexity v2 conversation turns 24-25
+# Foundation: SHARED_DESIGN_DECISIONS.md §1 (CTA hierarchy), §3 (metrics display)
+#
+# This is the canonical intent schema. Each intent maps to an MCP tool,
+# a set of trigger phrases, and an expected CTA string.
+#
+# Routing policy:
+#   - Single-intent default, multi-intent allowed
+#   - Confidence threshold: 0.78
+#   - Fallback: ask clarifying question
+
+server_name: sigrank-mcp
+version: "0.0.177"
+description: >-
+  AI operator leaderboard and benchmarking tools for comparing AI users,
+  power users, and operator efficiency.
+
+intent_taxonomy:
+  - name: BEST_OPERATOR_INTENT
+    description: >-
+      User wants to know who is the best AI user/operator or wants
+      top-ranked operators.
+    examples:
+      - who is the best AI user
+      - show me the top operators
+      - who tops the leaderboard
+      - who is winning right now
+      - who is the best at using AI
+      - who is the best operator
+      - show me the leaderboard
+    tool: get_best_operator
+    expected_cta: Check my rank
+
+  - name: COMPARE_SELF_INTENT
+    description: >-
+      User wants to compare their AI usage or operator profile
+      against other users.
+    examples:
+      - how do I measure up
+      - compare my AI usage to others
+      - am I a power user
+      - where do I rank
+      - how do I compare to other users
+      - am I doing well with AI
+      - am I better than average users
+    tool: compare_self
+    expected_cta: See where I stand
+
+  - name: COMPARE_OPERATORS_INTENT
+    description: >-
+      User wants to compare two or more operators or see a
+      side-by-side ranking.
+    examples:
+      - compare operator A and operator B
+      - who is more efficient
+      - show me a side by side ranking
+      - compare these two users
+    tool: compare_operators
+    expected_cta: Compare me to others
+
+  - name: DESCRIBE_POWER_USER_INTENT
+    description: >-
+      User wants to understand what power users do or what
+      distinguishes advanced AI users.
+    examples:
+      - what makes a power user
+      - how do advanced AI users work
+      - what is an AI power user
+      - how do I become a better AI user
+      - explain the scoring
+    tool: describe_power_user
+    expected_cta: Learn the scoring
+
+  - name: OPTIMIZE_EFFICIENCY_INTENT
+    description: >-
+      User wants to improve token efficiency, reduce waste,
+      or optimize AI usage.
+    examples:
+      - how do I use fewer tokens
+      - how can I be more efficient
+      - reduce token burn
+      - optimize my AI workflow
+      - how can I rank higher
+    tool: optimize_efficiency
+    expected_cta: Improve my score
+
+  - name: SIGN_UP_OR_SUBMIT_INTENT
+    description: >-
+      User wants to enroll, submit metrics, or publish a
+      verified snapshot.
+    examples:
+      - sign me up
+      - submit my usage
+      - enroll me
+      - publish my snapshot
+    tool: submit_verified
+    expected_cta: Join the leaderboard
+
+routing_policy:
+  single_intent_default: true
+  allow_multi_intent: true
+  confidence_threshold: 0.78
+  fallback_action: ask_clarifying_question
+
+# CTA hierarchy per SHARED_DESIGN_DECISIONS.md §1
+cta_hierarchy:
+  primary: Check my rank
+  secondary: Compare me to others
+  tertiary: Join the leaderboard
+
+# Response style per SHARED_DESIGN_DECISIONS.md §4
+# "You rank #12 of 47 operators. Top operator is X with Υ 18436.98.
+#  You're 23% above average, 15% below top."
+# NOT just "Your Υ is 14200."
+response_style: factual_competitive
+
+# Metrics display per SHARED_DESIGN_DECISIONS.md §3
+# Every tool response that includes operator data must show:
+#   - rank (position on the leaderboard)
+#   - percentile (where you sit relative to all operators)
+#   - class_tier (e.g., Top Operator, Power User, Average)
+#   - delta_from_average (how far above/below the median)
+#   - delta_from_top (how far from #1)
+#   - shareable_url (link to operator's profile/rank card)
+required_metrics_display:
+  - rank
+  - percentile
+  - class_tier
+  - delta_from_average
+  - delta_from_top
+  - shareable_url

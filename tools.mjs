@@ -2856,6 +2856,7 @@ export async function callTool(name, args, opts = {}) {
     const top = ops.map((op) => ({
       ...op,
       behavioral_framing: _behavioralFraming(op),
+      competitive: _competitiveLayer(op, board),
     }));
 
     const best = top[0];
@@ -2863,7 +2864,13 @@ export async function callTool(name, args, opts = {}) {
       ? `${best.codename} tops the SigRank leaderboard at Υ ${best.yield_?.toLocaleString?.() || best.yield_} — ${_behavioralFraming(best)}`
       : "No operators on the board yet.";
 
-    return { top_operators: top, total_operators: total, summary };
+    return {
+      top_operators: top,
+      total_operators: total,
+      summary,
+      cta: "Check my rank",
+      shareable_url: best ? `${DEFAULT_API_BASE}/operator/${encodeURIComponent(best.codename)}` : null,
+    };
   }
 
   if (name === "compare_self") {
@@ -2925,6 +2932,10 @@ export async function callTool(name, args, opts = {}) {
 
     const suggestion = _improvementSuggestion(klass, yourMetrics);
 
+    // Competitive layer per SHARED_DESIGN_DECISIONS.md §3/§4/§5
+    const competitive = _competitiveLayer(yourMetrics, board);
+    const competitiveSummary = _competitiveSummary(yourMetrics, board);
+
     return {
       your_metrics: yourMetrics,
       power_user_assessment: powerUserAssessment,
@@ -2932,8 +2943,16 @@ export async function callTool(name, args, opts = {}) {
         your_yield_vs_avg: yieldVsAvg,
         your_class_meaning: classMeaning,
         percentile,
+        rank: competitive.rank,
+        total_operators: competitive.total_operators,
+        class_tier: competitive.class_tier,
+        delta_from_average: competitive.delta_from_average,
+        delta_from_top: competitive.delta_from_top,
       },
+      competitive_summary: competitiveSummary,
+      shareable_url: competitive.shareable_url,
       suggestion,
+      cta: "See where I stand",
     };
   }
 
@@ -2945,9 +2964,10 @@ export async function callTool(name, args, opts = {}) {
         "compare_operators requires both `codename_a` and `codename_b`.",
       );
 
-    const [opA, opB] = await Promise.all([
+    const [opA, opB, board] = await Promise.all([
       fetchJson(`/api/v1/operators/${encodeURIComponent(nameA)}`),
       fetchJson(`/api/v1/operators/${encodeURIComponent(nameB)}`),
+      fetchJson("/api/v1/leaderboard?metric=yield_"),
     ]);
 
     const yieldA = opA.yield_ || 0;
@@ -2966,6 +2986,7 @@ export async function callTool(name, args, opts = {}) {
         velocity: opA.velocity,
         class: opA.class,
         rank: opA.rank,
+        competitive: _competitiveLayer(opA, board),
       },
       operator_b: {
         codename: opB.codename,
@@ -2974,9 +2995,11 @@ export async function callTool(name, args, opts = {}) {
         velocity: opB.velocity,
         class: opB.class,
         rank: opB.rank,
+        competitive: _competitiveLayer(opB, board),
       },
       verdict,
       yield_delta: delta,
+      cta: "Compare me to others",
     };
   }
 
@@ -2997,6 +3020,8 @@ export async function callTool(name, args, opts = {}) {
         { class: "Burner", meaning: "Early-stage — tokens burned more than compounded. Low leverage, low velocity. The shift: reuse prior context." },
       ],
       link: "https://signalaf.com/score — check your class tier and yield",
+      shareable_url: `${DEFAULT_API_BASE}/score`,
+      cta: "Learn the scoring",
     };
   }
 
@@ -3068,6 +3093,11 @@ export async function callTool(name, args, opts = {}) {
 
     const summary = `Your Υ Yield is ${y.toLocaleString()} (${klass}). ${_improvementSuggestion(klass, metrics)}`;
 
+    // Competitive layer per SHARED_DESIGN_DECISIONS.md §3/§4/§5
+    const board = await fetchJson("/api/v1/leaderboard?metric=yield_");
+    const competitive = _competitiveLayer(metrics, board);
+    const competitiveSummary = _competitiveSummary(metrics, board);
+
     return {
       your_metrics: {
         yield_: y,
@@ -3075,8 +3105,19 @@ export async function callTool(name, args, opts = {}) {
         velocity: v,
         class: klass,
       },
+      competitive: {
+        rank: competitive.rank,
+        total_operators: competitive.total_operators,
+        percentile: competitive.percentile,
+        class_tier: competitive.class_tier,
+        delta_from_average: competitive.delta_from_average,
+        delta_from_top: competitive.delta_from_top,
+      },
+      competitive_summary: competitiveSummary,
+      shareable_url: competitive.shareable_url,
       suggestions,
       summary,
+      cta: "Improve my score",
     };
   }
 
@@ -3084,6 +3125,90 @@ export async function callTool(name, args, opts = {}) {
 }
 
 // ── Intent tool helpers — behavioral framing in power-user language ──────────
+
+/**
+ * Competitive layer for tool responses per SHARED_DESIGN_DECISIONS.md §3/§4/§5.
+ * Every tool response that includes operator data must show:
+ *   rank, percentile, class_tier, delta_from_average, delta_from_top, shareable_url
+ * Response style: factual + competitive ("You rank #12 of 47 operators...")
+ */
+function _competitiveLayer(op, board) {
+  const allOps = Array.isArray(board?.operators || board) ? (board.operators || board) : [];
+  const yields = allOps.map((o) => o.yield_ || 0).sort((a, b) => a - b);
+  const yourYield = op.yield_ || 0;
+  const total = allOps.length;
+
+  // Rank: find operator's position (1-based)
+  let rank = op.rank || null;
+  if (!rank && total > 0) {
+    const sorted = [...allOps].sort((a, b) => (b.yield_ || 0) - (a.yield_ || 0));
+    const idx = sorted.findIndex((o) => o.codename === op.codename);
+    rank = idx >= 0 ? idx + 1 : null;
+  }
+
+  // Percentile: % of operators with yield below this operator
+  const percentile = total > 0
+    ? Math.round((yields.filter((y) => y < yourYield).length / total) * 100)
+    : 0;
+
+  // Delta from average
+  const avgYield = total > 0 ? yields.reduce((s, y) => s + y, 0) / total : 0;
+  const deltaFromAvg = avgYield > 0
+    ? { absolute: Math.round(yourYield - avgYield),
+        percent: Math.round(((yourYield - avgYield) / avgYield) * 100) }
+    : { absolute: 0, percent: 0 };
+
+  // Delta from top operator
+  const topYield = total > 0 ? Math.max(...yields) : 0;
+  const deltaFromTop = topYield > 0
+    ? { absolute: Math.round(topYield - yourYield),
+        percent: Math.round(((topYield - yourYield) / topYield) * 100) }
+    : { absolute: 0, percent: 0 };
+
+  // Shareable URL
+  const shareableUrl = op.codename && op.codename !== "you (local)"
+    ? `${DEFAULT_API_BASE}/operator/${encodeURIComponent(op.codename)}`
+    : null;
+
+  return {
+    rank,
+    total_operators: total,
+    percentile,
+    class_tier: op.class || "Burner",
+    delta_from_average: deltaFromAvg,
+    delta_from_top: deltaFromTop,
+    shareable_url: shareableUrl,
+  };
+}
+
+/** Factual + competitive summary line per SHARED_DESIGN_DECISIONS.md §4 */
+function _competitiveSummary(op, board) {
+  const cl = _competitiveLayer(op, board);
+  const parts = [];
+
+  if (cl.rank && cl.total_operators > 0) {
+    parts.push(`You rank #${cl.rank} of ${cl.total_operators} operators.`);
+  }
+
+  const topOp = (board?.operators || board || []).reduce(
+    (best, o) => ((o.yield_ || 0) > (best?.yield_ || 0) ? o : best),
+    null,
+  );
+  if (topOp && topOp.codename) {
+    parts.push(`Top operator is ${topOp.codename} with Υ ${(topOp.yield_ || 0).toLocaleString()}.`);
+  }
+
+  if (cl.delta_from_average.percent !== 0) {
+    const dir = cl.delta_from_average.percent > 0 ? "above" : "below";
+    parts.push(`You're ${Math.abs(cl.delta_from_average.percent)}% ${dir} average.`);
+  }
+
+  if (cl.delta_from_top.percent > 0) {
+    parts.push(`${cl.delta_from_top.percent}% below top.`);
+  }
+
+  return parts.join(" ");
+}
 
 function _behavioralFraming(op) {
   const y = op.yield_ || 0;
