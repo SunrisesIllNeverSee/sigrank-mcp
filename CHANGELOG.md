@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.3](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.17.2...v0.17.3) (2026-07-12)
+
+
+### Bug Fixes
+
+* align manifest.json version to 0.17.2 (matches package.json + server.json) ([30c3a37](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/30c3a372b3ac212bc99fd64535687cf6789922f2))
+* auto-clear code buffer on sign-in failure (0.17.5) ([72caa9a](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/72caa9a246c85e38663989981cd233ae98c3b03f))
+* curl fallback for Vercel bot protection 403 (0.0.177) ([abc8610](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/abc861041a3db14497383caecb39550667ec3b93))
+* Esc/arrow-key race condition in TUI (0.17.4) ([555e6bd](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/555e6bd3dd5e45963eff2ff95d85b02955d40e2b))
+* resolve CodeQL url-substring-sanitization alert (0.0.176) ([babf863](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/babf86379a2d97869738a1c8b01269c1d8c149bf))
+* unblock sign-in deadlock + keystore resilience (0.17.3) ([569fc94](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/569fc948cd0f74fdf930113074c562724927ffe8))
+
 ## [0.17.0](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.16.1...v0.17.0) (2026-07-10)
 
 
