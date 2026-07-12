@@ -236,7 +236,10 @@ async function fetchBoard(window = "30d") {
   const res = await fetch(
     `${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`,
     {
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        "user-agent": `node/${process.version} sigrank-mcp/cli`,
+      },
     },
   );
   if (!res.ok) throw new Error(`Board API → HTTP ${res.status}`);
@@ -1472,6 +1475,7 @@ async function runSigRank() {
                       headers: {
                         "content-type": "application/json",
                         accept: "application/json",
+                        "user-agent": `node/${process.version} sigrank-mcp/cli`,
                       },
                       body: JSON.stringify({
                         codename,

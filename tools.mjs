@@ -26,7 +26,7 @@ import { ALL_PLATFORMS } from "./adapters.mjs";
 import { ensureIdentity, recordEnrollment } from "./keystore.mjs";
 import { submitSignedWindow } from "./submit.mjs";
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -255,6 +255,56 @@ export const DEFAULT_FETCH_TIMEOUT =
 /** Max accepted length for a single paste/string arg (chars). Token counts are tiny; anything
  *  past this is malformed or abusive — reject cleanly before parsing/POSTing (E2 hardening). */
 const MAX_INPUT = 1_000_000;
+
+/** Resolve this package's version for the User-Agent stamp (best-effort). */
+function agentVersionStamp() {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+    );
+    return pkg.version;
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * curl-based fetch fallback for when Node's fetch is blocked by Vercel's bot
+ * protection (TLS fingerprinting). Returns a Response-like object with .ok,
+ * .status, .json(), .text(). Uses execFileSync for synchronous curl execution.
+ */
+function curlFetch(url, init = {}, timeoutMs = 10_000) {
+  const args = ["-s", "-S", "-w", "\n__HTTP_STATUS__%{http_code}", "--max-time", String(Math.ceil(timeoutMs / 1000))];
+  if (init.method) args.push("-X", init.method);
+  const headers = init.headers || {};
+  for (const [k, v] of Object.entries(headers)) {
+    args.push("-H", `${k}: ${v}`);
+  }
+  if (init.body) {
+    args.push("-d", init.body);
+  }
+  args.push(url);
+  let stdout;
+  try {
+    stdout = execFileSync("curl", args, {
+      encoding: "utf-8",
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: timeoutMs + 2000,
+    });
+  } catch (e) {
+    throw new Error(`curl transport failed: ${e.message}`);
+  }
+  // Parse the status code from the trailer
+  const statusMatch = stdout.match(/__HTTP_STATUS__(\d+)$/);
+  const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+  const bodyText = statusMatch ? stdout.slice(0, statusMatch.index) : stdout;
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => { try { return JSON.parse(bodyText); } catch { return {}; } },
+    text: async () => bodyText,
+  };
+}
 
 // ── Smithery quality: output schemas + annotations ──────────────────────────
 // MCP tool annotations hint to clients about side-effects, read-only status, etc.
@@ -1357,13 +1407,45 @@ export async function callTool(name, args, opts = {}) {
   const rawFetch = opts.fetchImpl || fetch;
 
   // Wrap every fetch with an AbortController timeout so a hung network call never
-  // blocks the MCP client indefinitely.
-  const doFetch = (url, init = {}) => {
+  // blocks the MCP client indefinitely. Vercel's bot protection (security
+  // checkpoint) blocks Node's fetch via TLS fingerprinting — no UA fix helps.
+  // When fetch gets a 403 Vercel challenge, fall back to curl (which passes).
+  const doFetch = async (url, init = {}) => {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), timeoutMs);
-    return rawFetch(url, { ...init, signal: ac.signal }).finally(() =>
-      clearTimeout(timer),
-    );
+    const headers = {
+      "user-agent": `node/${process.version} sigrank-mcp/${agentVersionStamp()}`,
+      ...(init.headers || {}),
+    };
+    try {
+      const res = await rawFetch(url, { ...init, headers, signal: ac.signal });
+      // Detect Vercel security checkpoint (403 + HTML body, not JSON)
+      if (res.status === 403) {
+        const text = await res.text();
+        if (text.includes("Vercel Security Checkpoint") || text.includes("x-vercel-challenge")) {
+          // Fall back to curl transport
+          return curlFetch(url, init, timeoutMs);
+        }
+        // Real 403 from the API — return a mock response object
+        return {
+          ok: false,
+          status: 403,
+          json: async () => { try { return JSON.parse(text); } catch { return {}; } },
+          text: async () => text,
+        };
+      }
+      return res;
+    } catch (e) {
+      if (e.name === "AbortError") throw e;
+      // Network error — try curl as fallback
+      try {
+        return await curlFetch(url, init, timeoutMs);
+      } catch {
+        throw e;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   const fetchJson = async (path) => {

@@ -11,9 +11,22 @@
 
 import { snapshotHash, signPayload } from "./sign.mjs";
 import { preflight } from "./preflight.mjs";
+import { readFileSync } from "node:fs";
 
 const WINDOW_TYPE = { "7d": "7d", "30d": "30d", "90d": "90d", all: "all_time" };
 const WINDOW_SPAN_DAYS = { "7d": 7, "30d": 30, "90d": 90, all_time: 3650 };
+
+/** Resolve this package's version for the User-Agent stamp (best-effort). */
+function _pkgVersion() {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+    );
+    return pkg.version;
+  } catch {
+    return "unknown";
+  }
+}
 const PLATFORM_ENUM = new Set([
   "claude",
   "chatgpt",
@@ -181,8 +194,13 @@ export async function submitSignedWindow(
     ((url, init = {}) => {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15_000);
+      const headers = {
+        "user-agent": `node/${process.version} sigrank-mcp/${_pkgVersion()}`,
+        ...(init.headers || {}),
+      };
       return fetch(url, {
         ...init,
+        headers,
         signal: init.signal || ctrl.signal,
       }).finally(() => clearTimeout(timer));
     });
