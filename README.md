@@ -147,7 +147,7 @@ smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.17.3
+⊙ SigRank CLI  v0.17.4
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board

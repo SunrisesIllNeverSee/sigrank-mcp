@@ -2136,8 +2136,17 @@ export async function runTui({
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
 
+  // Esc-sequence buffer: some terminals (SSH, tmux, certain emulators) split an
+  // arrow key (\x1b[C) into two data events: \x1b then [C. Without buffering, the
+  // lone \x1b triggers the Esc handler (clearing the code buffer / leaving the tab)
+  // before the [C arrives. We hold \x1b for 25ms; if more bytes follow, we
+  // reassemble and deliver the full sequence. If nothing follows, it's a real Esc.
+  let escBuf = null;
+  let escTimer = null;
+  const ESC_HOLD_MS = 25;
+
   await new Promise((resolve) => {
-    process.stdin.on("data", async (key) => {
+    const handleKey = async (key) => {
       const k = key.toLowerCase();
 
       if (k === "q" || k === "\x03") {
@@ -2589,6 +2598,45 @@ export async function runTui({
 
       if (switched) submitMsg = ""; // submit result is tied to the tab it was sent from
       if (switched || k === "w") await redraw();
+    };
+
+    // Buffered stdin listener: reassembles split Esc sequences before dispatch.
+    process.stdin.on("data", (chunk) => {
+      // If we have a pending \x1b held from a previous chunk, combine it with
+      // this chunk to reassemble the full escape sequence (\x1b + [C = \x1b[C).
+      if (escBuf) {
+        clearTimeout(escTimer);
+        const combined = escBuf + chunk;
+        escBuf = null;
+        escTimer = null;
+        // If the combined result is \x1b followed by more \x1b (rare), just
+        // deliver the first as Esc and re-buffer the second. Otherwise deliver
+        // the combined sequence.
+        if (combined.length > 1) {
+          handleKey(combined);
+          return;
+        }
+        // combined is still just \x1b (chunk was empty?) → fall through to hold
+      }
+
+      // Fast path: chunk doesn't start with \x1b → deliver immediately.
+      if (chunk[0] !== "\x1b") {
+        handleKey(chunk);
+        return;
+      }
+      // Chunk starts with \x1b and is longer than 1 byte → complete escape
+      // sequence → deliver immediately.
+      if (chunk.length > 1) {
+        handleKey(chunk);
+        return;
+      }
+      // Chunk is exactly \x1b → hold for ESC_HOLD_MS to see if more bytes follow.
+      escBuf = chunk;
+      escTimer = setTimeout(() => {
+        handleKey(escBuf);
+        escBuf = null;
+        escTimer = null;
+      }, ESC_HOLD_MS);
     });
   });
 
