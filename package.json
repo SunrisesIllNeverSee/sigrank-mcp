@@ -65,7 +65,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@zhangferry-dev/tokendash": "^1.7.5",
-    "ccusage": "^20.0.14",
-    "tokscale": "^4.0.4"
+    "ccusage": "^20.0.17",
+    "tokscale": "^4.5.2"
   }
 }
