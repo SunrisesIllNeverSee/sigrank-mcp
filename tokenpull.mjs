@@ -388,12 +388,29 @@ export async function tokenpullAny(platform, opts = {}) {
     }
     return tokenpullCodex({ ioRatio, ...opts });
   }
-  // Cloud agents (Devin, etc.) run server-side — no local JSONL to read
-  const CLOUD_AGENTS = { devin: "Cognition/Devin" };
+  // Cloud agents (Devin, etc.) run server-side — no local JSONL to read, BUT tokscale
+  // tracks their usage via its own cloud-side telemetry. So instead of throwing, we
+  // fall back to a tokscale-only pull (all-time, no windows). The tokscale client name
+  // for Devin is "devin-cli" — map it here so callers can pass "devin".
+  const CLOUD_AGENTS = { devin: "devin-cli" };
   if (platform in CLOUD_AGENTS) {
+    const tokscaleClient = CLOUD_AGENTS[platform];
+    const t = await _freshTokscaleByClient(tokscaleClient);
+    if (t && t.all) {
+      return {
+        platform,
+        windows: [{
+          window: "all",
+          pillars: t.all,
+          messages: 0,
+        }],
+        estimated: true,
+        dataGap: `${platform} runs in the cloud — no local JSONL. Tokens via tokscale (all-time only, no 7d/30d/90d windows).`,
+      };
+    }
     throw new Error(
-      `"${platform}" (${CLOUD_AGENTS[platform]}) runs in the cloud — sessions are not written to local JSONL files. ` +
-        `There is no local data source to read. If ${CLOUD_AGENTS[platform]} exposes a usage API in future, an adapter can be added.`,
+      `"${platform}" runs in the cloud — no local JSONL to read, and tokscale has no data for it. ` +
+        `Run \`tokscale models --json\` to verify the client name.`,
     );
   }
   const adapter = ADAPTERS[platform];
@@ -536,6 +553,44 @@ async function _freshTokscale(platform = "claude") {
       (e) =>
         e &&
         e.client === platform &&
+        e.model !== "<synthetic>" &&
+        e.model !== "unknown" &&
+        ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0),
+    );
+    if (!rows.length) return null;
+    const acc = rows.reduce(
+      (a, e) => ({
+        input: a.input + (Number(e.input) || 0),
+        output: a.output + (Number(e.output) || 0),
+        cacheCreate: a.cacheCreate + (Number(e.cacheWrite) || 0),
+        cacheRead: a.cacheRead + (Number(e.cacheRead) || 0),
+      }),
+      { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+    );
+    return { all: acc };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like _freshTokscale but filters by the exact tokscale client name (e.g. "devin-cli")
+ * instead of our platform name. Used by the cloud-agent fallback path so Devin tokens
+ * (which tokscale tracks as "devin-cli") are readable via tokenpullAny("devin").
+ */
+async function _freshTokscaleByClient(clientName) {
+  try {
+    const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+    const data = JSON.parse(raw);
+    const entries = Array.isArray(data?.entries)
+      ? data.entries
+      : Array.isArray(data)
+        ? data
+        : [];
+    const rows = entries.filter(
+      (e) =>
+        e &&
+        e.client === clientName &&
         e.model !== "<synthetic>" &&
         e.model !== "unknown" &&
         ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0),

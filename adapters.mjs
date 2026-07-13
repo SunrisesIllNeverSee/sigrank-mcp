@@ -747,4 +747,4 @@ export const ADAPTERS = {
   hermes: hermesAdapter,
 };
 
-export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);
+export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex", "devin"]);
