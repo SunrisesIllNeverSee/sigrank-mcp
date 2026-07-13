@@ -486,7 +486,7 @@ async function _freshTokendash(platform = "claude") {
   if (platform !== "claude") return null;
   const dbPath = join(homedir(), ".claude", "token-dashboard.db");
   // Read the token-dashboard DB directly with sqlite3 (no external python scan
-  // needed — the DB is created by the tokendash dashboard, now bundled as a dep).
+  // needed — the DB is created by Nate's token-dashboard, github.com/nateherkai/token-dashboard).
   // all-time only; the db doesn't expose windowing here.
   if (!existsSync(dbPath)) return null;
   try {

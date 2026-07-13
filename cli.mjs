@@ -494,7 +494,7 @@ function appPillars() {
 async function tokenDashPillars() {
   const dbPath = path.join(os.homedir(), ".claude", "token-dashboard.db");
   if (!existsSync(dbPath)) return null;
-  // Read directly with sqlite3 — no python script needed (bundled dep).
+  // Read directly with sqlite3 — DB created by Nate's token-dashboard (github.com/nateherkai/token-dashboard).
   // Windowed queries using sqlite3's datetime() function.
   const cf =
     "(model LIKE '%claude%' OR model LIKE '%fable%' OR model LIKE '%sonnet%' OR model LIKE '%opus%' OR model LIKE '%haiku%')";

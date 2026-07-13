@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "0.0.177",
+  "version": "0.0.178",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "SigRank MCP server — the yield cascade + live leaderboard as MCP tools any agent can call",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
@@ -64,7 +64,6 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@zhangferry-dev/tokendash": "^1.7.5",
     "ccusage": "^20.0.17",
     "tokscale": "^4.5.2"
   }

@@ -76,7 +76,7 @@ For all builders, burners and 10xers.
 ## Quickstart — 3 steps to the board
 
 ```bash
-# 1. Install (pulls ccusage + tokscale + tokendash automatically — no separate installs)
+# 1. Install (pulls ccusage + tokscale automatically — no separate installs)
 npm install -g sigrank
 
 # 2. Sign in (paste a connect code from signalaf.com → Settings → New key)
@@ -303,7 +303,7 @@ The dashboard pulls from multiple sources and shows them side-by-side for verifi
 | ----------------- | ------------------------------------------------------------------------------ | --------------------- |
 | `tokenpull`       | On-device JSONL scanner (canon source)                                         | claude, codex, amp, … |
 | `ccusage`         | `ccusage <platform> daily --json` CLI (bundled)                                | claude, codex         |
-| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite (bundled)                                | claude only           |
+| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite ([Nate's](https://github.com/nateherkai/token-dashboard)) | claude only           |
 | `tokscale`        | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex         |
 
 **Codex input is estimated** — Codex logs don't expose true input tokens directly. The formula:

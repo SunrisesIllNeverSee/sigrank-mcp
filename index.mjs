@@ -194,7 +194,7 @@ async function startMcpServer() {
       uri: "sigrank://install-guide",
       name: "Quick Start Guide",
       description:
-        "Step-by-step install and first submission: npx sigrank → enroll → submit. Covers ccusage/tokscale/tokendash bundled deps, privacy model (token counts only, never prompts), and dry-run workflow.",
+        "Step-by-step install and first submission: npx sigrank → enroll → submit. Covers ccusage/tokscale bundled deps + token-dashboard (Nate's, github.com/nateherkai/token-dashboard), privacy model (token counts only, never prompts), and dry-run workflow.",
       mimeType: "text/markdown",
     },
     {
@@ -289,14 +289,20 @@ No global install needed. The MCP server starts automatically when an AI client 
    npx sigrank submit --dry-run
    \`\`\`
 
-## Token Pull Sources (bundled)
+## Token Pull Sources
 
-SigRank bundles three token readers as dependencies:
+SigRank bundles two token readers as npm dependencies:
 - **ccusage** — Claude Code session logs
 - **tokscale** — multi-platform token telemetry
-- **tokendash** — dashboard + TUI for token usage
 
-No separate install needed. All three are called automatically by the tokenpull tools.
+A third source, **token-dashboard**, is read from `~/.claude/token-dashboard.db` (SQLite).
+That DB is created by [Nate's token-dashboard](https://github.com/nateherkai/token-dashboard) (Python):
+```bash
+git clone https://github.com/nateherkai/token-dashboard.git
+cd token-dashboard
+python3 cli.py dashboard
+```
+Run the scan once to create the DB; SigRank reads it directly via sqlite3 after that.
 
 ## MCP Client Setup
 
