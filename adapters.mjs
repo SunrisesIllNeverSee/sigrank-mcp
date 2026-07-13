@@ -97,10 +97,11 @@ function* parseJsonl(text, filePath) {
 /** Run sqlite3 -json and return parsed rows, or [] on error/unavailability.
  *  execFile with an args array — no shell, so dbPath/sql need no quoting/escaping
  *  (matches the execFile hardening used in tools.mjs / tokenpull.mjs). */
-async function sqliteJson(dbPath, sql) {
+async function sqliteJson(dbPath, sql, timeoutMs = 10_000) {
   try {
     const { stdout } = await execFileP("sqlite3", ["-json", dbPath, sql], {
-      timeout: 10_000,
+      timeout: timeoutMs,
+      maxBuffer: 256 * 1024 * 1024, // 256MB — Devin's sessions.db yields ~15MB JSON
     });
     return JSON.parse(stdout || "[]");
   } catch {
@@ -729,6 +730,56 @@ export const hermesAdapter = {
   },
 };
 
+// ── 14. Devin CLI ────────────────────────────────────────────────────────────
+// SQLite: ~/.local/share/devin/cli/sessions.db
+// Devin stores sessions in a SQLite DB with per-message token metrics in the
+// message_nodes table. Each assistant message's chat_message JSON has:
+//   metadata.metrics.{input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens}
+//   metadata.created_at (ISO timestamp)
+//   metadata.num_tokens (output token count, = metrics.output_tokens)
+// cache_read_tokens is usually present; cache_creation_tokens is sparse (set on
+// first-turn cache writes). Messages without metrics are skipped.
+export const devinAdapter = {
+  platform: "devin",
+  defaultRoot: () => join(homedir(), ".local", "share", "devin", "cli"),
+  async *messages(root) {
+    for (const r of roots("DEVIN_HOME", root)) {
+      const dbPath = join(r, "sessions.db");
+      const rows = await sqliteJson(
+        dbPath,
+        `SELECT row_id, session_id,
+                json_extract(chat_message, '$.metadata.metrics.input_tokens') as input_tokens,
+                json_extract(chat_message, '$.metadata.metrics.output_tokens') as output_tokens,
+                json_extract(chat_message, '$.metadata.metrics.cache_read_tokens') as cache_read_tokens,
+                json_extract(chat_message, '$.metadata.metrics.cache_creation_tokens') as cache_creation_tokens,
+                json_extract(chat_message, '$.metadata.created_at') as created_at
+         FROM message_nodes
+         WHERE json_extract(chat_message, '$.role') = 'assistant'
+           AND json_extract(chat_message, '$.metadata.metrics.input_tokens') IS NOT NULL
+         ORDER BY created_at`,
+        60_000,
+      );
+      for (const row of rows) {
+        const input = Number(row.input_tokens || 0);
+        const output = Number(row.output_tokens || 0);
+        const cacheRead = Number(row.cache_read_tokens || 0);
+        const cacheCreate = Number(row.cache_creation_tokens || 0);
+        if (input + output + cacheRead + cacheCreate === 0) continue;
+        yield {
+          id: `${row.session_id}:${row.row_id}`,
+          sid: row.session_id,
+          ts: row.created_at || null,
+          input,
+          output,
+          cacheCreate,
+          cacheRead,
+          file: dbPath,
+        };
+      }
+    }
+  },
+};
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
 export const ADAPTERS = {
@@ -745,6 +796,7 @@ export const ADAPTERS = {
   goose: gooseAdapter,
   kilo: kiloAdapter,
   hermes: hermesAdapter,
+  devin: devinAdapter,
 };
 
-export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex", "devin"]);
+export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);
