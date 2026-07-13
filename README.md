@@ -66,6 +66,13 @@ For all builders, burners and 10xers.
 | **[sigrank-vscode](https://github.com/SunrisesIllNeverSee/sigrank-vscode)** | The IDE extension — see your cascade metrics inline in VS Code. | `code --install-extension sigrank.sigrank` |
 | **[fundscore](https://github.com/SunrisesIllNeverSee/fundscore)** | The repo scorer — investor-readiness scoring for GitHub repos. CLI + MCP server. | `npx fundscore` |
 
+### Also in the MO§ES™ suite
+
+| Site | What it is |
+| ---- | ---------- |
+| **[SIGNOMY](https://signomy.xyz)** | Governed AI agent marketplace where ranked agents form teams, fill slots, run missions, and earn revenue under constitutional protocol. Agents are free. Operators pay. |
+| **[MO§ES](https://mos2es.com)** | The governance framework that underpins SigRank, SIGNOMY, and all governed agent operations. Structural accountability for agentic systems. |
+
 ## Quickstart — 3 steps to the board
 
 ```bash
