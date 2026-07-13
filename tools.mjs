@@ -797,8 +797,8 @@ export const TOOLS = [
       properties: {
         platform: {
           type: "string",
-          enum: ALL_PLATFORMS,
-          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}. codex is estimated via io_ratio. Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
+          enum: [...ALL_PLATFORMS, "multi"],
+          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' pulls from tokscale (all-time only, no 7d/30d/90d windows). codex is estimated via io_ratio. Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
         },
       },
     },
@@ -830,8 +830,8 @@ export const TOOLS = [
         },
         platform: {
           type: "string",
-          enum: ALL_PLATFORMS,
-          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}. Each platform reads its own session logs locally.`,
+          enum: [...ALL_PLATFORMS, "multi"],
+          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' pulls from tokscale (all-time only). Each platform reads its own session logs locally.`,
         },
       },
     },
@@ -1759,6 +1759,67 @@ export async function callTool(name, args, opts = {}) {
   if (name === "tokenpull") {
     // Local read → 4 windows of pillars → cascade each. Token-only, on-device.
     const platform = args?.platform || "claude";
+
+    // MULTI: sum every locally-detected platform's pillars per window. Same logic as
+    // submit_verified's multi flow — Devin (cloud, via tokscale) is included.
+    if (platform === "multi") {
+      const detected = [];
+      for (const p of ALL_PLATFORMS) {
+        const r = await pullByPlatform(p, opts).catch(() => null);
+        const live =
+          r &&
+          (r.windows || []).some(
+            (w) =>
+              w.pillars.input +
+                w.pillars.output +
+                w.pillars.cacheCreate +
+                w.pillars.cacheRead >
+              0,
+          );
+        if (live) detected.push(r);
+      }
+      if (detected.length < 2) {
+        return {
+          platform: "multi",
+          status: "skipped",
+          reason: "need_2_platforms",
+          detail: `multi needs 2+ active platforms; found ${detected.length} (${detected.map((d) => d.platform).join(", ") || "none"}).`,
+          windows: [],
+        };
+      }
+      const winKeys = ["7d", "30d", "90d", "all"];
+      const windows = [];
+      for (const wk of winKeys) {
+        const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+        let msgs = 0;
+        for (const d of detected) {
+          const w = (d.windows || []).find((x) => x.window === wk);
+          if (!w) continue;
+          sum.input += w.pillars.input || 0;
+          sum.output += w.pillars.output || 0;
+          sum.cacheCreate += w.pillars.cacheCreate || 0;
+          sum.cacheRead += w.pillars.cacheRead || 0;
+          msgs += w.messages || 0;
+        }
+        if (sum.input + sum.output + sum.cacheCreate + sum.cacheRead <= 0)
+          continue;
+        const c = cascade(sum);
+        windows.push({
+          window: wk,
+          messages: msgs,
+          pillars: sum,
+          cascade: c,
+          card: narrate(c, `${wk} multi`),
+        });
+      }
+      return {
+        platform: "multi",
+        estimated: true,
+        sources: detected.map((d) => d.platform),
+        windows,
+      };
+    }
+
     const pulled = await pullByPlatform(platform, opts);
     const windows = pulled.windows.map((w) => {
       const c = cascade(w.pillars);
@@ -1786,7 +1847,111 @@ export async function callTool(name, args, opts = {}) {
     // (server re-scores). The board stays platform-agnostic via the 4 pillars; the
     // source platform rides along as a tag. Conversion already happened in the adapter.
     const codename = String(args?.codename || "").trim();
-    const pulled = await pullByPlatform(args?.platform || "claude", opts);
+    const platform = args?.platform || "claude";
+
+    // MULTI: same combined cross-platform cascade as submit_verified. Includes Devin
+    // (cloud, via tokscale). Aggregate every locally-detected platform's pillars per
+    // window and publish as platform='multi'.
+    if (platform === "multi") {
+      const detected = [];
+      for (const p of ALL_PLATFORMS) {
+        const r = await pullByPlatform(p, opts).catch(() => null);
+        const live =
+          r &&
+          (r.windows || []).some(
+            (w) =>
+              w.pillars.input +
+                w.pillars.output +
+                w.pillars.cacheCreate +
+                w.pillars.cacheRead >
+              0,
+          );
+        if (live) detected.push(r);
+      }
+      if (detected.length < 2) {
+        return {
+          platform: "multi",
+          codename: codename || undefined,
+          status: "skipped",
+          reason: "need_2_platforms",
+          detail: `multi needs 2+ active platforms; found ${detected.length} (${detected.map((d) => d.platform).join(", ") || "none"}).`,
+          windows: [],
+        };
+      }
+      const winKeys = args?.window ? [args.window] : ["7d", "30d", "90d", "all"];
+      const out = [];
+      for (const wk of winKeys) {
+        const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+        let msgs = 0;
+        for (const d of detected) {
+          const w = (d.windows || []).find((x) => x.window === wk);
+          if (!w) continue;
+          sum.input += w.pillars.input || 0;
+          sum.output += w.pillars.output || 0;
+          sum.cacheCreate += w.pillars.cacheCreate || 0;
+          sum.cacheRead += w.pillars.cacheRead || 0;
+          msgs += w.messages || 0;
+        }
+        if (sum.input + sum.output + sum.cacheCreate + sum.cacheRead <= 0)
+          continue;
+        const c = cascade(sum);
+        const card = narrate(c, `${wk} multi`);
+        if (!codename) {
+          out.push({
+            window: wk,
+            pillars: sum,
+            cascade: c,
+            card,
+            submission: { status: "not_submitted", reason: "codename_required" },
+          });
+          continue;
+        }
+        const rawPaste = `${sum.input} ${sum.output} ${sum.cacheCreate} ${sum.cacheRead}`;
+        const windowType = WINDOW_TYPE[wk] || wk;
+        const stamp = uploadStamp({
+          codename,
+          window: windowType,
+          pillars: sum,
+          platform: "multi",
+        });
+        const res = await doFetch(`${apiBase}/api/v1/ingest-paste`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            codename,
+            raw_paste: rawPaste,
+            window_type: windowType,
+            telemetry: { platform: { primary: "multi" } },
+            ...stamp,
+          }),
+        });
+        let ack;
+        try {
+          ack = await res.json();
+        } catch {
+          ack = { status: "parse_error", httpStatus: res.status };
+        }
+        const ranked = ack?.ranked ?? ack?.accepted ?? false;
+        out.push({
+          window: wk,
+          pillars: sum,
+          cascade: c,
+          card,
+          submission: { ...stamp, httpStatus: res.status, ranked, ...ack },
+        });
+      }
+      return {
+        platform: "multi",
+        codename: codename || undefined,
+        sources: detected.map((d) => d.platform),
+        windows: out,
+      };
+    }
+
+    const pulled = await pullByPlatform(platform, opts);
     const targets = args?.window
       ? pulled.windows.filter((w) => w.window === args.window)
       : pulled.windows;
