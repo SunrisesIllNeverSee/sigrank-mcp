@@ -732,17 +732,14 @@ export const hermesAdapter = {
 
 // ── 14. Devin CLI ────────────────────────────────────────────────────────────
 // SQLite: ~/.local/share/devin/cli/sessions.db
-// Devin stores sessions in a SQLite DB with per-message token metrics in the
-// message_nodes table. Each assistant message's chat_message JSON has:
-//   metadata.metrics.{input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens}
-//   metadata.created_at (ISO timestamp)
-//   metadata.num_tokens (output token count, = metrics.output_tokens)
-// cache_read_tokens is usually present; cache_creation_tokens is sparse (set on
-// first-turn cache writes). Messages without metrics are skipped.
+// Same combined-input problem as Codex: input_tokens INCLUDES cache write, so we
+// yield { ts, output, cacheRead, uncached } and let tokenpullCodex() do the
+// ioRatio split (input = output × ioRatio, cacheCreate = uncached − input).
+// ioRatio comes from Claude (Beta) or the 7:1:2 average (Alpha = 0.5).
 export const devinAdapter = {
   platform: "devin",
   defaultRoot: () => join(homedir(), ".local", "share", "devin", "cli"),
-  async *messages(root) {
+  async *records(root) {
     for (const r of roots("DEVIN_HOME", root)) {
       const dbPath = join(r, "sessions.db");
       const rows = await sqliteJson(
@@ -751,7 +748,6 @@ export const devinAdapter = {
                 json_extract(chat_message, '$.metadata.metrics.input_tokens') as input_tokens,
                 json_extract(chat_message, '$.metadata.metrics.output_tokens') as output_tokens,
                 json_extract(chat_message, '$.metadata.metrics.cache_read_tokens') as cache_read_tokens,
-                json_extract(chat_message, '$.metadata.metrics.cache_creation_tokens') as cache_creation_tokens,
                 json_extract(chat_message, '$.metadata.created_at') as created_at
          FROM message_nodes
          WHERE json_extract(chat_message, '$.role') = 'assistant'
@@ -760,19 +756,15 @@ export const devinAdapter = {
         60_000,
       );
       for (const row of rows) {
-        const input = Number(row.input_tokens || 0);
+        const inputIncl = Number(row.input_tokens || 0);
+        const cached = Number(row.cache_read_tokens || 0);
         const output = Number(row.output_tokens || 0);
-        const cacheRead = Number(row.cache_read_tokens || 0);
-        const cacheCreate = Number(row.cache_creation_tokens || 0);
-        if (input + output + cacheRead + cacheCreate === 0) continue;
+        if (inputIncl + output + cached === 0) continue;
         yield {
-          id: `${row.session_id}:${row.row_id}`,
-          sid: row.session_id,
           ts: row.created_at || null,
-          input,
           output,
-          cacheCreate,
-          cacheRead,
+          cacheRead: cached,
+          uncached: Math.max(0, inputIncl - cached),
           file: dbPath,
         };
       }

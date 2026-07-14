@@ -343,7 +343,7 @@ export async function tokenpullCodex({
   });
 
   return {
-    platform: "codex",
+    platform: adapter.platform || "codex",
     root: r,
     generatedAt: new Date(nowMs).toISOString(),
     files: files.size,
@@ -367,13 +367,12 @@ export async function tokenpullCodex({
 export async function tokenpullAny(platform, opts = {}) {
   if (!platform || platform === "claude")
     return tokenpull({ adapter: claudeAdapter, ...opts });
-  if (platform === "codex") {
-    // Auto-derive io_ratio from the operator's Claude data when not explicitly provided.
+  // Codex + Devin: both combine input + cache write in input_tokens, so both go
+  // through tokenpullCodex() which splits via ioRatio (Beta from Claude, Alpha 2.0).
+  if (platform === "codex" || platform === "devin") {
     let ioRatio = opts.ioRatio || 2.0;
     if (!opts.ioRatio) {
       try {
-        // Forward root/now from opts so the Beta-ratio derivation is testable
-        // (without this, it always reads the real ~/.claude and can't be injected).
         const c = await tokenpull({
           adapter: claudeAdapter,
           root: opts.root,
@@ -386,10 +385,9 @@ export async function tokenpullAny(platform, opts = {}) {
         /* no Claude data → Alpha 2.0 */
       }
     }
-    return tokenpullCodex({ ioRatio, ...opts });
+    const adapter = platform === "codex" ? codexAdapter : ADAPTERS.devin;
+    return tokenpullCodex({ adapter, ioRatio, ...opts });
   }
-  // Devin CLI: has a real adapter now (reads ~/.local/share/devin/cli/sessions.db
-  // via SQLite). Falls through to the ADAPTERS registry below — no special case needed.
   const adapter = ADAPTERS[platform];
   if (!adapter)
     throw new Error(
