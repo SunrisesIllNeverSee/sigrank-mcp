@@ -1,0 +1,67 @@
+name: Platform Sync Check
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  sync-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install tokscale + ccusage
+        run: |
+          npm install -g tokscale ccusage
+      - name: Run platform sync check
+        run: |
+          node scripts/sync-platforms.mjs --json > sync-report.json
+          cat sync-report.json
+          # Exit 1 if gaps found (script handles this)
+          node scripts/sync-platforms.mjs
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-sync-report
+          path: sync-report.json
+      - name: Create issue if gaps found
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('sync-report.json', 'utf8'));
+            const tsGaps = report.gaps.tokscale.clientsNotInMap || [];
+            const tsAdapterGaps = report.gaps.tokscale.clientsWithMissingAdapter || [];
+            const ccGaps = report.gaps.ccusage.clientsNotInAdapters || [];
+            const body = [
+              '## Platform Sync Gaps Detected',
+              '',
+              `**Date:** ${report.timestamp}`,
+              '',
+              '### Tokscale',
+              `- Clients not in map: ${tsGaps.length ? tsGaps.join(', ') : 'none'}`,
+              `- Clients with missing adapter: ${tsAdapterGaps.length ? tsAdapterGaps.join(', ') : 'none'}`,
+              `- Upstream clients: ${report.upstream.tokscale.clients.length}`,
+              '',
+              '### Ccusage',
+              `- Clients not in adapters: ${ccGaps.length ? ccGaps.join(', ') : 'none'}`,
+              `- Upstream clients: ${report.upstream.ccusage.clients.length}`,
+              '',
+              '### Action needed',
+              'Run `node scripts/sync-platforms.mjs` locally to review, then update `adapters.mjs` and/or `tools.mjs`.',
+              '',
+              'Run: `node scripts/sync-platforms.mjs`'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Platform sync: gaps detected between upstream and our adapters',
+              body,
+              labels: ['maintenance', 'platform-sync']
+            });
