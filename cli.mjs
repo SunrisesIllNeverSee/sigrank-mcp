@@ -951,6 +951,7 @@ const ALL_PLATFORMS = [
   "opencode",
   "openclaw",
   "pi",
+  "other",
 ];
 
 async function runSigRank() {

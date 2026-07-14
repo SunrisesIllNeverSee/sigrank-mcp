@@ -772,6 +772,68 @@ export const devinAdapter = {
   },
 };
 
+// ── 15. Other (user-supplied JSON) ───────────────────────────────────────────
+// For platforms/models not yet on the adapter list. The user writes a JSON file
+// with the 4 pillars per window and points SIGRANK_OTHER_PATH at it. This lets
+// anyone with a new tool submit without needing a custom adapter.
+//
+// JSON format (all fields optional, missing windows are skipped):
+// {
+//   "platform": "my-tool",           // optional, defaults to "other"
+//   "windows": {
+//     "all":  { "input": 1000, "output": 2000, "cacheCreate": 500, "cacheRead": 8000 },
+//     "30d":  { "input":  500, "output": 1000, "cacheCreate": 200, "cacheRead": 4000 },
+//     "7d":   { "input":  100, "output":  200, "cacheCreate":  50, "cacheRead":  800 }
+//   }
+// }
+//
+// The adapter yields one "message" per window with the summed pillars. Since
+// there's no per-message timestamp, all data lands in the "all" window only
+// (same as null-timestamp records in other adapters).
+export const otherAdapter = {
+  platform: "other",
+  defaultRoot: () => process.env.SIGRANK_OTHER_PATH || "",
+  async *messages(root) {
+    const filePath = root || process.env.SIGRANK_OTHER_PATH;
+    if (!filePath) {
+      throw new Error(
+        "other adapter: set SIGRANK_OTHER_PATH to a JSON file with your token pillars. " +
+          'Format: { "windows": { "all": { "input": N, "output": N, "cacheCreate": N, "cacheRead": N } } }',
+      );
+    }
+    let text;
+    try {
+      text = await readFile(filePath, "utf8");
+    } catch {
+      throw new Error(`other adapter: cannot read ${filePath} — check SIGRANK_OTHER_PATH`);
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`other adapter: invalid JSON in ${filePath}`);
+    }
+    const windows = data.windows || {};
+    for (const [win, pillars] of Object.entries(windows)) {
+      const input = Number(pillars.input || 0);
+      const output = Number(pillars.output || 0);
+      const cacheCreate = Number(pillars.cacheCreate || pillars.cache_create || 0);
+      const cacheRead = Number(pillars.cacheRead || pillars.cache_read || 0);
+      if (input + output + cacheCreate + cacheRead === 0) continue;
+      yield {
+        id: `other:${win}`,
+        sid: `other-${win}`,
+        ts: null, // no timestamp → lands in "all" window only
+        input,
+        output,
+        cacheCreate,
+        cacheRead,
+        file: filePath,
+      };
+    }
+  },
+};
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
 export const ADAPTERS = {
@@ -789,6 +851,7 @@ export const ADAPTERS = {
   kilo: kiloAdapter,
   hermes: hermesAdapter,
   devin: devinAdapter,
+  other: otherAdapter,
 };
 
 export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);

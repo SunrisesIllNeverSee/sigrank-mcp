@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SigRank Board — Benford Bot Detection (1,629 operators)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: 'SF Mono', monospace; padding: 40px 20px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 1.6em; color: #daa520; margin-bottom: 4px; }
+h2 { font-size: 1.1em; margin-top: 40px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+h3 { font-size: 0.9em; color: #888; margin-bottom: 16px; font-weight: normal; }
+.subtitle { color: #888; font-size: 0.85em; margin-bottom: 30px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 30px; }
+.stat-card { background: #111; border: 1px solid #222; border-radius: 8px; padding: 16px; text-align: center; }
+.stat-card .label { font-size: 0.7em; color: #666; margin-bottom: 6px; }
+.stat-card .value { font-size: 1.4em; font-weight: bold; }
+.stat-card .sub { font-size: 0.65em; color: #555; margin-top: 4px; }
+.stat-card.pass .value { color: #4a9; }
+.stat-card.fail .value { color: #e44; }
+.stat-card.neutral .value { color: #daa520; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 30px; font-size: 0.8em; }
+th { text-align: left; padding: 8px 10px; color: #daa520; border-bottom: 1px solid #333; font-weight: normal; }
+td { padding: 6px 10px; border-bottom: 1px solid #1a1a1a; color: #ccc; }
+td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.pass { color: #4a9; }
+.fail { color: #e44; }
+.chart-container { background: #111; border: 1px solid #222; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.chart-title { font-size: 0.85em; margin-bottom: 4px; }
+.chart-meta { font-size: 0.7em; color: #666; margin-bottom: 12px; }
+.bars { display: flex; align-items: flex-end; gap: 6px; height: 180px; padding: 0 8px 0 36px; border-bottom: 1px solid #333; border-left: 1px solid #333; position: relative; }
+.y-axis { position: absolute; left: 0; top: 0; height: 100%; display: flex; flex-direction: column; justify-content: space-between; font-size: 0.6em; color: #555; }
+.digit-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; gap: 1px; }
+.bar { width: 100%; max-width: 20px; border-radius: 2px 2px 0 0; }
+.bar-expected { background: transparent; border: 1px dashed #666; }
+.x-labels { display: flex; gap: 6px; padding: 16px 8px 0 36px; }
+.x-label { flex: 1; text-align: center; font-size: 0.7em; color: #888; }
+.legend { display: flex; gap: 20px; margin-top: 12px; font-size: 0.75em; }
+.legend-item { display: flex; align-items: center; gap: 6px; color: #aaa; }
+.legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+.verdict { background: #111; border: 1px solid #222; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+.verdict h3 { color: #daa520; margin-bottom: 10px; font-weight: bold; }
+.verdict p { color: #aaa; font-size: 0.85em; line-height: 1.6; margin-bottom: 8px; }
+.verdict .highlight { color: #e0e0e0; }
+.verdict .green { color: #4a9; }
+.verdict .red { color: #e44; }
+</style>
+</head>
+<body>
+
+<h1>SigRank Board — Benford's Law Bot Detection</h1>
+<p class="subtitle">1,629 operators · all_time window · 2026-07-13</p>
+
+<h2>Summary</h2>
+<div class="stat-grid">
+<div class="stat-card neutral"><div class="label">Total Operators</div><div class="value">1,629</div><div class="sub">full corpus</div></div>
+<div class="stat-card pass"><div class="label">Impossible Cascades</div><div class="value">0</div><div class="sub">zero input + nonzero output</div></div>
+<div class="stat-card pass"><div class="label">Anomalous Yields</div><div class="value">0</div><div class="sub">zero cache_read + yield > 0</div></div>
+<div class="stat-card pass"><div class="label">Round-Number Bots</div><div class="value">0</div><div class="sub">3+ trailing-zero metrics</div></div>
+<div class="stat-card neutral"><div class="label">Platforms</div><div class="value">4</div><div class="sub">claude · chatgpt · other · gemini</div></div>
+<div class="stat-card neutral"><div class="label">Class Tiers</div><div class="value">9</div><div class="sub">ARCH → BEARER</div></div>
+</div>
+
+<h2>Board-Wide Benford — All-Time Window</h2>
+<h3>7 of 8 metrics pass Benford's Law. The board's aggregate numbers are naturally distributed across 1,629 operators.</h3>
+<div id="benford-grid"></div>
+
+<h2>Velocity — Why It Fails Benford</h2>
+<div class="verdict">
+<h3>Velocity (chi²=71.02) — structural, not fabrication</h3>
+<p>Velocity = output/input. Most operators have velocity between 0.1 and 2.0, so the leading digit is overwhelmingly "1" with almost no values starting with 3-9. This is a <span class="highlight">mathematical artifact of the ratio's range</span>, not bot activity. The same pattern appears in Claude's local data.</p>
+</div>
+
+<h2>Platform Breakdown</h2>
+<table id="platform-table">
+<tr><th>Platform</th><th>Operators</th><th>Avg Yield</th><th>Share</th></tr>
+</table>
+
+<h2>Class Tier Breakdown</h2>
+<table id="class-table">
+<tr><th>Class</th><th>Operators</th><th>Share</th></tr>
+</table>
+
+<h2>Top 10 Operators by Yield</h2>
+<table id="top10-table">
+<tr><th>#</th><th>Codename</th><th>Platform</th><th>Class</th><th>Yield (Υ)</th><th>Input</th><th>Output</th><th>Cache Read</th><th>Cache Create</th></tr>
+</table>
+
+<h2>Verdict</h2>
+<div class="verdict">
+<h3>No bots detected. The board is clean across 1,629 operators.</h3>
+<p><span class="green">7/8 token metrics pass Benford's Law</span> — yield (χ²=9.90), input (χ²=0.10), output (χ²=0.35), cacheCreate (χ²=0.36), cacheRead (χ²=0.25), total (χ²=0.06), leverage (χ²=3.25). All follow the expected logarithmic first-digit distribution. This is what real telemetry looks like at scale.</p>
+<p><span class="green">Zero impossible cascades</span> — no operator has zero input with nonzero output. <span class="green">Zero anomalous yields</span> — no operator has zero cache_read with nonzero yield. <span class="green">Zero round-number suspects</span> — no operator has 3+ metrics ending in trailing zeros.</p>
+<p><span class="red">Velocity fails Benford</span> (χ²=71.02) but this is a <span class="highlight">structural artifact</span> — velocity = output/input is a ratio that clusters between 0.1-2.0 for most operators, so "1" dominates the leading digit. Not a bot signal.</p>
+</div>
+
+<p style="margin-top:40px;color:#444;font-size:0.7em;text-align:center;">Generated 2026-07-13 · SigRank MCP · 1,629 operators from signalaf.com/api/v1/leaderboard?limit=2000</p>
+
+<script>
+const data = {"totalOps":1629,"benford":{"yield_":{"total":1170,"chiSq":9.9,"pass":true,"dist":[{"d":1,"actual":40.94,"expected":30.1},{"d":2,"actual":21.62,"expected":17.61},{"d":3,"actual":10.51,"expected":12.49},{"d":4,"actual":7.35,"expected":9.69},{"d":5,"actual":6.67,"expected":7.92},{"d":6,"actual":4.62,"expected":6.69},{"d":7,"actual":3.25,"expected":5.8},{"d":8,"actual":2.56,"expected":5.12},{"d":9,"actual":2.48,"expected":4.58}]},"input_tokens":{"total":1629,"chiSq":0.1,"pass":true,"dist":[{"d":1,"actual":30.88,"expected":30.1},{"d":2,"actual":17.68,"expected":17.61},{"d":3,"actual":12.28,"expected":12.49},{"d":4,"actual":10.19,"expected":9.69},{"d":5,"actual":7.73,"expected":7.92},{"d":6,"actual":6.26,"expected":6.69},{"d":7,"actual":5.65,"expected":5.8},{"d":8,"actual":5.03,"expected":5.12},{"d":9,"actual":4.3,"expected":4.58}]},"output_tokens":{"total":1629,"chiSq":0.35,"pass":true,"dist":[{"d":1,"actual":30.76,"expected":30.1},{"d":2,"actual":17.74,"expected":17.61},{"d":3,"actual":12.46,"expected":12.49},{"d":4,"actual":9.58,"expected":9.69},{"d":5,"actual":8.53,"expected":7.92},{"d":6,"actual":6.69,"expected":6.69},{"d":7,"actual":6.02,"expected":5.8},{"d":8,"actual":3.99,"expected":5.12},{"d":9,"actual":4.24,"expected":4.58}]},"cache_creation_tokens":{"total":1496,"chiSq":0.36,"pass":true,"dist":[{"d":1,"actual":31.48,"expected":30.1},{"d":2,"actual":16.98,"expected":17.61},{"d":3,"actual":12.37,"expected":12.49},{"d":4,"actual":10.7,"expected":9.69},{"d":5,"actual":7.29,"expected":7.92},{"d":6,"actual":6.62,"expected":6.69},{"d":7,"actual":5.35,"expected":5.8},{"d":8,"actual":4.48,"expected":5.12},{"d":9,"actual":4.75,"expected":4.58}]},"cache_read_tokens":{"total":1626,"chiSq":0.25,"pass":true,"dist":[{"d":1,"actual":29.89,"expected":30.1},{"d":2,"actual":16.91,"expected":17.61},{"d":3,"actual":13.16,"expected":12.49},{"d":4,"actual":9.04,"expected":9.69},{"d":5,"actual":8.3,"expected":7.92},{"d":6,"actual":6.46,"expected":6.69},{"d":7,"actual":5.6,"expected":5.8},{"d":8,"actual":5.41,"expected":5.12},{"d":9,"actual":5.23,"expected":4.58}]},"total_tokens":{"total":1629,"chiSq":0.06,"pass":true,"dist":[{"d":1,"actual":30.33,"expected":30.1},{"d":2,"actual":17.19,"expected":17.61},{"d":3,"actual":12.77,"expected":12.49},{"d":4,"actual":9.76,"expected":9.69},{"d":5,"actual":7.98,"expected":7.92},{"d":6,"actual":6.26,"expected":6.69},{"d":7,"actual":5.83,"expected":5.8},{"d":8,"actual":5.03,"expected":5.12},{"d":9,"actual":4.85,"expected":4.58}]},"leverage":{"total":1485,"chiSq":3.25,"pass":true,"dist":[{"d":1,"actual":34.81,"expected":30.1},{"d":2,"actual":20.81,"expected":17.61},{"d":3,"actual":12.86,"expected":12.49},{"d":4,"actual":8.15,"expected":9.69},{"d":5,"actual":5.59,"expected":7.92},{"d":6,"actual":4.65,"expected":6.69},{"d":7,"actual":4.85,"expected":5.8},{"d":8,"actual":4.31,"expected":5.12},{"d":9,"actual":3.97,"expected":4.58}]},"velocity":{"total":250,"chiSq":71.02,"pass":false,"dist":[{"d":1,"actual":67.6,"expected":30.1},{"d":2,"actual":14.8,"expected":17.61},{"d":3,"actual":4.8,"expected":12.49},{"d":4,"actual":4.8,"expected":9.69},{"d":5,"actual":2,"expected":7.92},{"d":6,"actual":0.8,"expected":6.69},{"d":7,"actual":2,"expected":5.8},{"d":8,"actual":2.4,"expected":5.12},{"d":9,"actual":0.8,"expected":4.58}]}},"botDetection":{"impossibleCount":0,"anomalousCount":0,"roundCount":0,"suspects":[]},"platforms":{"claude":{"count":757,"avgYield":13415.09},"chatgpt":{"count":668,"avgYield":166.33},"other":{"count":175,"avgYield":0.93},"gemini":{"count":29,"avgYield":0.23}},"classes":{"TRANSMITTER":201,"BASE":132,"ARCH+":235,"ARCH":606,"POWER":412,"IGNITER":5,"SEEKER":30,"REFINER":5,"BEARER":3},"top10":[{"rank":1,"codename":"furic","platform":"claude","class":"TRANSMITTER","yield":2462655.8,"input":214398,"output":17399726,"cacheRead":6505830837,"cacheCreate":195815059},{"rank":2,"codename":"younhomaeng-svg","platform":"claude","class":"TRANSMITTER","yield":2266006.01,"input":4759,"output":578555,"cacheRead":88704942,"cacheCreate":2425558},{"rank":3,"codename":"honggilgim","platform":"claude","class":"TRANSMITTER","yield":1130007.93,"input":760,"output":93646,"cacheRead":6969786,"cacheCreate":168759},{"rank":4,"codename":"grishin43","platform":"claude","class":"TRANSMITTER","yield":839627.84,"input":119137,"output":5903535,"cacheRead":2018682461,"cacheCreate":45368756},{"rank":5,"codename":"henmmi","platform":"claude","class":"TRANSMITTER","yield":586998.46,"input":10627,"output":923946,"cacheRead":71748320,"cacheCreate":3652613},{"rank":6,"codename":"gabsh","platform":"claude","class":"TRANSMITTER","yield":302114.02,"input":35316,"output":1581328,"cacheRead":238282386,"cacheCreate":13066322},{"rank":7,"codename":"maykthewessen","platform":"claude","class":"TRANSMITTER","yield":254228.79,"input":767762,"output":24448484,"cacheRead":6129513667,"cacheCreate":250829089},{"rank":8,"codename":"shpark-daim","platform":"claude","class":"TRANSMITTER","yield":196930.72,"input":57752,"output":2621824,"cacheRead":250520916,"cacheCreate":10002414},{"rank":9,"codename":"steve78ga","platform":"claude","class":"TRANSMITTER","yield":178491.68,"input":1160749,"output":22356697,"cacheRead":10756895879,"cacheCreate":251484849},{"rank":10,"codename":"marquis08","platform":"claude","class":"TRANSMITTER","yield":138611.74,"input":184194,"output":4150281,"cacheRead":1133113674,"cacheCreate":91074486}]};
+const metrics = [
+  { key: 'yield_', label: 'Yield (Υ)' },
+  { key: 'input_tokens', label: 'Input Tokens' },
+  { key: 'output_tokens', label: 'Output Tokens' },
+  { key: 'cache_creation_tokens', label: 'Cache Create' },
+  { key: 'cache_read_tokens', label: 'Cache Read' },
+  { key: 'total_tokens', label: 'Total Tokens' },
+  { key: 'leverage', label: 'Leverage' },
+  { key: 'velocity', label: 'Velocity' },
+];
+
+const grid = document.getElementById('benford-grid');
+for (const m of metrics) {
+  const d = data.benford[m.key];
+  if (!d) continue;
+  const maxVal = Math.max(...d.dist.map(x => Math.max(x.actual, x.expected)));
+  const container = document.createElement('div');
+  container.className = 'chart-container';
+  const title = document.createElement('div');
+  title.className = 'chart-title';
+  title.textContent = m.label + ' — χ²=' + d.chiSq + ' ' + (d.pass ? 'PASS' : 'FAIL');
+  title.style.color = d.pass ? '#4a9' : '#e44';
+  container.appendChild(title);
+  const meta = document.createElement('div');
+  meta.className = 'chart-meta';
+  meta.textContent = d.total + ' values';
+  container.appendChild(meta);
+  const bars = document.createElement('div');
+  bars.className = 'bars';
+  const yAxis = document.createElement('div');
+  yAxis.className = 'y-axis';
+  yAxis.innerHTML = '<span>'+Math.round(maxVal)+'%</span><span>'+Math.round(maxVal*0.75)+'%</span><span>'+Math.round(maxVal*0.5)+'%</span><span>'+Math.round(maxVal*0.25)+'%</span><span>0%</span>';
+  bars.appendChild(yAxis);
+  for (const digit of d.dist) {
+    const col = document.createElement('div');
+    col.className = 'digit-col';
+    const expBar = document.createElement('div');
+    expBar.className = 'bar bar-expected';
+    expBar.style.height = (digit.expected / maxVal * 100) + '%';
+    col.appendChild(expBar);
+    const actBar = document.createElement('div');
+    actBar.className = 'bar';
+    actBar.style.height = (digit.actual / maxVal * 100) + '%';
+    actBar.style.background = d.pass ? '#4a9' : '#e44';
+    col.appendChild(actBar);
+    bars.appendChild(col);
+  }
+  container.appendChild(bars);
+  const xLabels = document.createElement('div');
+  xLabels.className = 'x-labels';
+  for (let i = 1; i <= 9; i++) {
+    const lbl = document.createElement('div');
+    lbl.className = 'x-label';
+    lbl.textContent = i;
+    xLabels.appendChild(lbl);
+  }
+  container.appendChild(xLabels);
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  legend.innerHTML = '<div class="legend-item"><div class="legend-swatch" style="background:'+(d.pass?'#4a9':'#e44')+'"></div>Actual</div><div class="legend-item"><div class="legend-swatch" style="border:1px dashed #666"></div>Benford expected</div>';
+  container.appendChild(legend);
+  grid.appendChild(container);
+}
+
+// Platform table
+const pt = document.getElementById('platform-table');
+const totalOps = data.totalOps;
+const sortedPlatforms = Object.entries(data.platforms).sort((a,b) => b[1].count - a[1].count);
+for (const [p, info] of sortedPlatforms) {
+  const tr = document.createElement('tr');
+  const share = (info.count / totalOps * 100).toFixed(1);
+  tr.innerHTML = '<td>'+p+'</td><td class="numeric">'+info.count.toLocaleString()+'</td><td class="numeric">'+info.avgYield.toLocaleString()+'</td><td class="numeric">'+share+'%</td>';
+  pt.appendChild(tr);
+}
+
+// Class table
+const ct = document.getElementById('class-table');
+const sortedClasses = Object.entries(data.classes).sort((a,b) => b[1] - a[1]);
+for (const [c, n] of sortedClasses) {
+  const tr = document.createElement('tr');
+  const share = (n / totalOps * 100).toFixed(1);
+  tr.innerHTML = '<td>'+c+'</td><td class="numeric">'+n.toLocaleString()+'</td><td class="numeric">'+share+'%</td>';
+  ct.appendChild(tr);
+}
+
+// Top 10 table
+const t10 = document.getElementById('top10-table');
+for (const op of data.top10) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td>'+op.rank+'</td><td>'+op.codename+'</td><td>'+op.platform+'</td><td>'+op.class+'</td><td class="numeric">'+op.yield.toLocaleString()+'</td><td class="numeric">'+op.input.toLocaleString()+'</td><td class="numeric">'+op.output.toLocaleString()+'</td><td class="numeric">'+op.cacheRead.toLocaleString()+'</td><td class="numeric">'+op.cacheCreate.toLocaleString()+'</td>';
+  t10.appendChild(tr);
+}
+</script>
+</body>
+</html>

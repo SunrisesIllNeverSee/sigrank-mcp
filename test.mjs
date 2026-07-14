@@ -505,8 +505,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  16,
-  `ALL_PLATFORMS has 16 entries, got ${ALL_PLATFORMS.length}`,
+  17,
+  `ALL_PLATFORMS has 17 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // --- 17. Each adapter in ADAPTERS has required contract shape ---

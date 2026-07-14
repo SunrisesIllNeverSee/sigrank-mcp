@@ -798,7 +798,7 @@ export const TOOLS = [
         platform: {
           type: "string",
           enum: [...ALL_PLATFORMS, "multi"],
-          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). 'codex' is estimated via io_ratio. Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
+          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). 'codex' is estimated via io_ratio. 'other' reads from a user-supplied JSON file (set SIGRANK_OTHER_PATH). Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
         },
       },
     },
@@ -831,7 +831,7 @@ export const TOOLS = [
         platform: {
           type: "string",
           enum: [...ALL_PLATFORMS, "multi"],
-          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). Each platform reads its own session logs locally.`,
+          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). 'other' reads from a user-supplied JSON file (set SIGRANK_OTHER_PATH). Each platform reads its own session logs locally.`,
         },
       },
     },
