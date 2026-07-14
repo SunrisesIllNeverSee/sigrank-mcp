@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.19.0](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.18.1...v0.19.0) (2026-07-14)
+
+
+### Features
+
+* add 'other' platform adapter for user-supplied token data ([0e6af8e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/0e6af8e36620df88c13822e292499b003442f645))
+* auto-detect platforms via tokscale instead of brute-force all adapters ([e72d2d9](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/e72d2d9f5615832cd58eaeff7e17ab961dc6fa49))
+* complete tokscale client map (40 clients) + model breakdown tool ([657b87a](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/657b87a690576ad81396e219c61447198ada67d8))
+* platform sync automation script + weekly CI check ([29096aa](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/29096aad1b2f3c0bce6dad15d8c4fa59871793e4))
+
+
+### Bug Fixes
+
+* unescaped backticks in index.mjs template literal + add devin/opencode to CLI platform list ([24cfdfe](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/24cfdfe956f4776fe8d88f2108a6dd644f7269d8))
+
 ## [0.18.1](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.18.0...v0.18.1) (2026-07-14)
 
 
