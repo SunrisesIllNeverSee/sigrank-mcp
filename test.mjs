@@ -505,8 +505,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  15,
-  `ALL_PLATFORMS has 15 entries, got ${ALL_PLATFORMS.length}`,
+  16,
+  `ALL_PLATFORMS has 16 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // --- 17. Each adapter in ADAPTERS has required contract shape ---
@@ -520,9 +520,12 @@ for (const [platform, adapter] of Object.entries(ADAPTERS)) {
     typeof adapter.defaultRoot === "function",
     `${platform} has defaultRoot()`,
   );
+  // Most adapters use messages(); codex/devin use records() (input-inclusive format
+  // handled by tokenpullCodex, not the standard tokenpull pipeline).
   assert.ok(
-    typeof adapter.messages === "function",
-    `${platform} has messages()`,
+    typeof adapter.messages === "function" ||
+      typeof adapter.records === "function",
+    `${platform} has messages() or records()`,
   );
 }
 
