@@ -306,13 +306,17 @@ The dashboard pulls from multiple sources and shows them side-by-side for verifi
 | `token-dashboard` | `~/.claude/token-dashboard.db` SQLite ([Nate's](https://github.com/nateherkai/token-dashboard)) | claude only           |
 | `tokscale`        | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex         |
 
-**Codex input is estimated** — Codex logs don't expose true input tokens directly. The formula:
+**Non-Claude input is estimated** — most non-Claude systems (Codex, Devin, etc.) combine user input + cache write into a single `input_tokens` field, so true fresh input must be derived. The ruleset (applies to ALL non-Claude systems):
 
 ```
 input       = output × ioRatio         (ioRatio derived from Claude ratio, else 2.0)
 cacheCreate = uncached − input         (uncached = input_tokens − cached_input_tokens)
 cacheRead   = exact (from logs)
 ```
+
+- **Beta** = operator's Claude input/output ratio (if Claude data available)
+- **Alpha** = 2.0 default (when no Claude data)
+- Owner-stated average: 7:1:2 (cache:input:output) → input/output ≈ 0.5
 
 Verifier numbers (ccusage/tokscale for codex) show **raw uncached input** (`input_tokens − cached`) — a different field than the estimated input above. The discrepancy is expected and explained inline in the dashboard.
 
@@ -326,6 +330,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | ------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
 | Claude Code        | ✅ `~/.claude/projects`                        | Native; dedup by `(session_id, message_id)`; subagents included |
 | Codex              | ✅ `~/.codex/sessions`                         | Estimated input via `io_ratio`; verified vs ccusage             |
+| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | Estimated input via `io_ratio`; SQLite; same split as Codex     |
 | Amp                | ✅ `~/.local/share/amp/threads`                | Full 4-pillar; per-message                                      |
 | Kimi               | ✅ `~/.kimi/sessions`                          | Full 4-pillar; `StatusUpdate` lines only                        |
 | pi-agent           | ✅ `~/.pi/agent/sessions`                      | Full 4-pillar; per-message JSONL                                |

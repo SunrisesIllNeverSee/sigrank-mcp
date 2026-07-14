@@ -15,6 +15,14 @@
  *   messages(root): async generator → { id?, sid?, ts, input, output, cacheCreate, cacheRead, file }
  *
  * SigRank-specific mapping rules (applied consistently across all adapters):
+ *   - Claude = parsed natively (4 pillars exact, no conversion)
+ *   - Non-Claude systems = combined input → split via ioRatio:
+ *       input = floor(output × ioRatio)     // Beta from Claude, else Alpha 2.0
+ *       cacheCreate = max(0, uncached − input)
+ *       cacheRead = exact
+ *     (Adapters that yield {ts, output, cacheRead, uncached} via records() go through
+ *      tokenpullCodex(); adapters that yield native 4-pillar via messages() go through
+ *      tokenpull() directly. The split happens at the tokenpullAny() routing layer.)
  *   - Reasoning / thinking tokens → folded into `output` (they are output-side spend)
  *   - No cache-creation data available → cacheCreate: 0 + adapter sets `estimated: true`
  *   - Cost fields (USD) → NEVER used or forwarded (SigRank scores cost efficiency from
