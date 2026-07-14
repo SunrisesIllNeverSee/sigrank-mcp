@@ -2112,10 +2112,6 @@ export async function runTui({
   // the user can still tab away to read Board/Dashboard while signed out).
   if (!isSignedIn(loadIdentity())) activeTab = 5;
 
-  // Draw loading state immediately so user sees tab bar + border
-  await redraw();
-  await loadAll();
-
   // auto-refresh board every 30s
   const startAutoRefresh = () => {
     if (refreshTimer) clearInterval(refreshTimer);
@@ -2127,10 +2123,24 @@ export async function runTui({
       }
     }, 30000);
   };
+
+  // Draw the first frame, then load data in the background. Keyboard handling
+  // must be installed before this work completes: pullActivePlatforms() and the
+  // board request can take several seconds, and awaiting them here left a fully
+  // rendered TUI that silently discarded every key (including Ctrl-C in raw
+  // mode) until startup finished.
+  await redraw();
+  const initialLoad = loadAll().catch(async (e) => {
+    status = `dashboard error: ${e.message}`;
+    await redraw();
+  });
   startAutoRefresh();
 
   // ── Keyboard
-  if (!process.stdin.isTTY) return;
+  if (!process.stdin.isTTY) {
+    await initialLoad;
+    return;
+  }
 
   process.stdin.setRawMode(true);
   process.stdin.resume();
@@ -2151,9 +2161,11 @@ export async function runTui({
 
       if (k === "q" || k === "\x03") {
         if (refreshTimer) clearInterval(refreshTimer);
-        write(SHOW);
-        write(EXIT_ALT);
-        resolve();
+        // Startup data work may still be in flight now that input is available
+        // immediately. Use the same hard cleanup as SIGINT/SIGTERM so pending
+        // fetch timeouts or platform readers cannot keep the CLI alive or redraw
+        // over the restored terminal after the user quits.
+        cleanup();
         return;
       }
 
