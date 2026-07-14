@@ -295,13 +295,13 @@ SigRank bundles two token readers as npm dependencies:
 - **ccusage** — Claude Code session logs
 - **tokscale** — multi-platform token telemetry
 
-A third source, **token-dashboard**, is read from `~/.claude/token-dashboard.db` (SQLite).
+A third source, **token-dashboard**, is read from \`~/.claude/token-dashboard.db\` (SQLite).
 That DB is created by [Nate's token-dashboard](https://github.com/nateherkai/token-dashboard) (Python):
-```bash
+\`\`\`bash
 git clone https://github.com/nateherkai/token-dashboard.git
 cd token-dashboard
 python3 cli.py dashboard
-```
+\`\`\`
 Run the scan once to create the DB; SigRank reads it directly via sqlite3 after that.
 
 ## MCP Client Setup

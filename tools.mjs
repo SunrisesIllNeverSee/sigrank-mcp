@@ -798,7 +798,7 @@ export const TOOLS = [
         platform: {
           type: "string",
           enum: [...ALL_PLATFORMS, "multi"],
-          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' pulls from tokscale (all-time only, no 7d/30d/90d windows). codex is estimated via io_ratio. Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
+          description: `source platform (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). 'codex' is estimated via io_ratio. Some platforms need setup (e.g. copilot requires COPILOT_OTEL_ENABLED=true).`,
         },
       },
     },
@@ -831,7 +831,7 @@ export const TOOLS = [
         platform: {
           type: "string",
           enum: [...ALL_PLATFORMS, "multi"],
-          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' pulls from tokscale (all-time only). Each platform reads its own session logs locally.`,
+          description: `Source platform to pull from (default: claude). Supported: ${ALL_PLATFORMS.join(", ")}, multi. 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active). 'devin' reads from ~/.local/share/devin/cli/sessions.db (SQLite, all windows). Each platform reads its own session logs locally.`,
         },
       },
     },
@@ -1487,8 +1487,12 @@ export async function callTool(name, args, opts = {}) {
     const c = withParseWarnings(pillars, cascade(pillars));
     return { ...c, card: narrate(c) };
   }
-  if (name === "get_leaderboard")
-    return fetchJson("/api/v1/leaderboard?metric=yield_");
+  if (name === "get_leaderboard") {
+    const params = new URLSearchParams({ metric: "yield_" });
+    if (args?.limit) params.set("limit", String(args.limit));
+    if (args?.window) params.set("window", args.window);
+    return fetchJson(`/api/v1/leaderboard?${params}`);
+  }
   if (name === "get_operator") {
     const codename = String(args?.codename || "").trim();
     if (!codename)

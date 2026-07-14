@@ -937,6 +937,7 @@ async function runWatch({
 const ALL_PLATFORMS = [
   "claude",
   "codex",
+  "devin",
   "amp",
   "gemini",
   "kimi",
@@ -947,6 +948,7 @@ const ALL_PLATFORMS = [
   "droid",
   "codebuff",
   "copilot",
+  "opencode",
   "openclaw",
   "pi",
 ];
