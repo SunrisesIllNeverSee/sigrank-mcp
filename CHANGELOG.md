@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.18.0...v0.18.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **test:** ALL_PLATFORMS count 15→16 + accept records() for devin adapter ([8d7f0f5](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/8d7f0f56cea3686e046a407732233f9bbd7d4916))
+
 ## [0.18.0](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.17.2...v0.18.0) (2026-07-14)
 
 
