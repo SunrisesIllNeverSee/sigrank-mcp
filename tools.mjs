@@ -1383,9 +1383,73 @@ const _lastWatchSubmitAt = new Map();
 // keeps only platforms with real local data, and sorts claude → codex → rest.
 // Pass `platforms` to scope it (e.g. ['claude'] for a fast first paint).
 export async function pullActivePlatforms({ platforms } = {}, opts = {}) {
-  const targets = platforms && platforms.length ? platforms : ALL_PLATFORMS;
+  // If the caller specified explicit platforms, use those.
+  if (platforms && platforms.length) {
+    return _pullExplicit(platforms, opts);
+  }
+  // Auto-detect: run tokscale once to discover all active clients, then pull
+  // only those. This is much faster than trying all 17 adapters (most fail
+  // silently on a machine that doesn't have that tool installed).
+  //
+  // Flow: tokscale surfaces ALL clients → map to our platform names →
+  // ccusage is primary for Claude (more accurate) → other platforms use
+  // their adapters. Anything in tokscale NOT in ccusage gets included.
+  const detected = await _tokscaleDetectClients().catch(() => null);
+  if (detected && detected.length > 0) {
+    return _pullExplicit(detected, opts);
+  }
+  // Fallback: tokscale not installed or failed → try all adapters (old behavior)
+  return _pullExplicit(ALL_PLATFORMS, opts);
+}
+
+/** Run `tokscale models --json` and return the list of our platform names. */
+async function _tokscaleDetectClients() {
+  const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+  const data = JSON.parse(raw);
+  const entries = Array.isArray(data?.entries)
+    ? data.entries
+    : Array.isArray(data)
+      ? data
+      : [];
+  if (!entries.length) return [];
+  // Map tokscale client names → our platform names
+  const TOKSCALE_CLIENT_MAP = {
+    claude: "claude",
+    "devin-cli": "devin",
+    codex: "codex",
+    copilot: "copilot",
+    gemini: "gemini",
+    amp: "amp",
+    kimi: "kimi",
+    qwen: "qwen",
+    goose: "goose",
+    kilo: "kilo",
+    hermes: "hermes",
+    droid: "droid",
+    codebuff: "codebuff",
+    opencode: "opencode",
+    openclaw: "openclaw",
+    pi: "pi",
+    cline: "other", // no native adapter yet
+    "antigravity-cli": "other", // no native adapter yet
+  };
+  const clients = new Set();
+  for (const e of entries) {
+    if (!e || !e.client) continue;
+    if (e.model === "<synthetic>" || e.model === "unknown") continue;
+    const input = Number(e.input) || 0;
+    const output = Number(e.output) || 0;
+    if (input + output === 0) continue;
+    const platform = TOKSCALE_CLIENT_MAP[e.client] || "other";
+    clients.add(platform);
+  }
+  return [...clients];
+}
+
+/** Pull a specific set of platforms in parallel, filter to active ones. */
+async function _pullExplicit(platforms, opts = {}) {
   const settled = await Promise.allSettled(
-    targets.map((p) => callTool("tokenpull", { platform: p }, opts)),
+    platforms.map((p) => callTool("tokenpull", { platform: p }, opts)),
   );
   const active = settled
     .filter((r) => r.status === "fulfilled" && r.value)
