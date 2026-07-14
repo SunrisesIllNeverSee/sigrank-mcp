@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.18.0](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.17.2...v0.18.0) (2026-07-14)
+
+
+### Features
+
+* Lane 3 — intent schema files + competitive layer + eval benchmark ([42b9607](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/42b9607ba4cec8aa5f169b1caf74aa05017c4856))
+* multi-platform support in tokenpull + tokenpull_submit ([c2d1458](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/c2d1458d1f899034e9826d2100b8ec60b421ddd4))
+
+
+### Bug Fixes
+
+* align manifest.json version to 0.17.2 (matches package.json + server.json) ([30c3a37](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/30c3a372b3ac212bc99fd64535687cf6789922f2))
+* auto-clear code buffer on sign-in failure (0.17.5) ([72caa9a](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/72caa9a246c85e38663989981cd233ae98c3b03f))
+* curl fallback for Vercel bot protection 403 (0.0.177) ([abc8610](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/abc861041a3db14497383caecb39550667ec3b93))
+* Devin adapter reads from sessions.db (real per-message telemetry) ([a5aaaf2](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/a5aaaf275516e793aec0e58c13c09d985e68d05c))
+* Devin tokens now readable via tokenpull (tokscale fallback) ([abfb1eb](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/abfb1eb93fd92f669d742ce8b383dffc35ef094f))
+* Esc/arrow-key race condition in TUI (0.17.4) ([555e6bd](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/555e6bd3dd5e45963eff2ff95d85b02955d40e2b))
+* resolve CodeQL url-substring-sanitization alert (0.0.176) ([babf863](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/babf86379a2d97869738a1c8b01269c1d8c149bf))
+* route Devin through Codex-style ioRatio split ([08d4441](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/08d4441437ce38bdfacc8936d1771d654999ac28))
+* unblock sign-in deadlock + keystore resilience (0.17.3) ([569fc94](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/569fc948cd0f74fdf930113074c562724927ffe8))
+
 ## [0.17.0](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.16.1...v0.17.0) (2026-07-10)
 
 
