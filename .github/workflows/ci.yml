@@ -53,6 +53,9 @@ jobs:
       - name: Signing tests
         run: node sign.test.mjs
 
+      - name: Version format check (3-digit ruleset)
+        run: node scripts/check-version.mjs
+
   # Cross-repo contract test — catches platform-enum drift between the MCP server
   # and the web app. The codex landing was triple-blocked because these enums
   # drifted. This job checks out the web repo and diffs the two enums.

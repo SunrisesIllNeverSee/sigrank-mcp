@@ -16,9 +16,10 @@ jobs:
         with:
           release-type: node
           package-name: sigrank
-          # Conventional commits → auto-bump + changelog + tag + GitHub release.
-          # The PR that release-please opens also bumps package.json version.
+          # 3-digit versioning: 0.0.NNN (see VERSIONING_RULESET.md).
+          # bump-patch-only prevents minor/major bumps — every conventional
+          # commit produces a patch bump only (0.0.177 → 0.0.178 → 0.0.179...).
           # Merge the PR to cut a release. npm publish is still manual (owner
-          # runs `npm publish` from inside the repo dir — the service role key
-          # is not in GitHub Actions).
+          # runs `npm publish` from inside the repo dir).
           include-component-in-tag: false
+          bump-patch-only: true
