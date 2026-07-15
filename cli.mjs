@@ -1766,6 +1766,9 @@ export async function runCli(argv) {
     "compare",
     "label",
     "dry-run",
+    "output",
+    "cache-read",
+    "combined-input",
   ]);
   const flags = {};
   for (let i = 1; i < args.length; i++) {
@@ -1823,6 +1826,16 @@ export async function runCli(argv) {
       });
     } else if (cmd === "enroll") {
       await runEnroll({ label: flags.label });
+    } else if (cmd === "review") {
+      const { runReview } = await import("./review.mjs");
+      await runReview({
+        handle: args[1] && !args[1].startsWith("--") ? args[1] : undefined,
+        output: flags.output ? Number(flags.output) : undefined,
+        cacheRead: flags["cache-read"] ? Number(flags["cache-read"]) : undefined,
+        combinedInput: flags["combined-input"]
+          ? Number(flags["combined-input"])
+          : undefined,
+      });
     } else if (cmd === "submit") {
       await runSubmit({
         platform: flags.platform ?? "claude",
