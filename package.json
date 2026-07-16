@@ -25,7 +25,8 @@
   "scripts": {
     "start": "node index.mjs",
     "test": "node test.mjs && node sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs",
-    "sync:platforms": "node scripts/sync-platforms.mjs"
+    "sync:platforms": "node scripts/sync-platforms.mjs",
+    "prepublishOnly": "node scripts/publish-guard.mjs"
   },
   "files": [
     "index.mjs",
