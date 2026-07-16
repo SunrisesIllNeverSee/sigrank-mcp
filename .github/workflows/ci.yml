@@ -53,6 +53,9 @@ jobs:
       - name: Signing tests
         run: node sign.test.mjs
 
+      - name: TUI startup input regression
+        run: node --test __tests__/tui-input.test.mjs
+
       - name: Version format check (3-digit ruleset)
         run: node scripts/check-version.mjs
 
