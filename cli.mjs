@@ -1746,7 +1746,7 @@ async function runSubmit({ platform = "claude", window } = {}) {
     );
   } else if (anyReceivedNotRanked) {
     writeln(
-      `  ${gold("Received, but NOT ranked")} ${dim("— this device is unenrolled or revoked. Re-enroll to rank:")}  ${cyan("npx sigrank enroll")}`,
+      `  ${gold("Received, but NOT ranked")} ${dim("— submission flagged by preflight checks (extreme cache ratio, implausible cadence, etc.). Your data is stored but not ranked. Check the flags above for details.")}`,
     );
   }
 }
@@ -1826,16 +1826,10 @@ export async function runCli(argv) {
       });
     } else if (cmd === "enroll") {
       await runEnroll({ label: flags.label });
-    } else if (cmd === "review") {
-      const { runReview } = await import("./review.mjs");
-      await runReview({
-        handle: args[1] && !args[1].startsWith("--") ? args[1] : undefined,
-        output: flags.output ? Number(flags.output) : undefined,
-        cacheRead: flags["cache-read"] ? Number(flags["cache-read"]) : undefined,
-        combinedInput: flags["combined-input"]
-          ? Number(flags["combined-input"])
-          : undefined,
-      });
+    // `review` was removed from the public CLI (owner decision 2026-07-16):
+    // the ratio review + apply tool modifies operator profiles, so it doesn't
+    // belong in `npx sigrank`. It lives in ops-review.mjs as an internal
+    // owner-only entry point. See ops-review.mjs + OPS_REVIEW_README.md.
     } else if (cmd === "submit") {
       await runSubmit({
         platform: flags.platform ?? "claude",
