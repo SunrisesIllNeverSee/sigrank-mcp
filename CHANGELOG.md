@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.19.1...v0.19.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* revert version to 3-digit ruleset (0.19.1 → 0.0.178) ([cb37424](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/cb37424936aeaf0363ae3c043e52c28cb0187826))
+
 ## [0.19.1](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.19.0...v0.19.1) (2026-07-17)
 
 
