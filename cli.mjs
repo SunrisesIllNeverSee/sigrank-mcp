@@ -1828,8 +1828,9 @@ export async function runCli(argv) {
       await runEnroll({ label: flags.label });
     // `review` was removed from the public CLI (owner decision 2026-07-16):
     // the ratio review + apply tool modifies operator profiles, so it doesn't
-    // belong in `npx sigrank`. It lives in ops-review.mjs as an internal
-    // owner-only entry point. See ops-review.mjs + OPS_REVIEW_README.md.
+    // belong in `npx sigrank`. It now lives in the private `sigadmin` MCP
+    // server (~/Desktop/SigRank-repos/sigadmin/) as ops-review.mjs, alongside
+    // the retire tool and the CRM/Calculate tools. See sigadmin/README.md.
     } else if (cmd === "submit") {
       await runSubmit({
         platform: flags.platform ?? "claude",
