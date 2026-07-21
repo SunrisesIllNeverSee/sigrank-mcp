@@ -1,0 +1,46 @@
+name: sigrank-mcp
+version: "0.0.178"
+description: |
+  SigRank MCP server — the yield cascade + live leaderboard as MCP tools.
+  Entry point is `index.mjs`. ESM-only Node.js project.
+  After the observatory-spine restructure, code is organized into:
+  tools/, analytics/, identity/, submit/, adapters/, presentation/, resources/, prompts/.
+  Back-compat shims at root preserve external import paths.
+
+runtime: nodejs
+node_version: ">=18"
+package_manager: npm
+
+install: npm install
+start: npm start
+test: npm test
+publish: npm publish
+
+env:
+  NODE_ENV: development
+
+notes: |
+  Standard verification before committing:
+    1. npm test
+
+  Publishing rules (from AGENTS.md):
+    - Do NOT publish for small changes.
+    - Only publish when the owner explicitly says "publish" or "ship a new version".
+    - Version scheme is 0.0.x only.
+
+  Cross-repo dependency:
+    - The canonical knowledge layer lives in the sibling sigrank-app repo.
+    - Run `node scripts/sync-spine.mjs` to mirror observatory/, ontology/,
+      methodology/, governance/ from sigrank-app.
+    - Set SIGRANK_APP_PATH if the sibling repo is not at ../sigrank-app.
+
+  Important files after restructure:
+    - index.mjs          — MCP entry point (stays at root)
+    - tools/index.mjs    — tool dispatcher + TOOLS array
+    - analytics/         — pure cascade math
+    - identity/          — keystore, signing, connect
+    - submit/            — submission pipeline
+    - adapters/          — multi-platform token readers
+    - presentation/      — CLI/TUI/narrate
+    - resources/         — MCP resources surfaced from the spine docs
+    - prompts/           — prompt templates

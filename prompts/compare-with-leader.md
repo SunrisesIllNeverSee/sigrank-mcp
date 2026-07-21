@@ -1,0 +1,1 @@
+Fetch the SigRank leaderboard with get_leaderboard, then pull my local token usage with tokenpull. Compare my yield, leverage, and velocity against the top operator. What's the gap and what would I need to change to close it?
