@@ -38,6 +38,8 @@ const PLATFORM_ENUM = new Set([
 ]);
 // Provenance tag only — the board ranks by Υ (no RS.xx weights, §0.1).
 const RULESET_VERSION = "sigrank-token-1";
+const TERMS_VERSION = "2026-07-21";
+const PRIVACY_VERSION = "2026-07-21";
 const DAY_MS = 86_400_000;
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
@@ -97,6 +99,9 @@ export function buildPayload(
     codename: identity.codename,
     device_id: identity.device_id,
     submitted_at: new Date(nowMs).toISOString(),
+    consent_acknowledged: true,
+    terms_version: TERMS_VERSION,
+    privacy_version: PRIVACY_VERSION,
     window: {
       type: windowType,
       start: new Date(nowMs - spanDays * DAY_MS).toISOString(),
@@ -252,7 +257,8 @@ export async function submitSignedWindow(
       payload,
       signature,
       preflight: pre,
-      detail: "Nothing sent. Re-run without dry_run to publish.",
+      detail:
+        "By submitting, you agree to the SignalAF Terms of Service and Privacy Policy. Nothing sent. Re-run without dry_run to publish.",
     };
   }
 

@@ -6,10 +6,13 @@ import os from "node:os";
 import { ensureIdentity, recordEnrollment } from "../identity/keystore.mjs";
 import { ENROLL_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 
+const TERMS_VERSION = "2026-07-21";
+const PRIVACY_VERSION = "2026-07-21";
+
 export const TOOL_DEF = {
   name: "enroll",
   description:
-    'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the key from signalaf.com → Settings → "New key" (or "Generate connect code"). On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
+    'Bind THIS device to your SigRank operator so your signed token runs cascade to the live board. Paste the key from signalaf.com → Settings → "New key" (or "Generate connect code"). On first run it generates + stores a local ed25519 keypair (~/.sigrank-mcp/identity.json); only the PUBLIC key is ever sent. By enrolling you agree to the SignalAF Terms of Service (signalaf.com/terms) and Privacy Policy (signalaf.com/privacy). Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.',
   annotations: {
     title: "Enroll device identity",
     ...ANNOTATIONS.destructiveHint,
@@ -59,6 +62,9 @@ export async function handleEnroll(args, ctx) {
       public_key: id.public_key,
       device_label: deviceLabel,
       agent_version: id.agent_version,
+      consent_acknowledged: true,
+      terms_version: TERMS_VERSION,
+      privacy_version: PRIVACY_VERSION,
     }),
   });
   let ack;

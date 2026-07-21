@@ -89,6 +89,9 @@ export async function handleSubmitPaste(args, ctx) {
     body: JSON.stringify({
       codename,
       raw_paste: String(args?.text || ""),
+      consent_acknowledged: true,
+      terms_version: "2026-07-21",
+      privacy_version: "2026-07-21",
       ...stamp,
     }),
   });

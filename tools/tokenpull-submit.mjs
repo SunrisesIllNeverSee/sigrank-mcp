@@ -130,6 +130,9 @@ export async function handleTokenpullSubmit(args, ctx) {
           raw_paste: rawPaste,
           window_type: windowType,
           telemetry: { platform: { primary: "multi" } },
+          consent_acknowledged: true,
+          terms_version: "2026-07-21",
+          privacy_version: "2026-07-21",
           ...stamp,
         }),
       });
@@ -194,6 +197,9 @@ export async function handleTokenpullSubmit(args, ctx) {
         raw_paste: rawPaste,
         window_type: windowType,
         telemetry: { platform: { primary: pulled.platform } },
+        consent_acknowledged: true,
+        terms_version: "2026-07-21",
+        privacy_version: "2026-07-21",
         ...stamp,
       }),
     });

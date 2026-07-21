@@ -214,6 +214,13 @@ async function startMcpServer() {
         "How SigRank protects user privacy: runs locally, only four token counts (input, output, cacheCreate, cacheRead) leave the machine, ed25519-signed submissions, no prompt content ever transmitted.",
       mimeType: "text/markdown",
     },
+    {
+      uri: "sigrank://data-policy",
+      name: "Data Policy",
+      description:
+        "Summary of SigRank data governance: what we collect, what we do not collect, consent requirements, and how to pause, delete, or export your data.",
+      mimeType: "text/markdown",
+    },
   ];
 
   const RESOURCE_FILES = {
@@ -221,6 +228,7 @@ async function startMcpServer() {
     "sigrank://class-tiers": "./resources/class-tiers.md",
     "sigrank://install-guide": "./resources/install-guide.md",
     "sigrank://privacy-model": "./resources/privacy-model.md",
+    "sigrank://data-policy": "./resources/data-policy.md",
   };
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({

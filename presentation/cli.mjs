@@ -1631,6 +1631,19 @@ async function runEnroll({ label } = {}) {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let code;
   try {
+    // D1: explicit consent prompt in TTY mode before collecting a connect code.
+    const ok = (
+      await rl.question(
+        "  By enrolling, you agree to the SignalAF Terms (signalaf.com/terms) and Privacy Policy (signalaf.com/privacy). Continue? [y/N] ",
+      )
+    )
+      .trim()
+      .toLowerCase();
+    if (ok !== "y" && ok !== "yes") {
+      writeln(dim("  Enrollment cancelled."));
+      process.exitCode = 1;
+      return;
+    }
     code = (await rl.question("  Paste your connect code: ")).trim();
   } finally {
     rl.close();
