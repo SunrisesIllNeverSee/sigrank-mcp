@@ -25,7 +25,10 @@
   "scripts": {
     "start": "node index.mjs",
     "test": "node test.mjs && node sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs",
-    "sync:platforms": "node scripts/sync-platforms.mjs"
+    "sync:platforms": "node scripts/sync-platforms.mjs",
+    "sync:spine": "node scripts/sync-spine.mjs",
+    "spine:check": "node scripts/sync-spine.mjs --check",
+    "spine:diff": "node scripts/sync-spine.mjs --dry-run"
   },
   "files": [
     "index.mjs",
@@ -35,6 +38,7 @@
     "cascade.mjs",
     "narrate.mjs",
     "tokenpull.mjs",
+    "tokscale_analytics.mjs",
     "adapters.mjs",
     "sign.mjs",
     "keystore.mjs",

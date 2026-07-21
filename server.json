@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "Operator leaderboard measuring users, not models \u2014 20 tools, TUI, signed submit, privacy-first.",
+  "description": "Operator leaderboard measuring users, not models \u2014 28 tools, TUI, signed submit, tokscale analytics, privacy-first.",
   "title": "SigRank \u2014 Token Efficiency Leaderboard",
   "version": "0.0.177",
   "websiteUrl": "https://signalaf.com",

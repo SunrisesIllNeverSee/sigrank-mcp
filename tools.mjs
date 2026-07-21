@@ -22,6 +22,15 @@ import {
   tokenpullCodex as pullCodex,
   tokenpullAny,
 } from "./tokenpull.mjs";
+import {
+  tokscaleMarketShare,
+  tokscaleDeveloperProfile,
+  tokscaleModelTrends,
+  tokscaleCostAnalysis,
+  tokscaleDeviceProfile,
+  tokscaleMcpUsage,
+  tokscaleCompetitiveIntel,
+} from "./tokscale_analytics.mjs";
 import { ALL_PLATFORMS } from "./adapters.mjs";
 import { ensureIdentity, recordEnrollment } from "./keystore.mjs";
 import { submitSignedWindow } from "./submit.mjs";
@@ -1389,6 +1398,173 @@ export const TOOLS = [
           type: "object",
           description: "Map of platform name → array of { model, input, output, cacheRead, cacheCreate, pct }",
         },
+      },
+    },
+  },
+  {
+    name: "tokscale_market_share",
+    description:
+      "Complete AI tool market share analysis from your local tokscale data. Aggregates per-model usage by client (AI tool) and computes each tool's share of total tokens, cost, and messages. Returns each tool ranked by token share, with share_tokens / share_cost / share_messages percentages and a totals rollup. All data is read locally from tokscale's scan of your session logs — no network calls, no PII. Use this to see which AI coding tools dominate your workflow by volume, spend, or activity. Do NOT use this for per-model detail — use tokscale_developer_profile for that.",
+    annotations: { title: "AI tool market share", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Scans all locally-detected AI tools via tokscale.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        tools: {
+          type: "array",
+          description: "AI tools ranked by token share, each with { client, label, tokens, cost, messages, model_count, share_tokens, share_cost, share_messages }",
+        },
+        totals: {
+          type: "object",
+          description: "Aggregate totals: { tokens, cost, messages, tool_count }",
+        },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_developer_profile",
+    description:
+      "Per-developer usage profile across all 20+ AI tools detected by tokscale on this machine. For each tool: model mix (per-model tokens/cost/messages/performance), token pillars (input/output/cache_read/cache_write/reasoning), cache_read_pct, session count, scan path (redacted to ~), workspace breakdown, and headless support flag. Returns a summary with tool_count, total_cost, dominant_tool. All filesystem paths are redacted (home dir → ~). Use this to understand your full AI tool footprint — which tools you use, which models per tool, and how your usage is distributed. Do NOT use this for cost-only analysis — use tokscale_cost_analysis for that.",
+    annotations: { title: "Developer usage profile", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Profiles all locally-detected AI tools via tokscale.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        tools: {
+          type: "array",
+          description: "Per-tool profile with model mix, token pillars, session counts, workspaces",
+        },
+        summary: {
+          type: "object",
+          description: "Aggregate summary: { tool_count, total_cost, total_tokens, total_messages, avg_cost_per_tool, dominant_tool }",
+        },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_model_trends",
+    description:
+      "Model adoption trends over time from your local tokscale data. Combines monthly aggregates with per-day contribution data to build a model-level adoption timeline: each model's first_seen / last_seen / active_days / tokens / clients, plus a month-by-month adoption curve showing how many new models appeared each month. Returns months[], models[], and adoption_curve[]. Use this to track which AI models you adopted when, and how your model mix evolved over time. Do NOT use this for cost trends — use tokscale_cost_analysis for current cost breakdown.",
+    annotations: { title: "Model adoption trends", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Derives trends from tokscale monthly + graph data.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        months: { type: "array", description: "Per-month aggregates: { month, models, model_count, input, output, cache_read, messages, cost }" },
+        models: { type: "array", description: "Per-model adoption: { model, first_seen, last_seen, active_days, tokens, cost, messages, client_count, clients }" },
+        adoption_curve: { type: "array", description: "Per-month new-model count: { month, new_models, new_model_count, total_models }" },
+        date_range: { type: "object", description: "{ start, end } date range of the data" },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_cost_analysis",
+    description:
+      "Cost analysis per developer per model from your local tokscale data. Returns a per-client × per-model cost breakdown with cost_per_million_tokens, cost_per_message, and share_cost. Includes a per-client cost rollup and totals: total_cost, total_tokens, avg_cost_per_million_tokens, most_expensive_model, cheapest_per_token. Use this to see exactly where your AI spend goes — which tools and models cost the most and which give the best value per token. Do NOT use this for market share — use tokscale_market_share for that.",
+    annotations: { title: "Cost analysis per model", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Derives cost breakdown from tokscale models data.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        entries: { type: "array", description: "Per-client×per-model cost rows sorted by cost desc" },
+        client_rollup: { type: "array", description: "Per-client cost summary with share_cost and cost_per_million_tokens" },
+        totals: { type: "object", description: "Aggregate cost totals and extremes" },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_device_profile",
+    description:
+      "Device fingerprinting: profiles this machine's AI tool footprint — which AI tools are installed, where their session logs live (paths redacted to ~), how many sessions and messages each has, when the machine was active (daily activity + day-of-week distribution), session concurrency, and longest continuous session. Combines tokscale clients + graph data. All filesystem paths are redacted so no local username leaks. Use this to audit your own machine's AI tool installation and activity pattern. This is local-only — it profiles the current machine, not remote devices.",
+    annotations: { title: "Device profile", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Profiles the local machine via tokscale.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        installed_tools: { type: "array", description: "Detected AI tools with redacted session paths and message counts" },
+        installed_tool_count: { type: "integer" },
+        active_tool_count: { type: "integer", description: "Tools whose session path exists on disk" },
+        date_range: { type: "object", description: "{ start, end } of the activity data" },
+        activity: { type: "object", description: "Daily activity + day-of-week token distribution" },
+        sessions: { type: "object", description: "Session metrics: count, total/longest active time, max concurrent" },
+        summary: { type: "object", description: "Cost summary from graph: total_tokens, total_cost, avg_per_day, max_single_day" },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_mcp_usage",
+    description:
+      "MCP server usage patterns from your local tokscale data. Reports which MCP servers tokscale detected on this machine, the detection window, and active days in that window. tokscale currently exposes detected MCP servers as a set (not per-session attribution), so the report notes the detection window. Use this to see which MCP servers are active on your machine. If no servers are detected, the response explains that MCP server tracking requires a tokscale version that records per-session MCP attribution.",
+    annotations: { title: "MCP server usage", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {},
+      description: "No parameters. Reads MCP server data from tokscale graph output.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        servers: { type: "array", description: "Detected MCP servers: [{ name, detected: true }]" },
+        server_count: { type: "integer" },
+        detection_window: { type: "object", description: "{ start, end } date range" },
+        active_days_in_window: { type: "integer" },
+        note: { type: "string", description: "Explanation of the MCP server data granularity" },
+        error: { type: "string", description: "Present if tokscale is unavailable" },
+      },
+    },
+  },
+  {
+    name: "tokscale_competitive_intel",
+    description:
+      "Competitive intelligence for any AI tool company. Pass a target tool (by tokscale client slug like 'claude', 'codex', 'devin-cli' or canonical platform name like 'devin', 'other') and get: the target's rank by tokens among all detected tools, its full profile (tokens, cost, model mix, cache_read_pct, cost_per_million_tokens, market share), and a head-to-head comparison against every competitor (each competitor's tokens, cost, model_count, share, cost_per_million_tokens). Returns market_totals for context. If the target is not found, lists all detected clients. Use this to benchmark one AI tool against its competitors on this machine. All data is local — this is your own usage, not aggregate market data.",
+    annotations: { title: "Competitive intelligence", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: {
+          type: "string",
+          description:
+            "The AI tool to analyze. Accepts a tokscale client slug (e.g. 'claude', 'codex', 'devin-cli', 'copilot') or a canonical platform name (e.g. 'devin', 'claude', 'other'). Case-insensitive. To discover valid slugs, call tokscale_market_share first.",
+        },
+      },
+      required: ["target"],
+      description: "Requires the target tool name. No other parameters accepted.",
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "The resolved target slug(s)" },
+        found: { type: "boolean", description: "Whether the target was found in local data" },
+        rank_by_tokens: { type: "integer", description: "Target's rank among all detected tools by token volume" },
+        target_profile: { type: "object", description: "Target's full usage profile with model mix and market share" },
+        competitors: { type: "array", description: "All other detected tools with comparison metrics" },
+        market_totals: { type: "object", description: "Aggregate market context: { tokens, cost, messages, tool_count }" },
+        error: { type: "string", description: "Present if tokscale is unavailable or target is empty" },
       },
     },
   },
@@ -3506,6 +3682,32 @@ export async function callTool(name, args, opts = {}) {
     const threshold = Number(args?.threshold ?? 0.01);
     const platforms = await tokscaleModelBreakdown(threshold);
     return { platforms };
+  }
+
+  if (name === "tokscale_market_share") {
+    return await tokscaleMarketShare();
+  }
+  if (name === "tokscale_developer_profile") {
+    return await tokscaleDeveloperProfile();
+  }
+  if (name === "tokscale_model_trends") {
+    return await tokscaleModelTrends();
+  }
+  if (name === "tokscale_cost_analysis") {
+    return await tokscaleCostAnalysis();
+  }
+  if (name === "tokscale_device_profile") {
+    return await tokscaleDeviceProfile();
+  }
+  if (name === "tokscale_mcp_usage") {
+    return await tokscaleMcpUsage();
+  }
+  if (name === "tokscale_competitive_intel") {
+    const target = String(args?.target || "").trim();
+    if (!target) {
+      throw new Error("tokscale_competitive_intel requires a non-empty `target` argument (a tokscale client slug like 'claude' or 'codex').");
+    }
+    return await tokscaleCompetitiveIntel(target);
   }
 
   throw new Error(`Unknown tool: ${name}`);

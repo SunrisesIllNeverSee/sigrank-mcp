@@ -3,7 +3,7 @@
 // fetch — no live calls, no writes to production).
 import { cascade, parsePillars } from "./cascade.mjs";
 import { narrate } from "./narrate.mjs";
-import { callTool } from "./tools.mjs";
+import { callTool, TOOLS } from "./tools.mjs";
 import {
   tokenpull,
   tokenpullCodex,
@@ -1774,4 +1774,218 @@ assert.rejects(
 
 console.log(
   "✓ optional intent tools: describe_power_user (static) · optimize_efficiency (codename/text/missing)",
+);
+
+// ── tokscale_analytics: pure helpers + tool registration + live shape ─────────
+import {
+  redactPath,
+  num,
+  isBookkeepingModel,
+  tokscaleMarketShare,
+  tokscaleDeveloperProfile,
+  tokscaleModelTrends,
+  tokscaleCostAnalysis,
+  tokscaleDeviceProfile,
+  tokscaleMcpUsage,
+  tokscaleCompetitiveIntel,
+} from "./tokscale_analytics.mjs";
+import os from "node:os";
+
+// redactPath: home dir → ~, non-home untouched, edge cases safe
+assert.strictEqual(redactPath(os.homedir()), "~", "redactPath: exact home → ~");
+assert.strictEqual(
+  redactPath(os.homedir() + "/.claude/projects"),
+  "~/.claude/projects",
+  "redactPath: home prefix → ~",
+);
+assert.strictEqual(redactPath("/usr/local/bin"), "/usr/local/bin", "redactPath: non-home untouched");
+assert.strictEqual(redactPath(null), null, "redactPath: null passthrough");
+assert.strictEqual(redactPath(""), "", "redactPath: empty passthrough");
+assert.strictEqual(redactPath(123), 123, "redactPath: non-string passthrough");
+
+// num: coerces, guards NaN/undefined/null/strings
+assert.strictEqual(num("42"), 42, "num: string → number");
+assert.strictEqual(num(42), 42, "num: number passthrough");
+assert.strictEqual(num(undefined), 0, "num: undefined → 0");
+assert.strictEqual(num(null), 0, "num: null → 0");
+assert.strictEqual(num("abc"), 0, "num: NaN string → 0");
+assert.strictEqual(num(NaN), 0, "num: NaN → 0");
+assert.strictEqual(num(Infinity), 0, "num: Infinity → 0");
+
+// isBookkeepingModel: synthetic + unknown + empty filtered, real models kept
+assert.ok(isBookkeepingModel("<synthetic>"), "isBookkeepingModel: <synthetic> filtered");
+assert.ok(isBookkeepingModel("unknown"), "isBookkeepingModel: unknown filtered");
+assert.ok(isBookkeepingModel(""), "isBookkeepingModel: empty filtered");
+assert.ok(isBookkeepingModel(null), "isBookkeepingModel: null filtered");
+assert.ok(!isBookkeepingModel("claude-opus-4-8"), "isBookkeepingModel: real model kept");
+assert.ok(!isBookkeepingModel("gpt-5.4"), "isBookkeepingModel: real model kept");
+
+// Tool registration: all 7 new tools are in the TOOLS array with valid schemas
+const analyticsToolNames = [
+  "tokscale_market_share",
+  "tokscale_developer_profile",
+  "tokscale_model_trends",
+  "tokscale_cost_analysis",
+  "tokscale_device_profile",
+  "tokscale_mcp_usage",
+  "tokscale_competitive_intel",
+];
+for (const tname of analyticsToolNames) {
+  const t = TOOLS.find((t) => t.name === tname);
+  assert.ok(t, `tool registration: ${tname} present in TOOLS`);
+  assert.ok(t.description && t.description.length > 20, `tool registration: ${tname} has description`);
+  assert.ok(t.inputSchema, `tool registration: ${tname} has inputSchema`);
+  assert.ok(t.inputSchema.type === "object", `tool registration: ${tname} inputSchema is object`);
+  assert.ok(t.annotations?.readOnlyHint === true, `tool registration: ${tname} marked readOnly`);
+}
+
+// competitive_intel: empty target throws (validation guard)
+assert.rejects(
+  callTool("tokscale_competitive_intel", {}),
+  /requires a non-empty `target`/,
+  "tokscale_competitive_intel: empty target throws",
+);
+
+// Live shape tests — these exercise the real tokscale binary. They verify the
+// output SHAPE (keys present, types correct), not specific values, so they pass
+// on any machine with tokscale data and degrade gracefully (error key) if
+// tokscale is absent (CI without the binary).
+const hasTkscale = await (async () => {
+  try {
+    const { execFile } = await import("node:child_process");
+    const path = await import("node:path");
+    const url = await import("node:url");
+    const _pkgRoot = path.dirname(url.fileURLToPath(import.meta.url));
+    const _localBin = path.join(_pkgRoot, "node_modules", ".bin");
+    const _envPath = `${_localBin}${process.env.PATH ? ":" + process.env.PATH : ""}`;
+    await new Promise((res, rej) =>
+      execFile("tokscale", ["--version"], {
+        timeout: 5000,
+        env: { ...process.env, PATH: _envPath },
+      }, (e) => (e ? rej(e) : res())),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+if (hasTkscale) {
+  // market share: tools array + totals, sorted by tokens desc
+  const ms = await tokscaleMarketShare();
+  if (ms.error) {
+    console.log("  (tokscale models unavailable — skipping live market share assertions)");
+  } else {
+    assert.ok(Array.isArray(ms.tools), "market_share: tools is array");
+    assert.ok(ms.totals && typeof ms.totals === "object", "market_share: totals present");
+    for (const t of ms.tools) {
+      assert.ok(typeof t.client === "string", "market_share: tool.client is string");
+      assert.ok(typeof t.share_tokens === "number", "market_share: share_tokens is number");
+      assert.ok(t.share_tokens >= 0 && t.share_tokens <= 100, "market_share: share_tokens in [0,100]");
+    }
+    // Verify sorted descending by tokens
+    for (let i = 1; i < ms.tools.length; i++) {
+      assert.ok(ms.tools[i - 1].tokens >= ms.tools[i].tokens, "market_share: sorted by tokens desc");
+    }
+  }
+
+  // developer profile: tools with redacted paths (no absolute home dir leak)
+  const dp = await tokscaleDeveloperProfile();
+  if (!dp.error) {
+    assert.ok(Array.isArray(dp.tools), "developer_profile: tools is array");
+    assert.ok(dp.summary && typeof dp.summary === "object", "developer_profile: summary present");
+    for (const t of dp.tools) {
+      // SECURITY: no raw home directory path may appear in sessions_path
+      if (t.sessions_path) {
+        assert.ok(
+          !t.sessions_path.includes(os.homedir()),
+          "developer_profile: sessions_path redacted (no home dir leak)",
+        );
+        assert.ok(t.sessions_path.startsWith("~"), "developer_profile: sessions_path starts with ~");
+      }
+      assert.ok(Array.isArray(t.models), "developer_profile: models is array");
+    }
+  }
+
+  // cost analysis: entries + client_rollup + totals
+  const ca = await tokscaleCostAnalysis();
+  if (!ca.error) {
+    assert.ok(Array.isArray(ca.entries), "cost_analysis: entries is array");
+    assert.ok(Array.isArray(ca.client_rollup), "cost_analysis: client_rollup is array");
+    assert.ok(ca.totals && typeof ca.totals.total_cost === "number", "cost_analysis: totals.total_cost is number");
+    for (const r of ca.entries) {
+      assert.ok(typeof r.cost_per_million_tokens === "number", "cost_analysis: cost_per_million_tokens is number");
+      assert.ok(typeof r.share_cost === "number", "cost_analysis: share_cost is number");
+      assert.ok(r.share_cost >= 0 && r.share_cost <= 100, "cost_analysis: share_cost in [0,100]");
+    }
+  }
+
+  // model trends: months + models + adoption_curve
+  const mt = await tokscaleModelTrends();
+  if (!mt.error) {
+    assert.ok(Array.isArray(mt.months), "model_trends: months is array");
+    assert.ok(Array.isArray(mt.models), "model_trends: models is array");
+    assert.ok(Array.isArray(mt.adoption_curve), "model_trends: adoption_curve is array");
+    // adoption_curve month prefix matches months
+    if (mt.adoption_curve.length && mt.months.length) {
+      assert.strictEqual(
+        mt.adoption_curve[0].month,
+        mt.months[0].month,
+        "model_trends: adoption_curve aligns with months",
+      );
+    }
+  }
+
+  // device profile: redacted paths + session metrics shape
+  const dev = await tokscaleDeviceProfile();
+  if (!dev.error) {
+    assert.ok(Array.isArray(dev.installed_tools), "device_profile: installed_tools is array");
+    for (const t of dev.installed_tools) {
+      if (t.sessions_path) {
+        assert.ok(
+          !t.sessions_path.includes(os.homedir()),
+          "device_profile: sessions_path redacted (no home dir leak)",
+        );
+      }
+    }
+    if (dev.sessions) {
+      assert.ok(typeof dev.sessions.session_count === "number", "device_profile: session_count is number");
+      assert.ok(typeof dev.sessions.max_concurrent_sessions === "number", "device_profile: max_concurrent is number");
+    }
+    if (dev.activity) {
+      assert.ok(Array.isArray(dev.activity.daily), "device_profile: activity.daily is array");
+      assert.ok(Array.isArray(dev.activity.by_day_of_week), "device_profile: by_day_of_week is array");
+      assert.strictEqual(dev.activity.by_day_of_week.length, 7, "device_profile: 7 day-of-week buckets");
+    }
+  }
+
+  // mcp usage: servers array + server_count
+  const mcp = await tokscaleMcpUsage();
+  if (!mcp.error) {
+    assert.ok(Array.isArray(mcp.servers), "mcp_usage: servers is array");
+    assert.strictEqual(typeof mcp.server_count, "number", "mcp_usage: server_count is number");
+    assert.ok(typeof mcp.note === "string", "mcp_usage: note is string");
+  }
+
+  // competitive intel: valid target returns found:true + competitors; bad target returns found:false
+  const ci = await tokscaleCompetitiveIntel("claude");
+  if (!ci.error) {
+    if (ci.found) {
+      assert.ok(typeof ci.rank_by_tokens === "number", "competitive_intel: rank_by_tokens is number");
+      assert.ok(ci.target_profile && typeof ci.target_profile === "object", "competitive_intel: target_profile present");
+      assert.ok(Array.isArray(ci.competitors), "competitive_intel: competitors is array");
+      assert.ok(ci.market_totals && typeof ci.market_totals === "object", "competitive_intel: market_totals present");
+    }
+  }
+  const ciBad = await tokscaleCompetitiveIntel("nonexistent-tool-xyz");
+  if (!ciBad.error) {
+    assert.strictEqual(ciBad.found, false, "competitive_intel: bad target → found:false");
+    assert.ok(Array.isArray(ciBad.detected_clients), "competitive_intel: bad target lists detected clients");
+  }
+} else {
+  console.log("  (tokscale binary not on PATH — skipping live analytics assertions)");
+}
+
+console.log(
+  "✓ tokscale_analytics: redactPath · num · isBookkeepingModel · tool registration · competitive_intel guard · live shape (7 functions)",
 );
