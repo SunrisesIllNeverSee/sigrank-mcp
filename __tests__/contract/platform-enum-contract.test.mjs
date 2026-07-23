@@ -15,7 +15,7 @@
  *   node __tests__/contract/platform-enum-contract.test.mjs /path/to/the/other/repo
  *
  * The two enum sources:
- *   sigrank-app:  lib/payload/schema.ts  →  platformPrimaryEnum (zod enum)
+ *   sigrank-app:  lib/ingest/payload-schema.ts  →  platformPrimaryEnum (zod enum)
  *   sigrank-mcp:  submit.mjs             →  PLATFORM_ENUM (Set)
  */
 
@@ -65,11 +65,11 @@ function extractMcpEnum(filePath) {
 
 /**
  * Detect which repo we're in by looking for the marker files.
- * sigrank-app has `lib/payload/schema.ts`; sigrank-mcp has `submit.mjs`.
+ * sigrank-app has `lib/ingest/payload-schema.ts`; sigrank-mcp has `submit.mjs`.
  */
 function detectRepo(rootDir) {
   try {
-    readFileSync(join(rootDir, "lib/payload/schema.ts"), "utf8");
+    readFileSync(join(rootDir, "lib/ingest/payload-schema.ts"), "utf8");
     return "web";
   } catch {
     try {
@@ -89,7 +89,7 @@ function detectRepo(rootDir) {
 function getEnumForRepo(repoDir) {
   const type = detectRepo(repoDir);
   if (type === "web") {
-    return extractWebEnum(join(repoDir, "lib/payload/schema.ts"));
+    return extractWebEnum(join(repoDir, "lib/ingest/payload-schema.ts"));
   } else {
     return extractMcpEnum(join(repoDir, "submit/index.mjs"));
   }
@@ -150,7 +150,7 @@ if (selfOnly.length === 0 && otherOnly.length === 0) {
         ? `  Only in ${otherType}: [${otherOnly.join(", ")}]\n`
         : "") +
       `\n  FIX: add the missing platform(s) to BOTH repos before merging.\n` +
-      `  sigrank-app:  lib/payload/schema.ts  →  platformPrimaryEnum\n` +
+      `  sigrank-app:  lib/ingest/payload-schema.ts  →  platformPrimaryEnum\n` +
       `  sigrank-mcp:  submit.mjs             →  PLATFORM_ENUM\n` +
       `  Also update: lib/canon/ids.ts (P.xx ID) + lib/constants.ts (PLATFORM_UI) + globals.css (--platform-xxx)`,
   );

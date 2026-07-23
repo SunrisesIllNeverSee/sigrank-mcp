@@ -720,7 +720,7 @@ export async function tokscaleCompetitiveIntel(target) {
   if (entries === null) {
     return { error: "tokscale models --json unavailable" };
   }
-  if (!entries.length) return { target: target || null, found: false, competitors: [] };
+  if (!entries.length) return { target: target || null, found: false, competitors: [], detected_clients: [] };
 
   // Normalize the target: accept either a raw tokscale slug or a canonical
   // platform name from TOKSCALE_CLIENT_MAP.
