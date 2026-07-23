@@ -91,7 +91,7 @@ function getEnumForRepo(repoDir) {
   if (type === "web") {
     return extractWebEnum(join(repoDir, "lib/payload/schema.ts"));
   } else {
-    return extractMcpEnum(join(repoDir, "submit.mjs"));
+    return extractMcpEnum(join(repoDir, "submit/index.mjs"));
   }
 }
 

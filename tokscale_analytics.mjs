@@ -497,7 +497,7 @@ export async function tokscaleCostAnalysis() {
   if (entries === null) {
     return { error: "tokscale models --json unavailable", entries: [], totals: {} };
   }
-  if (!entries.length) return { entries: [], totals: { total_cost: 0 } };
+  if (!entries.length) return { entries: [], client_rollup: [], totals: { total_cost: 0 } };
 
   const rows = entries.map((e) => {
     const tok = totalTokens(e);
