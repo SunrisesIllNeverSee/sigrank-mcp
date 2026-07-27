@@ -51,7 +51,7 @@ jobs:
         run: node test.mjs
 
       - name: Signing tests
-        run: node sign.test.mjs
+        run: node __tests__/sign.test.mjs
 
       - name: TUI startup input regression
         run: node --test __tests__/tui-input.test.mjs

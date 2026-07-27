@@ -79,7 +79,7 @@ function discoverCcusage() {
 // ── 2. Read our current maps ──────────────────────────────────────────────────
 
 function readOurAdapters() {
-  const src = readFileSync(join(ROOT, "adapters.mjs"), "utf8");
+  const src = readFileSync(join(ROOT, "adapters/index.mjs"), "utf8");
   // Extract platform names from the ADAPTERS registry
   const m = src.match(/export const ADAPTERS = \{([\s\S]*?)\};/);
   if (!m) return [];
@@ -93,7 +93,7 @@ function readOurAdapters() {
 }
 
 function readTokscaleMap() {
-  const src = readFileSync(join(ROOT, "tools.mjs"), "utf8");
+  const src = readFileSync(join(ROOT, "tools/index.mjs"), "utf8");
   // Find the first TOKSCALE_CLIENT_MAP block
   const m = src.match(/const TOKSCALE_CLIENT_MAP = \{([\s\S]*?)\};/);
   if (!m) return {};
