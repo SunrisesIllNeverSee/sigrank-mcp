@@ -25,11 +25,11 @@ import { TOOL_DEF as simulateChangeTool, handleSimulateChange } from "./simulate
 import { TOOL_DEF as diagnoseCascadeTool, handleDiagnoseCascade } from "./diagnose-cascade.mjs";
 import { TOOL_DEF as suggestImprovementsTool, handleSuggestImprovements } from "./suggest-improvements.mjs";
 import { TOOL_DEF as selfImproveTool, handleSelfImprove } from "./self-improve.mjs";
-import { TOOL_DEF as getBestOperatorTool, handleGetBestOperator } from "./get-best-operator.mjs";
-import { TOOL_DEF as compareSelfTool, handleCompareSelf } from "./compare-self.mjs";
-import { TOOL_DEF as compareOperatorsTool, handleCompareOperators } from "./compare-operators.mjs";
-import { TOOL_DEF as describePowerUserTool, handleDescribePowerUser } from "./describe-power-user.mjs";
-import { TOOL_DEF as optimizeEfficiencyTool, handleOptimizeEfficiency } from "./optimize-efficiency.mjs";
+// NOTE: get_best_operator, compare_self, compare_operators, describe_power_user,
+// and optimize_efficiency were moved to bestuser-router-mcp (the marketing layer).
+// They are duplicated there with richer params (metric sorting, platform filters,
+// local text scoring). sigrank-mcp stays focused on local pulling + scoring +
+// submission + tokscale analytics.
 import { TOOL_DEF as tokscaleBreakdownTool, handleTokscaleBreakdown } from "./tokscale-breakdown.mjs";
 import { TOOL_DEF as tokscaleMarketShareTool, handleTokscaleMarketShare } from "./tokscale-market-share.mjs";
 import { TOOL_DEF as tokscaleDeveloperProfileTool, handleTokscaleDeveloperProfile } from "./tokscale-developer-profile.mjs";
@@ -57,11 +57,8 @@ export const TOOLS = [
   diagnoseCascadeTool,
   suggestImprovementsTool,
   selfImproveTool,
-  getBestOperatorTool,
-  compareSelfTool,
-  compareOperatorsTool,
-  describePowerUserTool,
-  optimizeEfficiencyTool,
+  // get_best_operator, compare_self, compare_operators, describe_power_user,
+  // optimize_efficiency → moved to bestuser-router-mcp
   tokscaleBreakdownTool,
   tokscaleMarketShareTool,
   tokscaleDeveloperProfileTool,
@@ -225,16 +222,8 @@ export async function callTool(name, args, opts = {}) {
       return handleSuggestImprovements(args);
     case "self_improve":
       return handleSelfImprove(args, ctx);
-    case "get_best_operator":
-      return handleGetBestOperator(args, ctx);
-    case "compare_self":
-      return handleCompareSelf(args, ctx);
-    case "compare_operators":
-      return handleCompareOperators(args, ctx);
-    case "describe_power_user":
-      return handleDescribePowerUser();
-    case "optimize_efficiency":
-      return handleOptimizeEfficiency(args, ctx);
+    // get_best_operator, compare_self, compare_operators, describe_power_user,
+    // optimize_efficiency → moved to bestuser-router-mcp
     case "tokscale_breakdown":
       return handleTokscaleBreakdown(args);
     case "tokscale_market_share":
