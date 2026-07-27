@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.0.179](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.178...v0.0.179) (2026-07-27)
+
+### Features
+
+* consent acknowledgment in enroll + submit flows (D1) — `tools/enroll.mjs` sends `consent_acknowledged=true` + `terms_version` + `privacy_version`; `presentation/cli.mjs` prompts for explicit TTY consent; `submit/index.mjs` embeds consent fields in Schema 1.0 payloads; new `resources/data-policy.md` registered as `sigrank://data-policy` MCP resource ([6789952](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/6789952))
+
+### Bug Fixes
+
+* TUI input during startup — navigation/quit now accepted while startup data is still loading ([d2078ab](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/d2078ab))
+* CI failures — `client_rollup: []` + `detected_clients: []` added to empty-data early returns in `tokscale_analytics.mjs`; contract test pointed at `submit/index.mjs` (was `submit.mjs` re-export); `@hono/node-server ^2.0.5` override for fast-uri vuln GHSA-v2hh-gcrm-f6hx ([6b56419](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/6b56419), [a2ebe8e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/a2ebe8e))
+* regenerate `package-lock.json` from scratch — previous lock file had invalid package tree (`npm ci` failed in CI) ([81781ec](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/81781ec))
+
+### Refactor
+
+* observatory-spine restructure — `tools.mjs` split into 28 individual tool files under `tools/`; files moved to domain dirs (`adapters/`, `analytics/`, `identity/`, `presentation/`, `prompts/`, `resources/`, `submit/`); inline resources/prompts extracted; root `.mjs` files are now 1-line re-export shims; observatory spine synced from sigrank-app ([6c06fee](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/6c06fee), [dc66eff](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/dc66eff), [9c92223](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/9c92223))
+
+### Chores
+
+* remove release-please workflow — versioning is now manual per VERSIONING_RULESET.md; release-please was causing version jumps (0.0.178 → 0.11.4 → 0.19.0) despite `bump-patch-only` ([adeeb65](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/adeeb65))
+* owner-only tools (ops-review + retire-operator) moved to sigadmin MCP ([0c9564b](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/0c9564b))
+* add OKF frontmatter to all spine docs (30 files) ([a6c722e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/a6c722e))
+* remove fake DRS environment.yaml ([71d3d60](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/71d3d60))
+* remove restructure planning docs (restructure complete) ([a8ae8cc](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/a8ae8cc))
+* CI: bump actions/checkout 4→7, setup-node 4→7, upload-artifact 4→7, github-script 7→9 ([9063b5e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/9063b5e), [e7f5039](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/e7f5039), [e897921](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/e897921), [c4dcf16](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/c4dcf16))
+* deps: bump tokscale in the patch-updates group ([b204b40](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/b204b40))
+
 ## [0.19.1](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.19.0...v0.19.1) (2026-07-17)
 
 
