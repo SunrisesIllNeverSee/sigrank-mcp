@@ -256,19 +256,23 @@ async function startMcpServer() {
 }
 
 // Route:
-//   any arg              → the CLI (runCli shows help + exits non-zero on unknown commands,
-//                          so a typo never silently starts a hung MCP stdio server on a TTY)
-//   no args + TTY stdout → full tabbed TUI (interactive use)
-//   no args + piped      → MCP stdio server (AI client use)
-//   SIGRANK_MCP_SERVER=1 → force MCP stdio server (for containers/proxies like Glama/mcp-proxy
-//                          where stdout may appear as a TTY inside Docker)
+//   any arg                   → the CLI (runCli shows help + exits non-zero on unknown commands,
+//                               so a typo never silently starts a hung MCP stdio server on a TTY)
+//   no args + TTY stdin+stdout → full tabbed TUI (interactive use — needs keyboard input)
+//   no args + piped (either)  → MCP stdio server (AI client / proxy / container use)
+//   SIGRANK_MCP_SERVER=1      → force MCP stdio server (manual override)
+//
+// The stdin check is critical for container/proxy environments (Glama, mcp-proxy,
+// Docker with -t). These may allocate a pseudo-TTY for stdout, but stdin is piped
+// because the proxy writes JSON-RPC messages to it. The TUI needs keyboard input
+// from stdin, so if stdin is piped the TUI would hang — force MCP mode instead.
 const cliArgs = process.argv.slice(2);
 if (cliArgs.length > 0) {
   runCli(process.argv);
 } else if (process.env.SIGRANK_MCP_SERVER === "1") {
   startMcpServer();
-} else if (process.stdout.isTTY) {
-  // Interactive terminal — launch the full tabbed TUI
+} else if (process.stdout.isTTY && process.stdin.isTTY) {
+  // Interactive terminal with keyboard — launch the full tabbed TUI
   const { runTui } = await import("./tui.mjs");
   runTui();
 } else {
