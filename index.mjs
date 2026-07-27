@@ -260,9 +260,13 @@ async function startMcpServer() {
 //                          so a typo never silently starts a hung MCP stdio server on a TTY)
 //   no args + TTY stdout → full tabbed TUI (interactive use)
 //   no args + piped      → MCP stdio server (AI client use)
+//   SIGRANK_MCP_SERVER=1 → force MCP stdio server (for containers/proxies like Glama/mcp-proxy
+//                          where stdout may appear as a TTY inside Docker)
 const cliArgs = process.argv.slice(2);
 if (cliArgs.length > 0) {
   runCli(process.argv);
+} else if (process.env.SIGRANK_MCP_SERVER === "1") {
+  startMcpServer();
 } else if (process.stdout.isTTY) {
   // Interactive terminal — launch the full tabbed TUI
   const { runTui } = await import("./tui.mjs");
