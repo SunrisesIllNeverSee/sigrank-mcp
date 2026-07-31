@@ -95,15 +95,5 @@ jobs:
           git commit -m "${{ steps.bump.outputs.new_version }}"
           git push origin main
 
-      # ── Dispatch version-sync to sigrank-app ──
-      - name: Notify sigrank-app to sync MCP_VERSION
-        env:
-          GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
-        run: |
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/SunrisesIllNeverSee/sigrank-app/dispatches \
-            -f event_type=sync-mcp-version \
-            -f 'client_payload={"version":"${{ steps.bump.outputs.new_version }}","mcp_sha":"'"$(git rev-parse HEAD)"'"}'
-          echo "Dispatched sync-mcp-version event for v${{ steps.bump.outputs.new_version }}"
+      # Version sync: sigrank-app checks npm daily at 07:00 UTC and auto-updates
+      # its MCP_VERSION constant. No dispatch needed — the app pulls, we don't push.

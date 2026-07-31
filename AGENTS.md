@@ -17,6 +17,7 @@ The workflow does this automatically. Manual publishes create duplicate versions
 **Version scheme: `0.0.x` only.** Never use 2-digit versions (0.18.x, 0.19.x).
 They pollute the npm version history and break the monotonic sequence.
 
-**Required secrets (GitHub repo settings → Secrets → Actions):**
+**Required secret (GitHub repo settings → Secrets → Actions):**
 - `NPM_TOKEN` — npm automation token (npmjs.com → Access Tokens → Automation)
-- `CROSS_REPO_PAT` — GitHub PAT with `repo` scope on SunrisesIllNeverSee/sigrank-app
+
+The app repo auto-syncs by checking npm daily — no cross-repo PAT needed.
