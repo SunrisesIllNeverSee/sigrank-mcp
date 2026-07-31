@@ -2,16 +2,21 @@
 
 ## Publishing
 
-**Do NOT publish to npm for small changes.** Each npm publish requires 3-4
-manual steps (owner: bump version, publish, sync MCP registry, sync Smithery).
-Publishing one tiny fix burns the owner's time and pollutes the version history.
+**Auto-publish is ON (2026-07-31).** Push to main triggers `.github/workflows/publish.yml`,
+which runs tests, bumps the patch version, publishes to npm, pushes the version
+commit back to main, and dispatches a `sync-mcp-version` event to sigrank-app
+(so the app's `MCP_VERSION` constant auto-updates → Vercel auto-deploys).
 
-**Batch changes.** Accumulate fixes/features in git. Publish when there's a
-meaningful batch — multiple fixes, a new feature, or a scheduled release.
+**Do NOT manually run `npm publish` or `npm version`.** The workflow handles it.
+If you need to publish manually (e.g. the workflow is broken), bump the patch
+version in `package.json`, commit, push, and the workflow will handle the rest.
 
-**Never publish without explicit owner instruction.** The owner says "publish"
-or "ship a new version" — that's the only trigger. Do not suggest publishing,
-do not auto-bump versions, do not run `npm publish` on your own.
+**Do NOT add `npm publish` or `npm version` to commit messages or scripts.**
+The workflow does this automatically. Manual publishes create duplicate versions.
 
 **Version scheme: `0.0.x` only.** Never use 2-digit versions (0.18.x, 0.19.x).
 They pollute the npm version history and break the monotonic sequence.
+
+**Required secrets (GitHub repo settings → Secrets → Actions):**
+- `NPM_TOKEN` — npm automation token (npmjs.com → Access Tokens → Automation)
+- `CROSS_REPO_PAT` — GitHub PAT with `repo` scope on SunrisesIllNeverSee/sigrank-app

@@ -1,0 +1,108 @@
+name: Publish to npm
+
+# Auto-publish flow: when tests pass on push to main, bump the patch version,
+# publish to npm, push the version commit back to main, and dispatch a version-sync
+# event to sigrank-app so it updates its MCP_VERSION constant (→ Vercel auto-deploys).
+#
+# Requires secrets:
+#   NPM_TOKEN         — npm publish token (automation token recommended)
+#   CROSS_REPO_PAT    — GitHub PAT with repo scope on SunrisesIllNeverSee/sigrank-app
+#
+# The workflow waits for CI (ci.yml) to pass before publishing. If CI fails,
+# no publish happens.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # needed to push the version bump commit back to main
+
+jobs:
+  # Gate: only run publish if CI would pass. We skip the publish job if the
+  # push was made by this workflow itself (to avoid an infinite loop).
+  publish:
+    name: Bump + publish + sync app
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history + token so we can push the version commit back
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # ── Pre-publish tests (mirror ci.yml test job) ──
+      - name: Unit tests
+        run: node test.mjs
+
+      - name: Signing tests
+        run: node __tests__/sign.test.mjs
+
+      - name: TUI startup input regression
+        run: node --test __tests__/tui-input.test.mjs
+
+      - name: Version format check (3-digit ruleset)
+        run: node scripts/check-version.mjs
+
+      - name: Pack check (no test fixtures / secrets leak)
+        run: |
+          set -e
+          TARBALL=$(npm pack --dry-run 2>&1)
+          echo "$TARBALL"
+          if echo "$TARBALL" | grep -iE "test|fixture|\.env|canon_parity|\.key"; then
+            echo "✗ FAIL: test fixture or sensitive file found in tarball"
+            exit 1
+          fi
+          if ! echo "$TARBALL" | grep -q "connect.mjs"; then
+            echo "✗ FAIL: connect.mjs missing from tarball"
+            exit 1
+          fi
+          echo "✓ Tarball is clean"
+
+      # ── Bump patch version ──
+      - name: Bump patch version
+        id: bump
+        run: |
+          OLD_VERSION=$(node -p "require('./package.json').version")
+          npm version patch --no-git-tag-version
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Bumped ${OLD_VERSION} → ${NEW_VERSION}"
+
+      # ── Commit the version bump + push ──
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "${{ steps.bump.outputs.new_version }}"
+          git push origin main
+
+      # ── Publish to npm ──
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
+
+      # ── Dispatch version-sync to sigrank-app ──
+      - name: Notify sigrank-app to sync MCP_VERSION
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_PAT }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/SunrisesIllNeverSee/sigrank-app/dispatches \
+            -f event_type=sync-mcp-version \
+            -f 'client_payload={"version":"${{ steps.bump.outputs.new_version }}","mcp_sha":"'"$(git rev-parse HEAD)"'"}'
+          echo "Dispatched sync-mcp-version event for v${{ steps.bump.outputs.new_version }}"
