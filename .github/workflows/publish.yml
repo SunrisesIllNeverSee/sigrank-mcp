@@ -68,7 +68,7 @@ jobs:
           fi
           echo "✓ Tarball is clean"
 
-      # ── Bump patch version ──
+      # ── Bump patch version (in working tree, not committed yet) ──
       - name: Bump patch version
         id: bump
         run: |
@@ -79,7 +79,14 @@ jobs:
           echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumped ${OLD_VERSION} → ${NEW_VERSION}"
 
-      # ── Commit the version bump + push ──
+      # ── Publish to npm FIRST (before git commit, so a failed publish
+      #    doesn't leave a version bump in git that npm doesn't have) ──
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
+
+      # ── Commit the version bump + push (only runs if publish succeeded) ──
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
@@ -87,12 +94,6 @@ jobs:
           git add package.json
           git commit -m "${{ steps.bump.outputs.new_version }}"
           git push origin main
-
-      # ── Publish to npm ──
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish
 
       # ── Dispatch version-sync to sigrank-app ──
       - name: Notify sigrank-app to sync MCP_VERSION
