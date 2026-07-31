@@ -79,8 +79,8 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ccusage": "^20.0.17",
-    "tokscale": "^4.5.2"
+    "ccusage": "^20.0.19",
+    "tokscale": "^4.7.0"
   },
   "overrides": {
     "@hono/node-server": "^2.0.5"
