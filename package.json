@@ -54,6 +54,7 @@
     "cli.mjs",
     "narrate.mjs",
     "tools.mjs",
+    "tokscale_analytics.mjs",
     "README.md",
     "CHANGELOG.md",
     "MCP_SERVER_DESCRIPTION.md",
