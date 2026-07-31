@@ -55,6 +55,7 @@
     "narrate.mjs",
     "tools.mjs",
     "tokscale_analytics.mjs",
+    "manifest.json",
     "README.md",
     "CHANGELOG.md",
     "MCP_SERVER_DESCRIPTION.md",

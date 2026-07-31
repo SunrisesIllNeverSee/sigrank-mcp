@@ -33,9 +33,29 @@ node_modules/lodash/
 
 # Test files
 __tests__/
-_parked/
 test.mjs
-sign.test.mjs
+*.test.mjs
+
+# Eval / analysis artifacts
+eval/
+
+# Documentation directories (not needed in MCP bundle)
+governance/
+observatory/
+ontology/
+methodology/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Misc root files
+banner.svg
+VERSIONING_RULESET.md
+SECURITY.md
+glama.json
+package-lock.json
 
 # Heavy GitHub assets
-.github/assets/
+.github/
+.gitleaks.toml

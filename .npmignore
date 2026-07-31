@@ -1,4 +1,29 @@
-tests/
-.github/
+# Test files + fixtures
+__tests__/
+test.mjs
 *.test.mjs
+
+# Eval / analysis artifacts (not part of the MCP server)
+eval/
+
+# Documentation directories (published docs live on signalaf.com, not in the npm tarball)
+governance/
+observatory/
+ontology/
+methodology/
+
+# GitHub + CI
+.github/
+.gitleaks.toml
+.github/assets/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Misc root files not needed at runtime
+banner.svg
+VERSIONING_RULESET.md
+SECURITY.md
+glama.json
 package-lock.json

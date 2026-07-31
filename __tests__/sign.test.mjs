@@ -18,7 +18,7 @@ import { generateIdentity } from "../keystore.mjs";
 
 const fx = JSON.parse(
   readFileSync(
-    new URL("../tests/fixtures/canon_parity.json", import.meta.url),
+    new URL("./fixtures/canon_parity.json", import.meta.url),
     "utf-8",
   ),
 );
