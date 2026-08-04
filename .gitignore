@@ -1,3 +1,4 @@
 node_modules/
 *.tgz
 D-REP-SCRATCH.md
+.DS_Store
