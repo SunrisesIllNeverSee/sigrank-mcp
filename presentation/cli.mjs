@@ -1531,7 +1531,7 @@ async function runSigRank() {
 
 async function showHelp() {
   const { createRequire } = await import("module");
-  const pkg = createRequire(import.meta.url)("./package.json");
+  const pkg = createRequire(import.meta.url)("../package.json");
   writeln();
   writeln(`  ${gold("⊙ SigRank")} ${bold("CLI")}  ${dim("v" + pkg.version)}`);
   writeln();
@@ -1852,7 +1852,7 @@ export async function runCli(argv) {
     } else if (cmd === "--version" || cmd === "-v") {
       const { createRequire } = await import("module");
       const req = createRequire(import.meta.url);
-      const pkg = req("./package.json");
+      const pkg = req("../package.json");
       writeln(pkg.version);
     } else if (!cmd || cmd === "start" || cmd === "run") {
       // default: full unified view
