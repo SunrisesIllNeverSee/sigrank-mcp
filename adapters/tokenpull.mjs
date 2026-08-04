@@ -15,13 +15,13 @@
  * the same { platform, defaultRoot(), messages(root) } contract — Claude is just the first.
  */
 
-import { readdir, readFile, lstat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { ADAPTERS } from "./index.mjs";
+import { ADAPTERS, walkFiles } from "./index.mjs";
 
 const DAY_MS = 86_400_000;
 
@@ -87,34 +87,26 @@ const MAX_JSONL_FILES = Number(process.env.SIGRANK_MAX_JSONL_FILES) || 10_000;
  *  under-counts input (sub-agent runs are input-heavy). token-dashboard's rglob.
  *
  *  Hardened: skips symlinked directories (prevents circular traversal) and stops
- *  after MAX_JSONL_FILES files (prevents OOM on pathological trees). */
+ *  after MAX_JSONL_FILES files (prevents OOM on pathological trees).
+ *
+ *  Pass 2: now a thin sorted wrapper over the shared walkFiles() from
+ *  adapters/index.mjs so the two walkers can't drift on the symlink-skip +
+ *  max-files guards again. The sort (entries within each directory) is preserved
+ *  by sorting the yielded paths; walkFiles already recurses in readdir order. */
 async function* _walkJsonl(dir, _counter = { n: 0 }) {
-  if (_counter.n >= MAX_JSONL_FILES) return;
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
+  // walkFiles yields in readdir order; we collect + sort to keep the
+  // deterministic ordering the previous implementation guaranteed.
+  const paths = [];
+  for await (const p of walkFiles(
+    dir,
+    (n) => n.endsWith(".jsonl"),
+    _counter,
+    MAX_JSONL_FILES,
+  )) {
+    paths.push(p);
   }
-  for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    if (_counter.n >= MAX_JSONL_FILES) return;
-    const full = join(dir, e.name);
-    if (e.isDirectory()) {
-      // Skip symlinked directories — prevents circular traversal on machines where
-      // ~/.claude/projects/ contains a symlink to a large or self-referential tree.
-      let stat;
-      try {
-        stat = await lstat(full);
-      } catch {
-        continue;
-      }
-      if (stat.isSymbolicLink()) continue;
-      yield* _walkJsonl(full, _counter);
-    } else if (e.isFile() && e.name.endsWith(".jsonl")) {
-      _counter.n++;
-      yield full;
-    }
-  }
+  paths.sort((a, b) => (a < b ? -1 : 1));
+  for (const p of paths) yield p;
 }
 
 /**

@@ -5,9 +5,7 @@
 import os from "node:os";
 import { ensureIdentity, recordEnrollment } from "../identity/keystore.mjs";
 import { ENROLL_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
-
-const TERMS_VERSION = "2026-07-21";
-const PRIVACY_VERSION = "2026-07-21";
+import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "enroll",

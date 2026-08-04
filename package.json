@@ -32,6 +32,7 @@
   },
   "files": [
     "index.mjs",
+    "lib/",
     "tools/",
     "analytics/",
     "identity/",

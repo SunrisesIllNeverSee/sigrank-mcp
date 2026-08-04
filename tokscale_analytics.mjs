@@ -33,6 +33,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOKSCALE_CLIENT_MAP } from "./lib/constants.mjs";
 
 // Resolve local node_modules/.bin for the bundled tokscale binary.
 const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -85,23 +86,11 @@ export function num(x) {
   return Number.isFinite(n) ? n : 0;
 }
 
-// Map tokscale's client slugs to canonical platform names (mirrors tools.mjs).
+// Map tokscale's client slugs to canonical platform names.
+// TOKSCALE_CLIENT_MAP is imported from lib/constants.mjs (single source of
+// truth — was duplicated here and in tools/index.mjs +
+// tools/tokscale-breakdown.mjs, and the copies had started to drift).
 // `synthetic` → null (filtered). unmapped slugs → "other".
-const TOKSCALE_CLIENT_MAP = {
-  claude: "claude", codex: "codex", "devin-cli": "devin",
-  "devin-desktop": "devin", gemini: "gemini", amp: "amp",
-  kimi: "kimi", qwen: "qwen", goose: "goose", kilo: "kilo",
-  kilocode: "kilo", hermes: "hermes", droid: "droid",
-  codebuff: "codebuff", copilot: "copilot", opencode: "opencode",
-  openclaw: "openclaw", pi: "pi",
-  cursor: "other", roocode: "other", mux: "other", crush: "other",
-  antigravity: "other", "antigravity-cli": "other", zed: "other",
-  kiro: "other", trae: "other", warp: "other", cline: "other",
-  gjc: "other", grok: "other", jcode: "other", commandcode: "other",
-  micode: "other", junie: "other", zcode: "other",
-  opencodereview: "other", codebuddy: "other", workbuddy: "other",
-  synthetic: null,
-};
 
 /** Human-readable label for a tokscale client slug. */
 const CLIENT_LABELS = {

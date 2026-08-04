@@ -5,12 +5,14 @@
 import { cascade, parsePillars } from "../analytics/cascade.mjs";
 import { COMPARE_SELF_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { MAX_INPUT, withParseWarnings } from "./_helpers.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 import {
   _powerUserAssessment,
   _classMeaning,
   _improvementSuggestion,
   _competitiveLayer,
   _competitiveSummary,
+  FALLBACK_CLASS,
 } from "./_framing.mjs";
 
 export const TOOL_DEF = {
@@ -72,7 +74,7 @@ export async function handleCompareSelf(args, ctx) {
   }
 
   // Fetch board for comparison
-  const board = await ctx.fetchJson("/api/v1/leaderboard?metric=yield_");
+  const board = await ctx.fetchJson(`/api/v1/leaderboard?metric=${LEADERBOARD_METRIC}`);
   const allOps = board.operators || board || [];
   const yields = allOps.map((o) => o.yield_ || 0).sort((a, b) => a - b);
   const avgYield = yields.length
@@ -85,7 +87,7 @@ export async function handleCompareSelf(args, ctx) {
       )
     : 0;
 
-  const klass = yourMetrics.class || "Burner";
+  const klass = yourMetrics.class || FALLBACK_CLASS;
   const powerUserAssessment = _powerUserAssessment(klass, yourMetrics);
   const classMeaning = _classMeaning(klass);
 

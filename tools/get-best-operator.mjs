@@ -5,6 +5,7 @@
 import { BEST_OPERATOR_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { DEFAULT_API_BASE } from "./_helpers.mjs";
 import { _behavioralFraming, _competitiveLayer } from "./_framing.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "get_best_operator",
@@ -31,7 +32,7 @@ export const TOOL_DEF = {
 export async function handleGetBestOperator(args, ctx) {
   const rawN = args?.n;
   const n = Math.min(20, Math.max(1, rawN == null ? 5 : Number(rawN)));
-  const board = await ctx.fetchJson("/api/v1/leaderboard?metric=yield_");
+  const board = await ctx.fetchJson(`/api/v1/leaderboard?metric=${LEADERBOARD_METRIC}`);
   const ops = (board.operators || board || []).slice(0, n);
   const total = Array.isArray(board.operators || board)
     ? (board.operators || board).length

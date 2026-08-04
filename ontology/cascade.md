@@ -18,4 +18,6 @@ For positive pillars, its stages are:
 
 Their product telescopes to `(cache_read × output) / input²`, the public Upsilon metric. A zero cache-create value is marked non-compounding; stage ratios and the cascade string are then unavailable rather than inferred.
 
-Source: `lib/cascade/metrics.ts`.
+> **Repo scope.** `lib/analytics/cascade.ts` is the **server-side** (sigrank-app) canonical implementation. This `sigrank-mcp` repo ships a byte-compatible client mirror at `analytics/cascade.mjs` (the `cascade()` + `classify()` functions used by the CLI, TUI, and every MCP tool). The two are kept in parity by the canon-parity fixture in `__tests__/fixtures/canon_parity.json` + `__tests__/sign.test.mjs`.
+
+Source (server): `sigrank-app/lib/analytics/cascade.ts`. Client mirror: `analytics/cascade.mjs`.

@@ -332,28 +332,29 @@ Verifier numbers (ccusage/tokscale for codex) show **raw uncached input** (`inpu
 
 ## Platform adapters
 
-All adapters are token-only (no message content, no cost fields, no credentials).
+All adapters are token-only (no message content, no cost fields, no credentials). The table below is regenerated from the adapter file headers in `adapters/index.mjs` + `adapters/tokenpull.mjs` so the path, pillar shape, and notes match the actual code (a prior revision had drifted on Qwen/Codex/Copilot).
 
-| Platform           | Path                                           | Notes                                                           |
-| ------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
-| Claude Code        | ✅ `~/.claude/projects`                        | Native; dedup by `(session_id, message_id)`; subagents included |
-| Codex              | ✅ `~/.codex/sessions`                         | Estimated input via `io_ratio`; verified vs ccusage             |
-| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | Estimated input via `io_ratio`; SQLite; same split as Codex     |
-| Amp                | ✅ `~/.local/share/amp/threads`                | Full 4-pillar; per-message                                      |
-| Kimi               | ✅ `~/.kimi/sessions`                          | Full 4-pillar; `StatusUpdate` lines only                        |
-| pi-agent           | ✅ `~/.pi/agent/sessions`                      | Full 4-pillar; per-message JSONL                                |
-| OpenClaw           | ✅ `~/.openclaw`                               | Full 4-pillar; per-message JSONL                                |
-| Droid              | ✅ `~/.factory/sessions/*.settings.json`       | Full 4-pillar; thinking→output                                  |
-| Codebuff           | ✅ `~/.config/manicode`                        | Full 4-pillar; `chat-messages.json`                             |
-| Hermes             | ✅ `~/.hermes/state.db`                        | Full 4-pillar; SQLite; reasoning→output                         |
-| Kilo               | ✅ `~/.local/share/kilo/kilo.db`               | Full 4-pillar; SQLite                                           |
-| Qwen               | ✅ `~/.qwen/projects`                          | `cacheCreate=0` estimated; thought→output                       |
-| Goose              | ✅ `~/.local/share/goose/sessions/sessions.db` | `cacheCreate=cacheRead=0` estimated; SQLite                     |
-| Gemini CLI         | ✅ `~/.gemini/tmp`                             | `cacheCreate=0` estimated; cache extracted from input field     |
-| GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | OTel JSONL; requires `COPILOT_OTEL_ENABLED=true`                |
-| OpenCode           | ⚠️ `~/.local/share/opencode`                   | Raw token counts not persisted in log format                    |
-| Cursor             | 🔜                                             | Chat log path TBD                                               |
-| Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                          |
+| Platform           | Path                                           | Pillar shape & notes                                                                                              |
+| ------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Claude Code        | ✅ `~/.claude/projects` (recursive, incl. `subagents/`) | Native 4-pillar; dedup by `(session_id, message_id)` — final snapshot wins                                  |
+| Codex              | ✅ `~/.codex/sessions` (+ `archived_sessions`) | `input_tokens` incl. cached → `input` + `cacheCreate` split window-level via `io_ratio`; `cacheRead` native (`cached_input_tokens`); `reasoning_output`→output; verified vs ccusage (~1%) |
+| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | SQLite; same `io_ratio` split as Codex (Alpha 2.0 default); `cacheRead` native                                   |
+| Amp                | ✅ `~/.local/share/amp/threads`                | Native 4-pillar; per-message                                                                                      |
+| Kimi               | ✅ `~/.kimi/sessions`                          | Native 4-pillar; `StatusUpdate` lines only                                                                        |
+| pi-agent           | ✅ `~/.pi/agent/sessions`                      | Native 4-pillar; per-message JSONL                                                                                |
+| OpenClaw           | ✅ `~/.openclaw`                               | Native 4-pillar; per-message JSONL                                                                                |
+| Droid              | ✅ `~/.factory/sessions/*.settings.json`       | Native 4-pillar; `thinking_tokens`→output                                                                         |
+| Codebuff           | ✅ `~/.config/manicode`                        | Native 4-pillar; `chat-messages.json`                                                                             |
+| Hermes             | ✅ `~/.hermes/state.db`                        | Native 4-pillar; SQLite; `reasoning_tokens`→output                                                                |
+| Kilo               | ✅ `~/.local/share/kilo/kilo.db`               | Native 4-pillar; SQLite                                                                                            |
+| Qwen               | ✅ `~/.qwen/projects`                          | Estimated (`cacheCreate=0` — no field in logs); `cacheRead` from `cachedContentTokenCount`; `thoughtsTokenCount`→output |
+| Goose              | ✅ `~/.local/share/goose/sessions/sessions.db` (or `$GOOSE_PATH_ROOT/data/sessions/sessions.db`) | Estimated (`cacheCreate=cacheRead=0` — no cache fields); reasoning = `total−input−output`→output; cumulative-column dedup by session id |
+| Gemini CLI         | ✅ `~/.gemini/tmp`                             | Estimated (`cacheCreate=0`); `cacheRead` from `cached` field; `thought`→output; `input` = `input−cached` (fresh)  |
+| GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | Native 4-pillar (OTel spans: `llm.token_count.{prompt,completion,cache_creation,cache_read}`); requires `COPILOT_OTEL_ENABLED=true` + `COPILOT_OTEL_EXPORTER_TYPE=file` set **before** session start |
+| OpenCode           | ⚠️ `~/.local/share/opencode`                   | Data gap — logs store `cost:0` and derive tokens via LiteLLM at runtime; raw token counts not persisted. No pillars readable with current format |
+| Other (user JSON)  | ✅ `$SIGRANK_OTHER_PATH`                       | User-supplied JSON `{ "windows": { "all": {input,output,cacheCreate,cacheRead} } }`; all-time only (no timestamps) |
+| Cursor             | 🔜                                             | Chat log path TBD                                                                                                 |
+| Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                                                                            |
 
 `estimated=true` means one or more pillars are derived, not native. The server re-scores all submitted pillars authoritatively; local preview Υ is indicative only.
 

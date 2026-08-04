@@ -12,6 +12,7 @@ import {
   uploadStamp,
   WINDOW_TYPE,
 } from "./_helpers.mjs";
+import { TERMS_VERSION, PRIVACY_VERSION, isRankedAck } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "tokenpull_submit",
@@ -131,8 +132,8 @@ export async function handleTokenpullSubmit(args, ctx) {
           window_type: windowType,
           telemetry: { platform: { primary: "multi" } },
           consent_acknowledged: true,
-          terms_version: "2026-07-21",
-          privacy_version: "2026-07-21",
+          terms_version: TERMS_VERSION,
+          privacy_version: PRIVACY_VERSION,
           ...stamp,
         }),
       });
@@ -142,7 +143,11 @@ export async function handleTokenpullSubmit(args, ctx) {
       } catch {
         ack = { status: "parse_error", httpStatus: res.status };
       }
-      const ranked = ack?.ranked ?? ack?.accepted ?? false;
+      // Fix 4: was `ack?.ranked ?? ack?.accepted ?? false` — a looser predicate
+      // than the single-platform branch below, which would mark a non-persisted
+      // 202 as ranked. Now both branches use the shared isRankedAck() so every
+      // submit path agrees on what "ranked" means.
+      const ranked = isRankedAck(res, ack);
       out.push({
         window: wk,
         pillars: sum,
@@ -198,8 +203,8 @@ export async function handleTokenpullSubmit(args, ctx) {
         window_type: windowType,
         telemetry: { platform: { primary: pulled.platform } },
         consent_acknowledged: true,
-        terms_version: "2026-07-21",
-        privacy_version: "2026-07-21",
+        terms_version: TERMS_VERSION,
+        privacy_version: PRIVACY_VERSION,
         ...stamp,
       }),
     });
@@ -211,11 +216,7 @@ export async function handleTokenpullSubmit(args, ctx) {
     }
     // ranked = actually on the board (verified + persisted), not just received — parity
     // with submit_verified (submit/index.mjs). An unenrolled/revoked device gets 202 but is NEVER ranked.
-    const ranked = !!(
-      res.ok &&
-      ack.verification_tier === "verified" &&
-      ack.persisted === true
-    );
+    const ranked = isRankedAck(res, ack);
     out.push({
       window: w.window,
       pillars: w.pillars,

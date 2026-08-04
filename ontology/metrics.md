@@ -18,4 +18,6 @@ Public cascade metrics are deterministic diagnostics over raw pillars:
 
 The implementation also exposes scale, blended price display, efficiency, and an operation ratio. Metrics quantify token-flow relationships; they are not direct productivity or quality measures.
 
-Source: `lib/cascade/metrics.ts`.
+> **Repo scope.** `lib/analytics/cascade.ts` is the **server-side** (sigrank-app) canonical implementation. The MCP client mirror is `analytics/cascade.mjs` (`cascade()` computes Υ, SNR, Velocity, Leverage, 10xDEV, and the class tier). The two are kept in parity by the canon-parity fixture.
+
+Source (server): `sigrank-app/lib/analytics/cascade.ts`. Client mirror: `analytics/cascade.mjs`.

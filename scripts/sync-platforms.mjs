@@ -4,17 +4,21 @@
  *
  * Runs `tokscale models --help` and `ccusage --help` to discover the
  * current set of supported clients, then checks our adapter registry
- * and client maps for gaps. Prints a report — does NOT auto-edit files
- * (human reviews the diff first).
+ * and client maps for gaps. Prints a report. With `--update`, also
+ * auto-adds missing tokscale clients to `lib/constants.mjs`
+ * (TOKSCALE_CLIENT_MAP), mapped to "other" (the safe bucket — a human
+ * promotes them to a real platform ID later by writing a native
+ * adapter). Adapter-side gaps are NOT auto-fixed (a new adapter is a
+ * code change, not a map edit) — those are reported for manual review.
  *
  * Usage:
- *   node scripts/sync-platforms.mjs              # print report
- *   node scripts/sync-platforms.mjs --json        # machine-readable
- *   node scripts/sync-platforms.mjs --update      # auto-update the maps
+ *   node scripts/sync-platforms.mjs              # print report (review gaps)
+ *   node scripts/sync-platforms.mjs --json        # machine-readable report
+ *   node scripts/sync-platforms.mjs --update      # auto-add missing tokscale clients to the map
  *
  * Exit codes:
  *   0 = in sync (or updated successfully)
- *   1 = gaps found (review needed)
+ *   1 = gaps found (review needed) / no gaps to --update
  *   2 = upstream source unavailable
  */
 import { execFileSync } from "node:child_process";
@@ -93,21 +97,39 @@ function readOurAdapters() {
 }
 
 function readTokscaleMap() {
-  const src = readFileSync(join(ROOT, "tools/index.mjs"), "utf8");
-  // Find the first TOKSCALE_CLIENT_MAP block
-  const m = src.match(/const TOKSCALE_CLIENT_MAP = \{([\s\S]*?)\};/);
-  if (!m) return {};
-  const map = {};
-  for (const line of m[1].split("\n")) {
-    // Match: key: "value", or "key": "value", or key: null,
-    const lm = line.match(/^\s*"?([^:",]+)"?\s*:\s*(?:"([^"]*)"|null)\s*,?\s*(?:\/\/.*)?$/);
-    if (lm) {
-      const key = lm[1].trim();
-      const val = lm[2] === undefined ? "null" : lm[2].trim();
-      if (key) map[key] = val;
+  // Pass 8: TOKSCALE_CLIENT_MAP was centralized to lib/constants.mjs (Fix 4).
+  // The old regex looked in tools/index.mjs; it now reads lib/constants.mjs.
+  // We fall back to tools/index.mjs for back-compat in case a branch hasn't
+  // picked up the centralization yet.
+  const candidates = [
+    join(ROOT, "lib/constants.mjs"),
+    join(ROOT, "tools/index.mjs"),
+  ];
+  for (const path of candidates) {
+    let src;
+    try {
+      src = readFileSync(path, "utf8");
+    } catch {
+      continue;
     }
+    // Find the first TOKSCALE_CLIENT_MAP block (export const or const).
+    const m = src.match(
+      /(?:export\s+)?const TOKSCALE_CLIENT_MAP = \{([\s\S]*?)\};/,
+    );
+    if (!m) continue;
+    const map = {};
+    for (const line of m[1].split("\n")) {
+      // Match: key: "value", or "key": "value", or key: null,
+      const lm = line.match(/^\s*"?([^:",]+)"?\s*:\s*(?:"([^"]*)"|null)\s*,?\s*(?:\/\/.*)?$/);
+      if (lm) {
+        const key = lm[1].trim();
+        const val = lm[2] === undefined ? "null" : lm[2].trim();
+        if (key) map[key] = val;
+      }
+    }
+    if (Object.keys(map).length > 0) return map;
   }
-  return map;
+  return {};
 }
 
 // ── 3. Diff ───────────────────────────────────────────────────────────────────
@@ -232,8 +254,42 @@ async function main() {
     process.exit(1);
   }
   if (hasGaps && doUpdate) {
-    console.log("\n--update not yet implemented for auto-editing. Review gaps manually.");
-    process.exit(1);
+    // Pass 8: implement the --update path. Only auto-adds tokscale clients that
+    // are entirely missing from TOKSCALE_CLIENT_MAP — maps them to "other"
+    // (the safe bucket; a human promotes them to a real platform ID later by
+    // writing a native adapter). Does NOT touch the adapter registry — a new
+    // adapter is a code change, not a map edit. Edits lib/constants.mjs in
+    // place by inserting before the closing `};` of the map.
+    const missing = report.gaps.tokscale.clientsNotInMap;
+    if (missing.length === 0) {
+      console.log("\n--update: no tokscale-map gaps to add (gaps are adapter-side).");
+      process.exit(1);
+    }
+    const constantsPath = join(ROOT, "lib/constants.mjs");
+    let src = readFileSync(constantsPath, "utf8");
+    // Locate the TOKSCALE_CLIENT_MAP block and find its closing `};`.
+    const blockRe = /((?:export\s+)?const TOKSCALE_CLIENT_MAP = \{)([\s\S]*?)(\};)/;
+    const m = src.match(blockRe);
+    if (!m) {
+      console.log("\n--update: could not locate TOKSCALE_CLIENT_MAP in lib/constants.mjs.");
+      process.exit(1);
+    }
+    const [, head, body, tail] = m;
+    // Build the new lines, sorted alphabetically by key for deterministic output.
+    const newLines = missing
+      .slice()
+      .sort((a, b) => (a < b ? -1 : 1))
+      .map((k) => `  ${JSON.stringify(k)}: "other",`)
+      .join("\n");
+    // Insert before the closing brace, preserving the existing trailing comma
+    // on the last real entry (if any) by adding a leading newline.
+    const newBody = `${body.replace(/\s*$/, "")}\n${newLines}\n`;
+    const newSrc = src.replace(blockRe, `${head}${newBody}${tail}`);
+    writeFileSync(constantsPath, newSrc, "utf8");
+    console.log(`\n--update: added ${missing.length} client(s) to lib/constants.mjs (mapped to "other"):`);
+    for (const c of missing) console.log(`  + ${c}`);
+    console.log("\nReview the diff, then promote any that deserve a native adapter.");
+    process.exit(0);
   }
   process.exit(0);
 }

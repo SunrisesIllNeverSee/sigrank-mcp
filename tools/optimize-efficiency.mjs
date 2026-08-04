@@ -3,12 +3,15 @@
  */
 
 import { cascade, parsePillars } from "../analytics/cascade.mjs";
-import { ANNOTATIONS } from "./_schemas.mjs";
+import { ANNOTATIONS, CLASS_ENUM } from "./_schemas.mjs";
 import { MAX_INPUT, withParseWarnings } from "./_helpers.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 import {
   _improvementSuggestion,
   _competitiveLayer,
   _competitiveSummary,
+  FALLBACK_CLASS,
+  bandOf,
 } from "./_framing.mjs";
 
 export const TOOL_DEF = {
@@ -43,7 +46,7 @@ export const TOOL_DEF = {
           yield_: { type: "number" },
           leverage: { type: "number" },
           velocity: { type: "number" },
-          class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+          class: { type: "string", enum: CLASS_ENUM },
         },
       },
       suggestions: {
@@ -92,7 +95,7 @@ export async function handleOptimizeEfficiency(args, ctx) {
     };
   }
 
-  const klass = metrics.class || "Burner";
+  const klass = metrics.class || FALLBACK_CLASS;
   const l = metrics.leverage || 0;
   const v = metrics.velocity || 0;
   const y = metrics.yield_ || 0;
@@ -114,7 +117,14 @@ export async function handleOptimizeEfficiency(args, ctx) {
       power_user_practice: "Power users maximize output per session — they ask AI to generate, transform, and produce, not just explain.",
     });
   }
-  if (l >= 5 && v >= 1 && klass !== "10xer") {
+  // Top-band tiers (apex/high) already have leverage + velocity — the
+  // "extend session" suggestion is for mid/early/entry operators whose
+  // leverage and velocity are both solid but not yet at the top. The legacy
+  // `klass !== "10xer"` guard never matched because the classifier emits the
+  // 8-tier dev10x names, not "10xer" — so this branch fired for EVERY
+  // operator including top-tier ones. Now keyed off the canonical bands.
+  const TOP_BANDS = new Set(["apex", "high"]);
+  if (l >= 5 && v >= 1 && !TOP_BANDS.has(bandOf(klass))) {
     suggestions.push({
       action: "Extend session length to compound cached context further",
       why: "Your leverage (" + l.toFixed(1) + "×) and velocity (" + v.toFixed(2) + ") are solid. Longer sessions with consistent context will push your yield higher.",
@@ -132,7 +142,7 @@ export async function handleOptimizeEfficiency(args, ctx) {
   const summary = `Your Υ Yield is ${y.toLocaleString()} (${klass}). ${_improvementSuggestion(klass, metrics)}`;
 
   // Competitive layer per SHARED_DESIGN_DECISIONS.md §3/§4/§5
-  const board = await ctx.fetchJson("/api/v1/leaderboard?metric=yield_");
+  const board = await ctx.fetchJson(`/api/v1/leaderboard?metric=${LEADERBOARD_METRIC}`);
   const competitive = _competitiveLayer(metrics, board);
   const competitiveSummary = _competitiveSummary(metrics, board);
 

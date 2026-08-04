@@ -14,4 +14,8 @@ Submission provenance includes the raw telemetry payload, declared window, devic
 
 Verification is layered: structural plausibility, duplicate/replay checks, throttling, hash/signature checks, and server-side battery analysis. Passing a layer raises confidence within its scope; it never guarantees truth or intent.
 
-Source: `lib/ingest/gates.ts`.
+The signature evidence is an ed25519 signature over the **canonical bytes** of the payload (not a hash-then-sign scheme), traveling in the `x-agent-signature` HTTP header on `POST /api/v1/snapshots`. `agent.snapshot_hash` holds `"sha256:" + hex(sha256(canonical_bytes))` — the digest of the canonical bytes, not the signature. Enrollment provenance is established at `POST /api/v1/devices/enroll`, which binds the device's public key to the operator via a connect code.
+
+> **Repo scope.** The ingest gate chain (`lib/ingest/gates.ts`) runs **server-side**, in the `sigrank-app` web app — this `sigrank-mcp` repo is the client and does not contain that file. The MCP's matching client-side concerns live in `submit/index.mjs` (Schema 1.0 payload + the signed POST to `/api/v1/snapshots` with the `x-agent-signature` header) and `identity/sign.mjs` (canonical JSON + ed25519 signature + snapshot hash, byte-compatible port of the server canonicalizer). Enrollment is in `tools/enroll.mjs` (POSTs to `/api/v1/devices/enroll`).
+
+Source (server): `sigrank-app/lib/ingest/gates.ts`, `sigrank-app/lib/ingest/signature.ts`. Client mirror: `submit/index.mjs`, `identity/sign.mjs`, `tools/enroll.mjs`.

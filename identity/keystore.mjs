@@ -23,6 +23,7 @@ import {
   copyFileSync,
 } from "node:fs";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { agentVersion } from "../lib/pkg-version.mjs";
 
 const DIR = join(homedir(), ".sigrank-mcp");
 const PATH = join(DIR, "identity.json");
@@ -31,18 +32,6 @@ const MAX_BACKUPS = 5;
 
 /** SPKI DER prefix length for an ed25519 public key (12 bytes before the raw 32). */
 const SPKI_PREFIX_LEN = 12;
-
-/** Resolve this package's version for the agent_version stamp (best-effort). */
-function agentVersion() {
-  try {
-    const pkg = JSON.parse(
-      readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
-    );
-    return `sigrank-mcp/${pkg.version}`;
-  } catch {
-    return "sigrank-mcp";
-  }
-}
 
 export function keystorePath() {
   return PATH;

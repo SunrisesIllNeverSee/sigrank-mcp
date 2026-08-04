@@ -17,4 +17,6 @@ The cascade model uses four non-negative token counts:
 
 They are observations, not scores. The plausibility gate compares their sum with `tokens_total` within rounding tolerance and flags impossible or extreme relationships. `cache_read` without cache creation is flagged when material, rather than silently treated as a normal cascade.
 
-Source: `lib/cascade/metrics.ts`, `lib/ingest/gates.ts`.
+> **Repo scope.** The plausibility gate (`lib/ingest/gates.ts`) runs **server-side** in `sigrank-app`. The MCP client collects the four pillars locally via the adapters in `adapters/index.mjs` + `adapters/tokenpull.mjs` and submits them; it does not run the gate.
+
+Source (server): `sigrank-app/lib/analytics/cascade.ts`, `sigrank-app/lib/ingest/gates.ts`. Client collectors: `adapters/tokenpull.mjs`, `adapters/index.mjs`.

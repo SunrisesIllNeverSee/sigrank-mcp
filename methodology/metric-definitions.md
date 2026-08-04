@@ -8,7 +8,7 @@ timestamp: 2026-07-21
 
 # Metric definitions
 
-Let `i = input`, `o = output`, `cw = cache_create`, and `cr = cache_read`. The client-safe implementation uses `safeI = max(i, 1)`.
+Let `i = input`, `o = output`, `cw = cache_create`, and `cr = cache_read`. The server implementation (`sigrank-app/lib/analytics/cascade.ts`) uses `safeI = max(i, 1)` to avoid divide-by-zero; the client mirror (`analytics/cascade.mjs`) uses a null-guard policy instead (`i > 0 ? o/i : null`) so a degenerate pillar surfaces as a `null` metric + a `warnings[]` entry rather than a silently-clamped value. The two policies agree on every non-degenerate input.
 
 | Metric | Formula | Interpretation | Limitation |
 |---|---|---|---|
@@ -22,4 +22,6 @@ Let `i = input`, `o = output`, `cw = cache_create`, and `cr = cache_read`. The c
 
 The cascade implementation computes 10xDEV as `log10((o/i) × (cw/o) × (cr/cw))` when all four pillars are positive; this product algebraically simplifies to `log10(cr / i)`, which equals `log10(Leverage)` when `i > 0`. There is no discrepancy between the documented invariant and the implementation.
 
-Source: `lib/cascade/metrics.ts`.
+> **Repo scope.** `lib/analytics/cascade.ts` is the **server-side** (sigrank-app) canonical implementation; it uses the `safeI = max(i, 1)` clamp shown in the table above. The MCP client mirror is `analytics/cascade.mjs`; it computes the same metrics (Υ, SNR, Velocity, Leverage, 10xDEV) but uses a **null-guard** policy (`i > 0 ? o/i : null`) instead of the clamp, so a degenerate pillar surfaces as a `null` metric + a `warnings[]` entry rather than a silently-clamped value. The two agree on every non-degenerate input.
+
+Source (server): `sigrank-app/lib/analytics/cascade.ts`. Client mirror: `analytics/cascade.mjs`.

@@ -10,6 +10,7 @@ import {
   uploadStamp,
   withParseWarnings,
 } from "./_helpers.mjs";
+import { TERMS_VERSION, PRIVACY_VERSION, isRankedAck } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "submit_paste",
@@ -73,8 +74,14 @@ export async function handleSubmitPaste(args, ctx) {
     };
   }
 
-  // Submit the RAW paste so the server re-parses + re-scores authoritatively — the
-  // MCP's local cascade is only a preview; the board stays the single source of truth.
+  // Privacy: send ONLY the 4 parsed token numbers (canonical "input output
+  // cacheCreate cacheRead" form), never the raw user text. parsePillars above
+  // already validated the input — we reconstruct from the parsed pillars so
+  // no conversation content or prose can leak to the server. The server's
+  // ingestMeta() re-parses these 4 numbers authoritatively (Strategy 3:
+  // four bare numbers). This makes every submit path — signed and paste —
+  // send only token counts.
+  const canonicalPaste = `${pillars.input} ${pillars.output} ${pillars.cacheCreate} ${pillars.cacheRead}`;
   const stamp = uploadStamp({
     codename,
     pillars: c.pillars,
@@ -88,10 +95,10 @@ export async function handleSubmitPaste(args, ctx) {
     },
     body: JSON.stringify({
       codename,
-      raw_paste: String(args?.text || ""),
+      raw_paste: canonicalPaste,
       consent_acknowledged: true,
-      terms_version: "2026-07-21",
-      privacy_version: "2026-07-21",
+      terms_version: TERMS_VERSION,
+      privacy_version: PRIVACY_VERSION,
       ...stamp,
     }),
   });
@@ -104,11 +111,7 @@ export async function handleSubmitPaste(args, ctx) {
       detail: `HTTP ${res.status} (non-JSON response)`,
     };
   }
-  const ranked = !!(
-    res.ok &&
-    ack.verification_tier === "verified" &&
-    ack.persisted === true
-  );
+  const ranked = isRankedAck(res, ack);
   return {
     ...c,
     card,

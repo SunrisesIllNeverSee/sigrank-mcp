@@ -23,9 +23,11 @@
  */
 
 import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
-import { classify } from "../cascade.mjs";
+import { cascade, classify, CLASS_TIERS, UNCLASSED } from "../cascade.mjs";
+import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
 import { submitSignedWindow } from "../submit.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import os from "os";
@@ -88,6 +90,9 @@ const green = (str) => paint(c.green, str);
 const red = (str) => paint(c.red, str);
 
 // ── Class tier → color ─────────────────────────────────────────────────────
+// Built from the canonical CLASS_TIERS list (single source of truth). The dead
+// BEARER entry (no tier by that name exists) was removed; UNCLASSED added for
+// the degenerate no-data case.
 const CLASS_COLOR = {
   TRANSMITTER: (s) => paint(c.boldGold, s),
   "ARCH+": (s) => paint(c.boldCyan, s),
@@ -96,10 +101,17 @@ const CLASS_COLOR = {
   BASE: (s) => paint(c.white, s),
   SEEKER: (s) => paint(c.magenta, s),
   REFINER: (s) => paint(c.blue, s),
-  BEARER: (s) => paint(c.dim, s),
   IGNITER: (s) => paint(c.dim, s),
+  [UNCLASSED]: (s) => paint(c.dim, s),
 };
 const colorClass = (cls) => (CLASS_COLOR[cls] ?? ((s) => s))(cls);
+// Guard: every canonical tier must have a color here.
+for (const t of CLASS_TIERS) {
+  if (!CLASS_COLOR[t]) {
+    // eslint-disable-next-line no-console
+    console.warn(`[cli] CLASS_COLOR map missing color for tier "${t}"`);
+  }
+}
 
 // ── Terminal utils ──────────────────────────────────────────────────────────
 const CLEAR_SCREEN = `${ESC}2J${ESC}H`;
@@ -234,7 +246,7 @@ function renderBoardHeader(window = "30d") {
 
 async function fetchBoard(window = "30d") {
   const res = await fetch(
-    `${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`,
+    `${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=${LEADERBOARD_METRIC}`,
     {
       headers: {
         accept: "application/json",
@@ -469,8 +481,10 @@ async function tokscalePillars(platform = "claude") {
 }
 
 function appPillars() {
-  // App numbers from screenshots — all-time, per model (no cache fields)
-  // Hard-coded from 2026-06-23 screenshot capture (update when re-screenshotted)
+  // ⚠ STALE HARDCODED DATA — App numbers from screenshots, all-time, per model
+  // (no cache fields). Captured 2026-06-23. NOT refreshed automatically. The
+  // compare view uses this only as a static reference point; it does NOT feed
+  // the ranked submit path. Update manually when a fresh screenshot is taken.
   return {
     all: {
       input: 6_378_000, // sum of all models: 5.6M + 102.1K + 92.9K + 130.3K + 418.9K + 33.5K
@@ -544,39 +558,32 @@ function fmtDelta(a, b) {
   return d > 0 ? green(label) : red(label);
 }
 
-// Compute cascade metrics from raw pillars (mirrors bridge.ts computeCascadeMetrics)
+// Compute cascade metrics from raw pillars. Fix 3: this was a third copy of
+// the cascade math with its own divide-by-zero policy (safeI = max(i,1) clamp),
+// which let the CLI's Υ drift from the MCP tools' Υ for the same tokens. It now
+// forwards to the single shared cascade() from analytics/cascade.mjs (null-guard
+// policy, identical to rank_paste / submit_verified) and only adds the
+// CLI-display-only `efficiency` + `total` fields the compare view renders.
 function cascadeFromPillars(p) {
   if (!p) return null;
+  const c = cascade(p);
   const i = p.input ?? 0;
   const o = p.output ?? 0;
   const cw = p.cacheCreate ?? 0;
   const cr = p.cacheRead ?? 0;
-  if (i === 0 && o === 0) return null;
-  const safeI = Math.max(i, 1);
   const total = i + o + cw + cr;
-  const velocity = o / safeI;
-  const leverage = cr / safeI;
-  const yield_ = leverage * velocity;
-  const snr = i + o > 0 ? o / (i + o) : 0;
-  // dev10x = log10(T × C × R) — only when all four pillars present
-  let dev10x = null;
-  if (cw > 0 && o > 0 && i > 0 && cr > 0) {
-    const T = o / i,
-      C = cw / o,
-      R = cr / cw;
-    dev10x = Math.log10(T * C * R);
-  }
-  // efficiency = ((cr+cw+o)/i) / 4.0
-  const efficiency = (cr + cw + o) / safeI / 4.0;
-  const cls = classify(yield_, dev10x);
+  // efficiency = ((cr+cw+o)/i)/4.0 — display-only derived metric (not in the
+  // canonical cascade). Null when input is 0 (matches the old safeI→0 behavior
+  // would have been div-by-zero; the shared cascade already nulls yield there).
+  const efficiency = i > 0 ? (cr + cw + o) / i / 4.0 : null;
   return {
-    yield: yield_,
-    velocity,
-    leverage,
-    snr,
-    dev10x,
+    yield: c.yield,
+    velocity: c.velocity,
+    leverage: c.leverage,
+    snr: c.snr,
+    dev10x: c.dev10x,
     efficiency,
-    class: cls,
+    class: c.class,
     total,
   };
 }
@@ -868,11 +875,18 @@ async function runWatch({
               id,
               { platform: plat },
             );
+            // Pass 6: gate the ✓ on r.ranked (verified + persisted), NOT on
+            // r.status === "received". An unenrolled/revoked device gets HTTP
+            // 202 "received" but is NEVER ranked — gating on "received" would
+            // show a green ✓ to an operator who didn't actually make the board.
+            // Mirrors the isRankedAck() predicate used by every submit path.
             lastSubmitMsg.set(
               key,
-              r.status === "received"
-                ? green(`✓ tier=${r.verification_tier || "—"}`)
-                : red(`✗ ${r.reason || r.status}`),
+              r.ranked
+                ? green(`✓ tier=${r.verification_tier || "—"} (ranked)`)
+                : red(
+                    `✗ ${r.reason || r.status || "not ranked"}${r.verification_tier ? ` (tier=${r.verification_tier})` : ""}`,
+                  ),
             );
           } catch (e) {
             lastSubmitMsg.set(key, red(`✗ ${e.message}`));
@@ -934,25 +948,9 @@ async function runWatch({
 //   - live board position
 //   - [S] submit  [B] board  [Q] quit
 
-const ALL_PLATFORMS = [
-  "claude",
-  "codex",
-  "devin",
-  "amp",
-  "gemini",
-  "kimi",
-  "qwen",
-  "goose",
-  "kilo",
-  "hermes",
-  "droid",
-  "codebuff",
-  "copilot",
-  "opencode",
-  "openclaw",
-  "pi",
-  "other",
-];
+// ALL_PLATFORMS is imported from ../adapters.mjs (single source of truth —
+// was redefined inline here, which drifted from the adapter registry whenever
+// a platform was added there but not in this list).
 
 async function runSigRank() {
   write(HIDE_CURSOR);

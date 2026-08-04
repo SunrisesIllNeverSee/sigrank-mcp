@@ -9,6 +9,7 @@
 import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { execFileAsync } from "./_helpers.mjs";
 import { buildFetch, DEFAULT_API_BASE, DEFAULT_FETCH_TIMEOUT } from "./_helpers.mjs";
+import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
 
 import { TOOL_DEF as rankPasteTool, handleRankPaste } from "./rank-paste.mjs";
 import { TOOL_DEF as getLeaderboardTool, handleGetLeaderboard } from "./get-leaderboard.mjs";
@@ -69,48 +70,9 @@ export const TOOLS = [
   tokscaleCompetitiveIntelTool,
 ];
 
-const TOKSCALE_CLIENT_MAP = {
-  claude: "claude",
-  codex: "codex",
-  "devin-cli": "devin",
-  "devin-desktop": "devin",
-  gemini: "gemini",
-  amp: "amp",
-  kimi: "kimi",
-  qwen: "qwen",
-  goose: "goose",
-  kilo: "kilo",
-  kilocode: "kilo",
-  hermes: "hermes",
-  droid: "droid",
-  codebuff: "codebuff",
-  copilot: "copilot",
-  opencode: "opencode",
-  openclaw: "openclaw",
-  pi: "pi",
-  cursor: "other",
-  roocode: "other",
-  mux: "other",
-  crush: "other",
-  antigravity: "other",
-  "antigravity-cli": "other",
-  zed: "other",
-  kiro: "other",
-  trae: "other",
-  warp: "other",
-  cline: "other",
-  gjc: "other",
-  grok: "other",
-  jcode: "other",
-  commandcode: "other",
-  micode: "other",
-  junie: "other",
-  zcode: "other",
-  opencodereview: "other",
-  codebuddy: "other",
-  workbuddy: "other",
-  synthetic: null,
-};
+// TOKSCALE_CLIENT_MAP is imported from lib/constants.mjs (single source of
+// truth — was duplicated in tools/tokscale-breakdown.mjs and
+// tokscale_analytics.mjs, and the copies had started to drift).
 
 /** Run `tokscale models --json` and return the list of our platform names. */
 async function _tokscaleDetectClients() {

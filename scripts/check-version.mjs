@@ -9,15 +9,9 @@
  * Run: node scripts/check-version.mjs
  * Exit 0 = OK, 1 = violation
  */
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { pkgVersion } from "../lib/pkg-version.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(
-  readFileSync(join(__dirname, "..", "package.json"), "utf8"),
-);
-const ver = pkg.version;
+const ver = pkgVersion();
 
 // Must match 0.0.NNN where NNN is 1-3 digits
 const valid = /^0\.0\.(\d{1,3})$/.test(ver);

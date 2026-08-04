@@ -68,9 +68,36 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
   return result;
 }
 
+/**
+ * CLASS_TIERS — the canonical 8-tier dev10x taxonomy. SINGLE SOURCE OF TRUTH.
+ * Every consumer (presentation/tui.mjs, presentation/cli.mjs, tools/_schemas.mjs,
+ * resources/class-tiers.md) imports THIS list instead of maintaining its own.
+ * Order is descending (TRANSMITTER at top, IGNITER at bottom) — matches the
+ * classify() first-match-wins cut order.
+ */
+export const CLASS_TIERS = [
+  "TRANSMITTER",
+  "ARCH+",
+  "ARCH",
+  "POWER",
+  "BASE",
+  "SEEKER",
+  "REFINER",
+  "IGNITER",
+];
+
+/** The degenerate-case class returned when both yield and dev10x are null
+ *  (all-zero / empty session). Distinct from IGNITER (which is a real low
+ *  dev10x bucket) so callers can tell "no data" from "bottom tier". */
+export const UNCLASSED = "UNCLASSED";
+
 /** MVP class tiering from Υ + 10xDEV (canon assigns from cascade SNR + 10xDEV; this
  *  is the open-MVP approximation — proprietary threshold cuts stay server-side). */
 export function classify(yieldVal, dev10x) {
+  // Degenerate: all-null (empty session / no pillars) → UNCLASSED, not IGNITER.
+  // Falling through to IGNITER here would mislabel a no-data operator as the
+  // bottom tier; UNCLASSED lets the TUI / narrate surface "no data" instead.
+  if (yieldVal == null && dev10x == null) return UNCLASSED;
   if (yieldVal >= 1000 || dev10x >= 3) return "TRANSMITTER";
   if (dev10x >= 1.45) return "ARCH+";
   if (dev10x >= 1.35) return "ARCH";

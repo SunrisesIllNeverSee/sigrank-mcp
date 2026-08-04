@@ -15,4 +15,4 @@ SignalAF uses two distinct classification concepts:
 
 Neither is an identity claim. Tier thresholds and scoring weights are server-controlled; archetypes depend on their source dataset and clustering run.
 
-Sources: `lib/scoring/engine.ts`, `lib/field/data.ts`.
+Sources: `lib/analytics/scoring-engine.ts`, `lib/analytics/field-data.ts`.

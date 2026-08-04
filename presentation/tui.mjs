@@ -14,6 +14,7 @@
 
 import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
 import { ALL_PLATFORMS } from "../adapters.mjs";
+import { cascade, CLASS_TIERS, UNCLASSED } from "../cascade.mjs";
 import { freshVerifierPillars } from "../tokenpull.mjs";
 import { isSignedIn, isCodeChar } from "../connect.mjs";
 import { loadIdentity, clearIdentity } from "../keystore.mjs";
@@ -21,17 +22,12 @@ import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import os from "os";
 import path from "path";
-import { createRequire } from "module";
+import { pkgVersion } from "../lib/pkg-version.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 
-// Version read from package.json (single source of truth — matches cli.mjs;
-// never hardcode, that's what caused the version drift).
-const VERSION = (() => {
-  try {
-    return createRequire(import.meta.url)("./package.json").version;
-  } catch {
-    return "?";
-  }
-})();
+// Version read from the shared pkg-version helper (single source of truth —
+// matches cli.mjs; never hardcode, that's what caused the version drift).
+const VERSION = pkgVersion();
 
 // ── ANSI ───────────────────────────────────────────────────────────────────
 const ESC = "\x1b[";
@@ -205,6 +201,9 @@ const fmtMov = (n) =>
   n == null || n === 0 ? dim("—") : n > 0 ? green(`+${n}`) : red(`${n}`);
 
 // ── Class tier colors ────────────────────────────────────────────────────────
+// Built from the canonical CLASS_TIERS list (single source of truth) so a new
+// tier added in analytics/cascade.mjs can't silently lack a color here. The
+// dead BEARER entry (no tier by that name exists) was removed.
 const CLS = {
   TRANSMITTER: (s) => paint(c.boldGold, s),
   "ARCH+": (s) => paint(c.boldCyan, s),
@@ -213,37 +212,30 @@ const CLS = {
   BASE: (s) => paint(c.white, s),
   SEEKER: (s) => paint(c.magenta, s),
   REFINER: (s) => paint(c.blue, s),
-  BEARER: (s) => paint(c.dim, s),
   IGNITER: (s) => paint(c.dim, s),
+  [UNCLASSED]: (s) => paint(c.dim, s),
 };
 const colorCls = (cls) => (CLS[cls] ?? ((s) => s))(cls);
 
-// ── Cascade math (inline, no dep) ───────────────────────────────────────────
+// Guard: every canonical tier must have a color, so a new tier added in
+// analytics/cascade.mjs can't silently render uncolored here.
+for (const t of CLASS_TIERS) {
+  if (!CLS[t]) {
+    // eslint-disable-next-line no-console
+    console.warn(`[tui] CLS map missing color for tier "${t}"`);
+  }
+}
+
+// ── Cascade math ───────────────────────────────────────────────────────────
+// Fix 3: the inline cascadeFrom() (a third copy of the cascade math with its
+// own null-guard policy) is replaced by the single shared cascade() from
+// analytics/cascade.mjs. CLI, TUI, and MCP tools now report identical Υ for
+// identical tokens. cascadeFrom() keeps the old name as a thin alias so the
+// many call sites below don't need rewriting; it forwards to the shared
+// implementation and returns null only when there are no pillars at all.
 function cascadeFrom(p) {
   if (!p) return null;
-  const i = p.input ?? 0,
-    o = p.output ?? 0,
-    cr = p.cacheRead ?? 0;
-  if (i === 0 || o === 0) return null;
-  const leverage = cr / i;
-  const velocity = o / i;
-  const yld = leverage * velocity;
-  const dev10x =
-    i > 0 && o > 0 && (p.cacheCreate ?? 0) > 0 && cr > 0
-      ? Math.log10(cr / i)
-      : null;
-  const snr = o / (i + o);
-
-  let cls = "IGNITER";
-  if (yld >= 1000 || dev10x >= 3) cls = "TRANSMITTER";
-  else if (dev10x != null && dev10x >= 1.45) cls = "ARCH+";
-  else if (dev10x != null && dev10x >= 1.35) cls = "ARCH";
-  else if (dev10x != null && dev10x >= 1.2) cls = "POWER";
-  else if (dev10x != null && dev10x >= 1.0) cls = "BASE";
-  else if (dev10x != null && dev10x >= 0) cls = "SEEKER";
-  else if (dev10x != null && dev10x >= -0.3) cls = "REFINER";
-
-  return { yield: yld, snr, leverage, velocity, dev10x, class: cls };
+  return cascade(p);
 }
 
 // ── Unicode bar chart (no dep) ───────────────────────────────────────────────
@@ -309,7 +301,7 @@ function sparkline(values) {
 
 async function loadDashboardData() {
   const boardPromise = Promise.race([
-    fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=yield_`, {
+    fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=${LEADERBOARD_METRIC}`, {
       headers: { accept: "application/json" },
     })
       .then((r) => (r.ok ? r.json() : null))
@@ -386,7 +378,7 @@ async function loadBoardData(window = "30d") {
   // Primary: submissions endpoint (ranked submission rows).
   try {
     const res = await fetch(
-      `${DEFAULT_API_BASE}/api/v1/submissions?window=${window}&metric=yield_`,
+      `${DEFAULT_API_BASE}/api/v1/submissions?window=${window}&metric=${LEADERBOARD_METRIC}`,
       {
         headers: { accept: "application/json" },
       },
@@ -401,7 +393,7 @@ async function loadBoardData(window = "30d") {
   // Fallback: existing leaderboard endpoint + current render (pre-deploy safety).
   try {
     const res = await fetch(
-      `${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=yield_`,
+      `${DEFAULT_API_BASE}/api/v1/leaderboard?window=${window}&metric=${LEADERBOARD_METRIC}`,
       {
         headers: { accept: "application/json" },
       },
@@ -796,7 +788,12 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       const wk = firstWin[d.platform];
       const wd = d.windows?.find((x) => x.window === wk);
       const cas = wd && cascadeFrom(wd.pillars);
-      if (cas) return cas; // cascadeFrom already returns null for non-compounding rows
+      // cascadeFrom returns null only when wd.pillars is falsy; otherwise it
+      // forwards to cascade() which always returns an object (degenerate input
+      // surfaces as null fields + warnings[], not a null return). The guard
+      // below skips rows with no pillars at all; downstream `chk(val == null)`
+      // guards handle degenerate-but-present pillars.
+      if (cas) return cas;
     }
     return null;
   })();

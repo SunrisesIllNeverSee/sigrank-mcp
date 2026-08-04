@@ -11,22 +11,15 @@
 
 import { snapshotHash, signPayload } from "../identity/sign.mjs";
 import { preflight } from "./preflight.mjs";
-import { readFileSync } from "node:fs";
+import { pkgVersion } from "../lib/pkg-version.mjs";
+import {
+  TERMS_VERSION,
+  PRIVACY_VERSION,
+  isRankedAck,
+} from "../lib/constants.mjs";
 
 const WINDOW_TYPE = { "7d": "7d", "30d": "30d", "90d": "90d", all: "all_time" };
 const WINDOW_SPAN_DAYS = { "7d": 7, "30d": 30, "90d": 90, all_time: 3650 };
-
-/** Resolve this package's version for the User-Agent stamp (best-effort). */
-function _pkgVersion() {
-  try {
-    const pkg = JSON.parse(
-      readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
-    );
-    return pkg.version;
-  } catch {
-    return "unknown";
-  }
-}
 const PLATFORM_ENUM = new Set([
   "claude",
   "chatgpt",
@@ -38,8 +31,6 @@ const PLATFORM_ENUM = new Set([
 ]);
 // Provenance tag only — the board ranks by Υ (no RS.xx weights, §0.1).
 const RULESET_VERSION = "sigrank-token-1";
-const TERMS_VERSION = "2026-07-21";
-const PRIVACY_VERSION = "2026-07-21";
 const DAY_MS = 86_400_000;
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
@@ -200,7 +191,7 @@ export async function submitSignedWindow(
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 15_000);
       const headers = {
-        "user-agent": `node/${process.version} sigrank-mcp/${_pkgVersion()}`,
+        "user-agent": `node/${process.version} sigrank-mcp/${pkgVersion()}`,
         ...(init.headers || {}),
       };
       return fetch(url, {
@@ -296,11 +287,7 @@ export async function submitSignedWindow(
     persisted: ack.persisted ?? null,
     // ranked = actually on the board (verified + written), not just "received".
     // An unenrolled/revoked device gets HTTP 202 received but is NEVER ranked.
-    ranked: !!(
-      res.ok &&
-      ack.verification_tier === "verified" &&
-      ack.persisted === true
-    ),
+    ranked: isRankedAck(res, ack),
     snapshot_hash: payload.agent.snapshot_hash,
     reason: res.ok ? null : ack.reason || ack.status || `http_${res.status}`,
     detail: ack.detail ?? null,

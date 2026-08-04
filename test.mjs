@@ -102,7 +102,7 @@ assert.strictEqual(body.codename, "TransVaultOrigin", "codename forwarded");
 assert.strictEqual(
   body.raw_paste,
   MOSES,
-  "RAW paste forwarded (server re-scores authoritatively)",
+  "canonical 4-number paste forwarded (parsed pillars, not raw user text)",
 );
 assert.strictEqual(
   sub.yield,
@@ -115,6 +115,41 @@ assert.strictEqual(
   "server ack status surfaced",
 );
 assert.strictEqual(sub.submission.status, "received", "server ack body merged");
+
+// --- 4b. submit_paste PRIVACY: mixed text → only 4 numbers sent, no prose leaks ---
+//     The user pastes text containing prose + 4 numbers. parsePillars extracts the
+//     numbers; raw_paste must be the canonical 4-number form, NOT the original text.
+//     This is the privacy guard: conversation content never reaches the server.
+let mixedCaptured = null;
+const mixedFetch = async (url, init) => {
+  mixedCaptured = { url, init };
+  return {
+    ok: true,
+    status: 202,
+    json: async () => ({ status: "received", submission_id: "pmix" }),
+  };
+};
+const MIXED = "My session used 1000 input, 500 output, 50 cacheCreate, 80 cacheRead tokens today";
+const mixedSub = await callTool(
+  "submit_paste",
+  { text: MIXED, codename: "PrivacyTest" },
+  { apiBase: "http://test.local", fetchImpl: mixedFetch },
+);
+const mixedBody = JSON.parse(mixedCaptured.init.body);
+assert.strictEqual(
+  mixedBody.raw_paste,
+  "1000 500 50 80",
+  "PRIVACY: raw_paste is canonical 4 numbers, not the raw prose",
+);
+assert.ok(
+  !mixedBody.raw_paste.includes("session"),
+  "PRIVACY: no prose leaks into raw_paste",
+);
+assert.ok(
+  !mixedBody.raw_paste.includes("tokens today"),
+  "PRIVACY: no conversation text leaks into raw_paste",
+);
+console.log("✓ submit_paste PRIVACY: mixed text → only 4 numbers sent (no prose leak)");
 
 // --- 5. tokenpull: dedup by message.id + window slicing (mock adapter, no filesystem) ---
 const NOW = Date.parse("2026-06-19T00:00:00Z");

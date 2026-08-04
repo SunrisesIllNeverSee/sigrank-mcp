@@ -51,8 +51,11 @@ const DAY_MS = 86_400_000; // shared with tokenpull.mjs but kept local to avoid 
 
 // ── File-system helpers ───────────────────────────────────────────────────────
 
-/** Recursively yield every file whose name matches `pred` under dir (skips symlink dirs). */
-async function* walkFiles(dir, pred, counter = { n: 0 }, max = 10_000) {
+/** Recursively yield every file whose name matches `pred` under dir (skips
+ *  symlink dirs, stops after `max` files). Exported so adapters/tokenpull.mjs
+ *  can reuse it instead of maintaining a second near-identical walker
+ *  (_walkJsonl) — the two had drifted on the symlink-skip + max-files guards. */
+export async function* walkFiles(dir, pred, counter = { n: 0 }, max = 10_000) {
   if (counter.n >= max) return;
   let entries;
   try {
@@ -743,7 +746,9 @@ export const hermesAdapter = {
 // Same combined-input problem as Codex: input_tokens INCLUDES cache write, so we
 // yield { ts, output, cacheRead, uncached } and let tokenpullCodex() do the
 // ioRatio split (input = output × ioRatio, cacheCreate = uncached − input).
-// ioRatio comes from Claude (Beta) or the 7:1:2 average (Alpha = 0.5).
+// ioRatio comes from Claude (Beta = operator's Claude input/output ratio) or
+// the Alpha 2.0 default (matches Codex; the "7:1:2 average → 0.5" note in a
+// prior revision was wrong — tokenpullAny defaults ioRatio to 2.0 for both).
 export const devinAdapter = {
   platform: "devin",
   defaultRoot: () => join(homedir(), ".local", "share", "devin", "cli"),
@@ -795,9 +800,22 @@ export const devinAdapter = {
 //   }
 // }
 //
-// The adapter yields one "message" per window with the summed pillars. Since
-// there's no per-message timestamp, all data lands in the "all" window only
-// (same as null-timestamp records in other adapters).
+// The adapter yields ONE message carrying the all-time pillars. The generic
+// tokenpull aggregator buckets by timestamp, and these records carry no
+// timestamp (ts: null → "all" window only, same as null-ts records in other
+// adapters). Yielding one message PER window key — as a prior version did —
+// caused the "all" total to be the SUM of every window entry (all + 30d + 7d
+// …), i.e. a multi-count. This is the only user-facing wrong-number bug in
+// ingestion: an operator who filled in all four windows saw an "all" Υ
+// computed from 2–4× the real pillars.
+//
+// Fix: yield exactly one record. If the JSON has an "all" entry, use it
+// verbatim; otherwise sum the provided windows into a synthetic all-time
+// total. The 7d/30d/90d entries are accepted (so the file format stays
+// forward-compatible) but are NOT yielded as separate records — the generic
+// aggregator has no way to route a timestamp-less record into a bounded
+// window, so emitting them would only re-introduce the overcount. An operator
+// who wants windowed data must use a real adapter that carries timestamps.
 export const otherAdapter = {
   platform: "other",
   defaultRoot: () => process.env.SIGRANK_OTHER_PATH || "",
@@ -822,23 +840,38 @@ export const otherAdapter = {
       throw new Error(`other adapter: invalid JSON in ${filePath}`);
     }
     const windows = data.windows || {};
-    for (const [win, pillars] of Object.entries(windows)) {
-      const input = Number(pillars.input || 0);
-      const output = Number(pillars.output || 0);
-      const cacheCreate = Number(pillars.cacheCreate || pillars.cache_create || 0);
-      const cacheRead = Number(pillars.cacheRead || pillars.cache_read || 0);
-      if (input + output + cacheCreate + cacheRead === 0) continue;
-      yield {
-        id: `other:${win}`,
-        sid: `other-${win}`,
-        ts: null, // no timestamp → lands in "all" window only
-        input,
-        output,
-        cacheCreate,
-        cacheRead,
-        file: filePath,
-      };
+    const norm = (p) => ({
+      input: Number(p?.input || 0),
+      output: Number(p?.output || 0),
+      cacheCreate: Number(p?.cacheCreate || p?.cache_create || 0),
+      cacheRead: Number(p?.cacheRead || p?.cache_read || 0),
+    });
+    let all;
+    if (windows.all) {
+      // Explicit all-time entry → use verbatim (do NOT add 7d/30d/90d on top).
+      all = norm(windows.all);
+    } else {
+      // No "all" key → fold the provided windows into a synthetic all-time.
+      all = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+      for (const pillars of Object.values(windows)) {
+        const n = norm(pillars);
+        all.input += n.input;
+        all.output += n.output;
+        all.cacheCreate += n.cacheCreate;
+        all.cacheRead += n.cacheRead;
+      }
     }
+    if (all.input + all.output + all.cacheCreate + all.cacheRead === 0) return;
+    yield {
+      id: `other:all`,
+      sid: `other-all`,
+      ts: null, // no timestamp → lands in "all" window only
+      input: all.input,
+      output: all.output,
+      cacheCreate: all.cacheCreate,
+      cacheRead: all.cacheRead,
+      file: filePath,
+    };
   },
 };
 

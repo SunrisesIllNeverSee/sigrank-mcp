@@ -24,4 +24,8 @@ Multiplying stages cancels intermediate terms:
 
 This decomposition makes Upsilon legible: output relative to input is transmission; cache creation relative to output is commitment; reads relative to created cache are reuse. It is an accounting identity, not a causal proof that one stage produced another.
 
-The app computes stage values and 10xDEV only when every pillar is positive; otherwise it marks the run non-compounding when `cw` is zero. Source: `lib/cascade/metrics.ts`.
+The app computes stage values and 10xDEV only when every pillar is positive; otherwise it marks the run non-compounding when `cw` is zero.
+
+> **Repo scope.** `lib/analytics/cascade.ts` is the **server-side** (sigrank-app) canonical implementation. The MCP client mirror is `analytics/cascade.mjs` and applies the same "all four pillars positive" guard before computing 10xDEV.
+
+Source (server): `sigrank-app/lib/analytics/cascade.ts`. Client mirror: `analytics/cascade.mjs`.

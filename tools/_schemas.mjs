@@ -2,6 +2,8 @@
  * tools/_schemas.mjs — MCP tool annotation + input/output schema objects.
  */
 
+import { CLASS_TIERS, UNCLASSED } from "../analytics/cascade.mjs";
+
 // Smithery quality: output schemas + annotations
 // MCP tool annotations hint to clients about side-effects, read-only status, etc.
 export const ANNOTATIONS = {
@@ -11,11 +13,25 @@ export const ANNOTATIONS = {
   openWorldHint: { openWorldHint: false },
 };
 
+// The canonical class-tier enum, single-sourced from analytics/cascade.mjs.
+// Every output schema that exposes a `class` field uses this so the enum can
+// never drift between tools (the old schemas each inlined ["Burner","Builder",
+// "10xer"] — a 3-tier legacy that didn't match the 8-tier dev10x classifier
+// the cascade actually emits). UNCLASSED is included for the degenerate
+// no-data case. Exported so tool files that declare their own output schema
+// (optimize-efficiency.mjs, describe-power-user.mjs) import the same enum
+// instead of re-inlining a stale tier list.
+export const CLASS_ENUM = [...CLASS_TIERS, UNCLASSED];
+
 // Common output schema for cascade results (rank_paste, simulate_change, etc.)
+// Field names match the actual cascade() output in analytics/cascade.mjs:
+//   `yield` (not `yield_` — `yield_` was a schema-only alias that didn't match
+//   the real payload), `dev10x` (not `tenx_dev`), `class`, `snr`, `leverage`,
+//   `velocity`, `pillars`, `mode`, `warnings`, plus the tool-added `card`.
 export const CASCADE_OUTPUT = {
   type: "object",
   properties: {
-    yield_: {
+    yield: {
       type: "number",
       description:
         "Υ Yield — the headline efficiency metric (Cache Reads × Output / Input²)",
@@ -26,11 +42,19 @@ export const CASCADE_OUTPUT = {
       description: "Cr/I — cache reads divided by input",
     },
     velocity: { type: "number", description: "O/I — output divided by input" },
-    tenx_dev: { type: "number", description: "10xDEV score" },
+    dev10x: { type: "number", description: "10xDEV score (log10 of the cascade product)" },
     class: {
       type: "string",
-      enum: ["Burner", "Builder", "10xer"],
-      description: "Operator class tier",
+      enum: CLASS_ENUM,
+      description: "Operator class tier (dev10x taxonomy)",
+    },
+    mode: {
+      type: "object",
+      description: "Detected working mode (BUILD/EDIT/DEBUG/MAINTAIN/IDLE) + confidence",
+    },
+    pillars: {
+      type: "object",
+      description: "The four raw token pillars the cascade was computed from",
     },
     card: {
       type: "string",
@@ -42,7 +66,7 @@ export const CASCADE_OUTPUT = {
       description: "Parse or data warnings if any",
     },
   },
-  required: ["yield_", "class"],
+  required: ["yield", "class"],
 };
 
 export const LEADERBOARD_OUTPUT = {
@@ -58,7 +82,7 @@ export const LEADERBOARD_OUTPUT = {
           yield_: { type: "number", description: "Υ Yield metric" },
           leverage: { type: "number", description: "Cr/I ratio" },
           velocity: { type: "number", description: "O/I ratio" },
-          class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+          class: { type: "string", enum: CLASS_ENUM },
           rank: { type: "integer", description: "1-based rank position" },
         },
       },
@@ -73,7 +97,7 @@ export const OPERATOR_OUTPUT = {
     yield_: { type: "number", description: "Υ Yield metric" },
     leverage: { type: "number", description: "Cr/I ratio" },
     velocity: { type: "number", description: "O/I ratio" },
-    class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+    class: { type: "string", enum: CLASS_ENUM },
     rank: { type: "integer", description: "1-based rank position" },
     windows: {
       type: "array",
@@ -110,7 +134,7 @@ export const BEST_OPERATOR_OUTPUT = {
           yield_: { type: "number", description: "Υ Yield metric" },
           leverage: { type: "number", description: "Cr/I ratio" },
           velocity: { type: "number", description: "O/I ratio" },
-          class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+          class: { type: "string", enum: CLASS_ENUM },
           rank: { type: "integer", description: "1-based rank position" },
           behavioral_framing: {
             type: "string",
@@ -138,7 +162,7 @@ export const COMPARE_SELF_OUTPUT = {
         yield_: { type: "number", description: "Υ Yield metric" },
         leverage: { type: "number", description: "Cr/I ratio" },
         velocity: { type: "number", description: "O/I ratio" },
-        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        class: { type: "string", enum: CLASS_ENUM },
         rank: { type: "integer", description: "1-based rank position" },
       },
     },
@@ -173,7 +197,7 @@ export const COMPARE_OPERATORS_OUTPUT = {
         yield_: { type: "number" },
         leverage: { type: "number" },
         velocity: { type: "number" },
-        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        class: { type: "string", enum: CLASS_ENUM },
         rank: { type: "integer" },
       },
     },
@@ -185,7 +209,7 @@ export const COMPARE_OPERATORS_OUTPUT = {
         yield_: { type: "number" },
         leverage: { type: "number" },
         velocity: { type: "number" },
-        class: { type: "string", enum: ["Burner", "Builder", "10xer"] },
+        class: { type: "string", enum: CLASS_ENUM },
         rank: { type: "integer" },
       },
     },
@@ -221,34 +245,40 @@ export const TOKENPULL_OUTPUT = {
   type: "object",
   properties: {
     platform: { type: "string", description: "Source platform name" },
-    generatedAt: { type: "string", description: "ISO timestamp of the pull" },
-    windows: {
-      type: "array",
-      description: "Per-window token usage + cascade results",
-      items: {
-        type: "object",
-        properties: {
-          window: { type: "string", enum: ["7d", "30d", "90d", "all"] },
-          pillars: {
-            type: "object",
-            properties: {
-              input: { type: "integer" },
-              output: { type: "integer" },
-              cacheCreate: { type: "integer" },
-              cacheRead: { type: "integer" },
-            },
-          },
-          messages: {
-            type: "integer",
-            description: "Number of messages in window",
-          },
-          estimated: {
-            type: "boolean",
-            description: "True if cacheCreate was estimated",
-          },
-          cascade: CASCADE_OUTPUT,
-        },
+    window: {
+      type: "string",
+      enum: ["7d", "30d", "90d", "all"],
+      description: "The watched window (watch_tokenpull watches one window per call)",
+    },
+    pillars: {
+      type: "object",
+      description: "The four raw token pillars for the watched window",
+      properties: {
+        input: { type: "integer" },
+        output: { type: "integer" },
+        cacheCreate: { type: "integer" },
+        cacheRead: { type: "integer" },
       },
+    },
+    messages: {
+      type: "integer",
+      description: "Number of messages in the watched window",
+    },
+    cascade: CASCADE_OUTPUT,
+    card: { type: "string", description: "Deterministic prose summary" },
+    generatedAt: { type: "string", description: "ISO timestamp of the pull" },
+    poll_interval_s: {
+      type: "number",
+      description: "Advisory poll cadence echoed back (does not make the call block)",
+    },
+    auth_submit: {
+      type: ["object", "null"],
+      description:
+        "Present only when submit:true. One of: {status:'received'|'cooldown'|'not_enrolled'|'error', ...}. Null when submit is false (preview only).",
+    },
+    note: {
+      type: "string",
+      description: "Reminder that one snapshot is returned per call — re-call to detect changes.",
     },
   },
 };

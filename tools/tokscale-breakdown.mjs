@@ -4,6 +4,7 @@
 
 import { execFileAsync } from "./_helpers.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
+import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "tokscale_breakdown",
@@ -36,48 +37,7 @@ export const TOOL_DEF = {
   },
 };
 
-const TOKSCALE_CLIENT_MAP = {
-  claude: "claude",
-  codex: "codex",
-  "devin-cli": "devin",
-  "devin-desktop": "devin",
-  gemini: "gemini",
-  amp: "amp",
-  kimi: "kimi",
-  qwen: "qwen",
-  goose: "goose",
-  kilo: "kilo",
-  kilocode: "kilo",
-  hermes: "hermes",
-  droid: "droid",
-  codebuff: "codebuff",
-  copilot: "copilot",
-  opencode: "opencode",
-  openclaw: "openclaw",
-  pi: "pi",
-  cursor: "other",
-  roocode: "other",
-  mux: "other",
-  crush: "other",
-  antigravity: "other",
-  "antigravity-cli": "other",
-  zed: "other",
-  kiro: "other",
-  trae: "other",
-  warp: "other",
-  cline: "other",
-  gjc: "other",
-  grok: "other",
-  jcode: "other",
-  commandcode: "other",
-  micode: "other",
-  junie: "other",
-  zcode: "other",
-  opencodereview: "other",
-  codebuddy: "other",
-  workbuddy: "other",
-  synthetic: null,
-};
+// TOKSCALE_CLIENT_MAP is imported from lib/constants.mjs (single source of truth).
 
 /**
  * Run `tokscale models --json` and return a model-level breakdown per platform.

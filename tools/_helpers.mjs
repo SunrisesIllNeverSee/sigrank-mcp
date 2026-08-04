@@ -8,10 +8,10 @@
 
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pkgVersion } from "../lib/pkg-version.mjs";
 import {
   tokenpull as pullLocal,
   tokenpullCodex as pullCodex,
@@ -67,16 +67,11 @@ export function execFileAsync(cmd, args, timeoutMs) {
   });
 }
 
-/** Resolve this package's version for the User-Agent stamp (best-effort). */
+/** Resolve this package's version for the User-Agent stamp (best-effort).
+ *  Thin wrapper over the shared lib/pkg-version.mjs helper so there is exactly
+ *  one version-resolution implementation in the repo. */
 export function agentVersionStamp() {
-  try {
-    const pkg = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
-    );
-    return pkg.version;
-  } catch {
-    return "unknown";
-  }
+  return pkgVersion();
 }
 
 /**

@@ -21,4 +21,6 @@ It is not a judgment of a person or a general measure of intelligence. A rank is
 
 The pyramid is intentionally one-way: interpretations do not alter observations. See `ontology/`, `methodology/`, and `governance/` for the canonical definitions, methods, and data commitments.
 
-Technical basis: `lib/cascade/metrics.ts`, `lib/ingest/gates.ts`.
+> **Repo scope.** This `sigrank-mcp` repo is the **client** (local token pulling + cascade scoring + signed submission). The `lib/...` files cited across `ontology/`, `methodology/`, and `governance/` (`lib/analytics/cascade.ts`, `lib/ingest/gates.ts`, `lib/analytics/scoring-engine.ts`, etc.) live **server-side** in the `sigrank-app` web app. Each doc carries its own repo-scope banner pointing to the matching client mirror.
+
+Technical basis (server): `sigrank-app/lib/analytics/cascade.ts`, `sigrank-app/lib/ingest/gates.ts`. Client mirrors: `analytics/cascade.mjs`, `submit/index.mjs`, `identity/sign.mjs`.

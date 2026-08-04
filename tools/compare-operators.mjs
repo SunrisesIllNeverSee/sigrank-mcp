@@ -4,6 +4,7 @@
 
 import { COMPARE_OPERATORS_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { _behavioralFraming, _classMeaning, _competitiveLayer } from "./_framing.mjs";
+import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "compare_operators",
@@ -42,7 +43,7 @@ export async function handleCompareOperators(args, ctx) {
   const [opA, opB, board] = await Promise.all([
     ctx.fetchJson(`/api/v1/operators/${encodeURIComponent(nameA)}`),
     ctx.fetchJson(`/api/v1/operators/${encodeURIComponent(nameB)}`),
-    ctx.fetchJson("/api/v1/leaderboard?metric=yield_"),
+    ctx.fetchJson(`/api/v1/leaderboard?metric=${LEADERBOARD_METRIC}`),
   ]);
 
   const yieldA = opA.yield_ || 0;
