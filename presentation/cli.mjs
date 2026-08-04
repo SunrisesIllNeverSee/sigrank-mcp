@@ -15,7 +15,7 @@
  *   npx sigrank watch --window 7d    watch one window only (optional filter)
  *
  * Color palette mirrors the SigRank web dark theme:
- *   gold = class TRANSMITTER headline + rank #1
+ *   gold = rank #1 headline
  *   cyan = active metrics / your row highlight
  *   dim  = secondary data, separators
  *   red  = negative movement / delta
@@ -23,7 +23,7 @@
  */
 
 import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
-import { cascade, classify, CLASS_TIERS, UNCLASSED } from "../cascade.mjs";
+import { cascade, classify, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mjs";
 import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
 import { submitSignedWindow } from "../submit.mjs";
@@ -90,21 +90,21 @@ const green = (str) => paint(c.green, str);
 const red = (str) => paint(c.red, str);
 
 // ── Class tier → color ─────────────────────────────────────────────────────
-// Built from the canonical CLASS_TIERS list (single source of truth). The dead
-// BEARER entry (no tier by that name exists) was removed; UNCLASSED added for
-// the degenerate no-data case.
+// Color is keyed on the BASE TIER (8 entries in CLASS_TIERS). classify() returns
+// a full sub-stage string (e.g. "REFINER II") — tierOf() extracts the base tier
+// for color lookup. TRANSMITTER is not a class. UNCLASSED for no-data.
 const CLASS_COLOR = {
-  TRANSMITTER: (s) => paint(c.boldGold, s),
   "ARCH+": (s) => paint(c.boldCyan, s),
   ARCH: (s) => paint(c.cyan, s),
   POWER: (s) => paint(c.boldWhite, s),
   BASE: (s) => paint(c.white, s),
   SEEKER: (s) => paint(c.magenta, s),
   REFINER: (s) => paint(c.blue, s),
+  BEARER: (s) => paint(c.dim, s),
   IGNITER: (s) => paint(c.dim, s),
   [UNCLASSED]: (s) => paint(c.dim, s),
 };
-const colorClass = (cls) => (CLASS_COLOR[cls] ?? ((s) => s))(cls);
+const colorClass = (cls) => (CLASS_COLOR[tierOf(cls)] ?? CLASS_COLOR[UNCLASSED] ?? ((s) => s))(cls);
 // Guard: every canonical tier must have a color here.
 for (const t of CLASS_TIERS) {
   if (!CLASS_COLOR[t]) {

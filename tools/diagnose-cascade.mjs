@@ -55,7 +55,7 @@ export async function handleDiagnoseCascade(args) {
       diagnosis.push({
         metric: "cache_leverage",
         severity: "critical",
-        finding: `Cache leverage is ${leverage}× — you're reading only ${leverage}× your fresh input from cache. TRANSMITTER-class operators hit 200×+.`,
+        finding: `Cache leverage is ${leverage}× — you're reading only ${leverage}× your fresh input from cache. Top-tier operators hit 200×+.`,
         recommendation:
           "Increase context reuse: load prior session context, use longer conversation threads, reference earlier outputs.",
         estimated_yield_impact: `+${Math.round((1 - leverage / 50) * 100)}% Υ potential`,

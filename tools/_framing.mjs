@@ -15,28 +15,27 @@
  */
 
 import { DEFAULT_API_BASE } from "./_helpers.mjs";
-import { CLASS_TIERS, UNCLASSED } from "../analytics/cascade.mjs";
+import { CLASS_TIERS, UNCLASSED, tierOf } from "../analytics/cascade.mjs";
 
 /**
- * Map a class tier to a power-user band. The 8 dev10x tiers collapse into 5
+ * Map a class tier to a power-user band. The 8 experience tiers collapse into 5
  * behavioral bands + UNCLASSED so the framing stays short without writing 8
  * bespoke messages. Band order matches CLASS_TIERS cut order (descending).
  *
- *   TRANSMITTER           → apex    (the rare closed-loop operator)
- *   ARCH+, ARCH           → high    (power-user archetype)
+ *   ARCH+, ARCH           → high    (deep experience, power-user archetype)
  *   POWER, BASE           → mid     (building momentum)
- *   SEEKER, REFINER       → early   (compounding, not yet compounding well)
- *   IGNITER               → entry   (tokens burned, not compounded)
+ *   SEEKER, REFINER       → early   (accumulating volume, finding patterns)
+ *   BEARER, IGNITER       → entry   (first volume, or dormant)
  *   UNCLASSED / unknown   → nodata
  */
 const BAND = {
-  TRANSMITTER: "apex",
   "ARCH+": "high",
   ARCH: "high",
   POWER: "mid",
   BASE: "mid",
   SEEKER: "early",
   REFINER: "early",
+  BEARER: "entry",
   IGNITER: "entry",
   [UNCLASSED]: "nodata",
 };
@@ -46,10 +45,12 @@ const BAND = {
  *  silently relabeling every no-data operator as the bottom legacy tier. */
 export const FALLBACK_CLASS = UNCLASSED;
 
-/** Map a class tier to its power-user band. Exported so tool handlers can
- *  branch on band without re-deriving the tier→band mapping. */
+/** Map a class tier (full sub-stage string or base tier) to its power-user
+ *  band. Exported so tool handlers can branch on band without re-deriving the
+ *  tier→band mapping. Uses tierOf() to extract the base tier from sub-stage
+ *  strings (e.g. "REFINER II" → "REFINER" → "early"). */
 export function bandOf(klass) {
-  return BAND[klass] ?? "nodata";
+  return BAND[tierOf(klass)] ?? "nodata";
 }
 
 /**

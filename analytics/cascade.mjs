@@ -61,7 +61,7 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
     leverage: round(leverage, 1),
     velocity: round(velocity, 3),
     dev10x: round(dev10x, 2),
-    class: classify(yield_, dev10x),
+    class: classify(total),
     mode: detectMode({ input: i, output: o, cacheCreate: cw, cacheRead: cr }),
   };
   if (warnings.length > 0) result.warnings = warnings;
@@ -69,43 +69,121 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
 }
 
 /**
- * CLASS_TIERS — the canonical 8-tier dev10x taxonomy. SINGLE SOURCE OF TRUTH.
- * Every consumer (presentation/tui.mjs, presentation/cli.mjs, tools/_schemas.mjs,
- * resources/class-tiers.md) imports THIS list instead of maintaining its own.
- * Order is descending (TRANSMITTER at top, IGNITER at bottom) — matches the
- * classify() first-match-wins cut order.
+ * CLASS_TIERS — the 8 base tier names (K.01–K.08) for display: glyph, color,
+ * meaning. SINGLE SOURCE OF TRUTH for tier-level display info.
+ *
+ * The permanent class is an EXPERIENCE ladder keyed on TOTAL TOKENS. Each tier
+ * has 3 sub-stages (I/II/III) — 24 stages total. The 24 thresholds live in
+ * RS05_CLASS_THRESHOLDS below. classify() returns the full sub-stage string
+ * (e.g. "REFINER II"). Use tierOf() to extract the base tier name.
+ *
+ * TRANSMITTER is NOT on this ladder — it is a temporary peak badge (RS.08).
+ * The client does not evaluate the badge (owner is still calibrating it);
+ * the server does it on read.
+ *
+ * Mirrors the server's canon-ids.ts CLASS_TIERS (display) + ruleset.ts
+ * RS05_CLASS_THRESHOLDS (thresholds). Order is descending (ARCH+ → IGNITER).
  */
 export const CLASS_TIERS = [
-  "TRANSMITTER",
   "ARCH+",
   "ARCH",
   "POWER",
   "BASE",
   "SEEKER",
   "REFINER",
+  "BEARER",
   "IGNITER",
 ];
 
-/** The degenerate-case class returned when both yield and dev10x are null
- *  (all-zero / empty session). Distinct from IGNITER (which is a real low
- *  dev10x bucket) so callers can tell "no data" from "bottom tier". */
+/**
+ * SIGNAL_CLASSES — the full 24 sub-stage names (8 tiers × 3 sub-stages I/II/III).
+ * Mirrors the server's SIGNAL_CLASSES set in lib/board/mappers.ts. The API
+ * returns class_tier as one of these 24 values. classify() returns one of these
+ * (or UNCLASSED). Use this for schema enums and validation.
+ */
+export const SIGNAL_CLASSES = [
+  "ARCH+ I", "ARCH+ II", "ARCH+ III",
+  "ARCH I", "ARCH II", "ARCH III",
+  "POWER I", "POWER II", "POWER III",
+  "BASE I", "BASE II", "BASE III",
+  "SEEKER I", "SEEKER II", "SEEKER III",
+  "REFINER I", "REFINER II", "REFINER III",
+  "BEARER I", "BEARER II", "BEARER III",
+  "IGNITER I", "IGNITER II", "IGNITER III",
+];
+
+/**
+ * RS05_CLASS_THRESHOLDS — 24 total-token breakpoints (8 tiers × 3 sub-stages).
+ * Mirrors the server's lib/analytics/ruleset.ts RS05_CLASS_THRESHOLDS exactly.
+ * Calibrated from the HCM cut (1,626 operators) using target distribution
+ * (Option C): IGNITER 10%, BEARER 12.5%, REFINER 15%, SEEKER 22.5%, BASE 20%,
+ * POWER 15%, ARCH 5%, ARCH+ 0% (aspirational). Each tier split into 3
+ * equal-population sub-stages. Update this one constant to stay in parity
+ * when the owner tweaks server-side.
+ */
+export const RS05_CLASS_THRESHOLDS = [
+  { class: "ARCH+ I", totalMin: 7068201104627 },
+  { class: "ARCH+ II", totalMin: 7068201104627 },
+  { class: "ARCH+ III", totalMin: 7068201104627 },
+  { class: "ARCH I", totalMin: 186207267611 },
+  { class: "ARCH II", totalMin: 98543134083 },
+  { class: "ARCH III", totalMin: 68766193943 },
+  { class: "POWER I", totalMin: 39958782379 },
+  { class: "POWER II", totalMin: 26955905621 },
+  { class: "POWER III", totalMin: 19141226889 },
+  { class: "BASE I", totalMin: 13960345961 },
+  { class: "BASE II", totalMin: 10189224970 },
+  { class: "BASE III", totalMin: 7747041813 },
+  { class: "SEEKER I", totalMin: 5446673659 },
+  { class: "SEEKER II", totalMin: 4014577247 },
+  { class: "SEEKER III", totalMin: 2961798768 },
+  { class: "REFINER I", totalMin: 2358346840 },
+  { class: "REFINER II", totalMin: 1845750357 },
+  { class: "REFINER III", totalMin: 1334876308 },
+  { class: "BEARER I", totalMin: 984078167 },
+  { class: "BEARER II", totalMin: 714619043 },
+  { class: "BEARER III", totalMin: 431702990 },
+  { class: "IGNITER I", totalMin: 216393332 },
+  { class: "IGNITER II", totalMin: 88999166 },
+  { class: "IGNITER III", totalMin: 0 },
+];
+
+/** The degenerate-case class returned when totalTokens is null/undefined
+ *  (all-zero / empty session). Distinct from IGNITER III (which is a real
+ *  low-experience tier) so callers can tell "no data" from "bottom tier". */
 export const UNCLASSED = "UNCLASSED";
 
-/** MVP class tiering from Υ + 10xDEV (canon assigns from cascade SNR + 10xDEV; this
- *  is the open-MVP approximation — proprietary threshold cuts stay server-side). */
-export function classify(yieldVal, dev10x) {
-  // Degenerate: all-null (empty session / no pillars) → UNCLASSED, not IGNITER.
-  // Falling through to IGNITER here would mislabel a no-data operator as the
-  // bottom tier; UNCLASSED lets the TUI / narrate surface "no data" instead.
-  if (yieldVal == null && dev10x == null) return UNCLASSED;
-  if (yieldVal >= 1000 || dev10x >= 3) return "TRANSMITTER";
-  if (dev10x >= 1.45) return "ARCH+";
-  if (dev10x >= 1.35) return "ARCH";
-  if (dev10x >= 1.2) return "POWER";
-  if (dev10x >= 1.0) return "BASE";
-  if (dev10x >= 0) return "SEEKER";
-  if (dev10x >= -0.3) return "REFINER";
-  return "IGNITER";
+/** Extract the base tier name from a sub-stage string (e.g. "ARCH+ I" → "ARCH+").
+ *  Mirrors the server's tierOf() in components/sigrank/types.ts. Returns the
+ *  input as-is if it's not a sub-stage string (e.g. UNCLASSED). */
+export function tierOf(cls) {
+  if (cls === UNCLASSED || cls == null) return cls;
+  const parts = String(cls).split(" ");
+  if (parts.length >= 2 && ["I", "II", "III"].includes(parts[parts.length - 1])) {
+    return parts.slice(0, -1).join(" ");
+  }
+  return cls;
+}
+
+/** Extract the sub-stage from a sub-stage string (e.g. "ARCH+ I" → "I").
+ *  Mirrors the server's stageOf(). Returns null for non-sub-stage strings. */
+export function stageOf(cls) {
+  if (cls === UNCLASSED || cls == null) return null;
+  const parts = String(cls).split(" ");
+  const stage = parts[parts.length - 1];
+  return stage === "I" || stage === "II" || stage === "III" ? stage : null;
+}
+
+/** Classify an operator's experience stage from total tokens (input + output +
+ *  cacheCreate + cacheRead). Descending first-match-wins scan over
+ *  RS05_CLASS_THRESHOLDS — mirrors the server's assignClass(totalTokens).
+ *  Returns a full sub-stage string (e.g. "REFINER II") or UNCLASSED. */
+export function classify(totalTokens) {
+  if (totalTokens == null || !Number.isFinite(totalTokens)) return UNCLASSED;
+  for (const t of RS05_CLASS_THRESHOLDS) {
+    if (totalTokens >= t.totalMin) return t.class;
+  }
+  return "IGNITER III";
 }
 
 /**

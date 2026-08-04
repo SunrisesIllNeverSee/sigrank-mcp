@@ -2,7 +2,7 @@
  * tools/_schemas.mjs — MCP tool annotation + input/output schema objects.
  */
 
-import { CLASS_TIERS, UNCLASSED } from "../analytics/cascade.mjs";
+import { SIGNAL_CLASSES, UNCLASSED } from "../analytics/cascade.mjs";
 
 // Smithery quality: output schemas + annotations
 // MCP tool annotations hint to clients about side-effects, read-only status, etc.
@@ -15,13 +15,13 @@ export const ANNOTATIONS = {
 
 // The canonical class-tier enum, single-sourced from analytics/cascade.mjs.
 // Every output schema that exposes a `class` field uses this so the enum can
-// never drift between tools (the old schemas each inlined ["Burner","Builder",
-// "10xer"] — a 3-tier legacy that didn't match the 8-tier dev10x classifier
-// the cascade actually emits). UNCLASSED is included for the degenerate
-// no-data case. Exported so tool files that declare their own output schema
-// (optimize-efficiency.mjs, describe-power-user.mjs) import the same enum
-// instead of re-inlining a stale tier list.
-export const CLASS_ENUM = [...CLASS_TIERS, UNCLASSED];
+// never drift between tools. SIGNAL_CLASSES is the 24 sub-stage names (8 tiers
+// × 3 sub-stages I/II/III) that classify() emits and the API returns.
+// UNCLASSED is included for the degenerate no-data case. Exported so tool
+// files that declare their own output schema (optimize-efficiency.mjs,
+// describe-power-user.mjs) import the same enum instead of re-inlining a
+// stale tier list.
+export const CLASS_ENUM = [...SIGNAL_CLASSES, UNCLASSED];
 
 // Common output schema for cascade results (rank_paste, simulate_change, etc.)
 // Field names match the actual cascade() output in analytics/cascade.mjs:

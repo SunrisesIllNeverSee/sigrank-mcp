@@ -159,7 +159,7 @@ export async function handleSelfImprove(args, ctx) {
     diagnosis.push({
       metric: "cache_leverage",
       severity: "critical",
-      finding: `Cache leverage is ${leverage}× — TRANSMITTER-class operators hit 200×+.`,
+      finding: `Cache leverage is ${leverage}× — top-tier operators hit 200×+.`,
       recommendation:
         "Increase context reuse: load prior session context, use longer threads.",
     });

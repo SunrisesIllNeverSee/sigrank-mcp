@@ -33,7 +33,7 @@ assert.strictEqual(
   `Υ mismatch: got ${c.yield}, want 18436.98`,
 );
 assert.strictEqual(c.leverage, 2042.2, `leverage mismatch: got ${c.leverage}`);
-assert.strictEqual(c.class, "TRANSMITTER", `class mismatch: got ${c.class}`);
+assert.strictEqual(c.class, "REFINER I", `class mismatch: got ${c.class}`);
 // JSON form parses identically.
 const j = cascade(
   parsePillars(
@@ -45,7 +45,7 @@ assert.strictEqual(j.yield, 18436.98, "JSON parse path Υ mismatch");
 // --- 2. (3a) rank_paste returns the cascade + a deterministic card ---
 const rp = await callTool("rank_paste", { text: MOSES });
 assert.strictEqual(rp.yield, 18436.98, "rank_paste Υ mismatch");
-assert.match(rp.card, /TRANSMITTER/, "card names the class");
+assert.match(rp.card, /REFINER/, "card names the class");
 assert.match(rp.card, /2,042x/, "card cites the real 2042x leverage");
 const rp2 = await callTool("rank_paste", { text: MOSES });
 assert.strictEqual(
@@ -63,7 +63,7 @@ console.log("\ncard →", rp.card);
 // --- 3. (3b) submit_paste: no codename → local preview, NO submission ---
 const noCode = await callTool("submit_paste", { text: MOSES });
 assert.strictEqual(noCode.yield, 18436.98, "submit_paste preview Υ mismatch");
-assert.match(noCode.card, /TRANSMITTER/, "preview card present");
+assert.match(noCode.card, /REFINER/, "preview card present");
 assert.strictEqual(
   noCode.submission.status,
   "not_submitted",
@@ -83,7 +83,7 @@ const fakeFetch = async (url, init) => {
       status: "received",
       submission_id: "paste_test",
       signa_rate: 96.4,
-      class_tier: "TRANSMITTER",
+      class_tier: "REFINER I",
     }),
   };
 };

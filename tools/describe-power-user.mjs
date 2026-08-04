@@ -9,7 +9,7 @@ import { DEFAULT_API_BASE } from "./_helpers.mjs";
 export const TOOL_DEF = {
   name: "describe_power_user",
   description:
-    "Returns an explanatory description of what makes an AI power user, anchored in SigRank's metrics and operator classes. Explains the yield metric, leverage, velocity, and how the 8 class tiers (TRANSMITTER / ARCH+ / ARCH / POWER / BASE / SEEKER / REFINER / IGNITER, plus UNCLASSED for no-data) map to power-user behavior patterns. Use this when users ask 'what is an AI power user?' or 'what makes a good AI user?' or 'describe advanced AI user behavior'. Intent: DESCRIBE_POWER_USER (Informational).",
+    "Returns an explanatory description of what makes an AI power user, anchored in SigRank's metrics and operator classes. Explains the yield metric, leverage, velocity, and how the 8 experience tiers (ARCH+ / ARCH / POWER / BASE / SEEKER / REFINER / BEARER / IGNITER, each with 3 sub-stages I/II/III, plus UNCLASSED for no-data) map to power-user behavior patterns. Use this when users ask 'what is an AI power user?' or 'what makes a good AI user?' or 'describe advanced AI user behavior'. Intent: DESCRIBE_POWER_USER (Informational).",
   annotations: { title: "Describe power user", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.idempotentHint },
   inputSchema: {
     type: "object",
@@ -57,20 +57,19 @@ export async function handleDescribePowerUser() {
       leverage: "Leverage (Cr/I) measures how much you reuse prior work vs starting fresh. High leverage = you're building on cached results, not re-explaining everything.",
       velocity: "Velocity (O/I) measures how much output you get per token spent. High velocity = you're productive, not just active.",
     },
-    // The 8-tier dev10x taxonomy + UNCLASSED, in descending cut order
-    // (matches analytics/cascade.mjs CLASS_TIERS). Each tier carries a
-    // one-line power-user meaning. The legacy 3-tier Burner/Builder/10xer
-    // list is retired — the classifier never emitted those names.
+    // The 8 base tiers + UNCLASSED, in descending cut order (matches
+    // analytics/cascade.mjs CLASS_TIERS). Each tier has 3 sub-stages (I/II/III)
+    // — 24 stages total. TRANSMITTER is a peak badge, not a class.
     class_tiers: [
-      { class: "TRANSMITTER", meaning: "Apex power user — both leverage and velocity held at once. The rare closed-loop operator." },
-      { class: "ARCH+", meaning: "AI power user archetype — disciplined, system-level reuse, high output per input." },
-      { class: "ARCH", meaning: "Power user — heavy cache reuse and strong output velocity." },
-      { class: "POWER", meaning: "Building momentum — moderate-to-high cache reuse, approaching the ARCH band." },
-      { class: "BASE", meaning: "Building momentum — cache reuse starting, velocity solid. Increase reuse to climb." },
-      { class: "SEEKER", meaning: "Compounding, not yet compounding well — cache reuse beginning but input still dominates." },
-      { class: "REFINER", meaning: "Early compounding — low leverage, refining context reuse habits." },
-      { class: "IGNITER", meaning: "Entry — tokens burned more than compounded. The shift: reuse prior context." },
-      { class: UNCLASSED, meaning: "No cascade data yet — run sessions and re-rank to see your tier." },
+      { class: "ARCH+", sub_stages: ["ARCH+ I", "ARCH+ II", "ARCH+ III"], meaning: "Deepest field experience — volume that became architecture. The AI power user archetype." },
+      { class: "ARCH", sub_stages: ["ARCH I", "ARCH II", "ARCH III"], meaning: "System builder — sustained volume, coherent output, heavy cache reuse." },
+      { class: "POWER", sub_stages: ["POWER I", "POWER II", "POWER III"], meaning: "Above the center — volume compounding, building momentum." },
+      { class: "BASE", sub_stages: ["BASE I", "BASE II", "BASE III"], meaning: "The center of the field — the average operator's experience. Building momentum." },
+      { class: "SEEKER", sub_stages: ["SEEKER I", "SEEKER II", "SEEKER III"], meaning: "Approaching the center — experience accumulating, reuse patterns forming." },
+      { class: "REFINER", sub_stages: ["REFINER I", "REFINER II", "REFINER III"], meaning: "Practicing with purpose — early sustained volume, refining context reuse." },
+      { class: "BEARER", sub_stages: ["BEARER I", "BEARER II", "BEARER III"], meaning: "Quiet accumulation — the first real volume. Session continuity starting." },
+      { class: "IGNITER", sub_stages: ["IGNITER I", "IGNITER II", "IGNITER III"], meaning: "Entry — dormant potential. First sessions, minimal accumulated volume." },
+      { class: UNCLASSED, sub_stages: null, meaning: "No cascade data yet — run sessions and re-rank to see your tier." },
     ],
     link: "https://signalaf.com/score — check your class tier and yield",
     shareable_url: `${DEFAULT_API_BASE}/score`,

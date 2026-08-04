@@ -14,7 +14,7 @@
 
 import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
 import { ALL_PLATFORMS } from "../adapters.mjs";
-import { cascade, CLASS_TIERS, UNCLASSED } from "../cascade.mjs";
+import { cascade, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mjs";
 import { freshVerifierPillars } from "../tokenpull.mjs";
 import { isSignedIn, isCodeChar } from "../connect.mjs";
 import { loadIdentity, clearIdentity } from "../keystore.mjs";
@@ -201,21 +201,21 @@ const fmtMov = (n) =>
   n == null || n === 0 ? dim("—") : n > 0 ? green(`+${n}`) : red(`${n}`);
 
 // ── Class tier colors ────────────────────────────────────────────────────────
-// Built from the canonical CLASS_TIERS list (single source of truth) so a new
-// tier added in analytics/cascade.mjs can't silently lack a color here. The
-// dead BEARER entry (no tier by that name exists) was removed.
+// Color is keyed on the BASE TIER (8 entries in CLASS_TIERS). classify() returns
+// a full sub-stage string (e.g. "REFINER II") — tierOf() extracts the base tier
+// for color lookup. TRANSMITTER is not a class — it's a temporary peak badge.
 const CLS = {
-  TRANSMITTER: (s) => paint(c.boldGold, s),
   "ARCH+": (s) => paint(c.boldCyan, s),
   ARCH: (s) => paint(c.cyan, s),
   POWER: (s) => paint(c.boldWhite, s),
   BASE: (s) => paint(c.white, s),
   SEEKER: (s) => paint(c.magenta, s),
   REFINER: (s) => paint(c.blue, s),
+  BEARER: (s) => paint(c.dim, s),
   IGNITER: (s) => paint(c.dim, s),
   [UNCLASSED]: (s) => paint(c.dim, s),
 };
-const colorCls = (cls) => (CLS[cls] ?? ((s) => s))(cls);
+const colorCls = (cls) => (CLS[tierOf(cls)] ?? CLS[UNCLASSED] ?? ((s) => s))(cls);
 
 // Guard: every canonical tier must have a color, so a new tier added in
 // analytics/cascade.mjs can't silently render uncolored here.

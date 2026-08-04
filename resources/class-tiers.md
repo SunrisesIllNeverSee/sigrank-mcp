@@ -1,62 +1,81 @@
 # SigRank Class Tiers
 
-Every operator is classified into one of eight tiers (the **dev10x** taxonomy)
-based on their Yield (Υ = Cache Reads × Output / Input²) and 10xDEV score
-(`log10(T × C × R)` where T = output/input, C = cacheCreate/output,
-R = cacheRead/cacheCreate). The classifier is `classify()` in
-`analytics/cascade.mjs` — the canonical source of truth. The TUI, CLI, MCP
-output schemas, and this doc all read from that one list.
+Every operator is classified into one of **24 experience stages** — 8 tiers ×
+3 sub-stages (I/II/III) — based on their **total tokens** (input + output +
+cacheCreate + cacheRead). The ladder mirrors the server's
+`RS05_CLASS_THRESHOLDS` (`lib/analytics/ruleset.ts` in sigrank-app) — the
+client's `classify()` in `analytics/cascade.mjs` is the canonical local source
+of truth. The TUI, CLI, MCP output schemas, and this doc all read from that
+one list.
 
-A ninth value, **UNCLASSED**, is returned when both Υ and 10xDEV are null
-(empty / all-zero session). It is distinct from IGNITER so callers can tell
-"no data" from "bottom tier".
+The class is an **experience** axis — it measures how much volume the operator
+has accumulated. It is separate from the **cascade archetype** (the operator's
+token-flow shape: kinetic loop, archival sponge, volatile ingestor, etc.) and
+from the **TRANSMITTER peak badge** (a temporary state — see below).
 
-## TRANSMITTER (Υ ≥ 1000 or 10xDEV ≥ 3)
-- **Profile:** Cascade-optimized operators. High cache reads, minimal input, efficient output.
-- **Behavior:** Surgical — minimal new input, maximum cache reuse, high-yield output.
-- **Typical:** Power users with long-running sessions, tight context windows, and aggressive cache strategies.
-- **Maintain:** Keep cache hit rate high. Avoid context bloat. Monitor with watch_tokenpull.
+A 25th value, **UNCLASSED**, is returned when total tokens are null or
+non-finite (empty / all-zero session). It is distinct from IGNITER III so
+callers can tell "no data" from "bottom tier".
 
-## ARCH+ (10xDEV ≥ 1.45)
-- **Profile:** High-leverage architect. Strong compounding loop.
-- **Behavior:** Builds forward aggressively while reusing prior context.
-- **Fix:** Push cache reads higher to cross into TRANSMITTER.
+## The 8 base tiers (K.01–K.08)
 
-## ARCH (1.35 ≤ 10xDEV < 1.45)
-- **Profile:** Established architect. Solid compounding, room to tighten.
-- **Behavior:** Reliable reuse + generation balance.
-- **Fix:** Increase cacheCreate quality (better summaries, tighter prompts) to reach ARCH+.
+Each tier has 3 sub-stages (I/II/III) split by total-token thresholds. The
+sub-stage is the granular experience level; the base tier is the display
+grouping (color, glyph, meaning).
 
-## POWER (1.2 ≤ 10xDEV < 1.35)
-- **Profile:** Productive operator with a forming compounding loop.
-- **Behavior:** Moderate cache leverage, decent output efficiency.
-- **Fix:** Reuse sessions more aggressively to lift cache reads.
+### ARCH+ (K.01) — total ≥ 7.07T
+- **Sub-stages:** ARCH+ I (≥ 7.07T), ARCH+ II (≥ 7.07T), ARCH+ III (≥ 7.07T)
+- **Profile:** Deepest field experience. Volume that became architecture.
+- **Note:** Aspirational — currently 1 operator in the static board.
 
-## BASE (1.0 ≤ 10xDEV < 1.2)
-- **Profile:** Balanced operator. Some cache, decent output efficiency.
-- **Behavior:** Productive — reasonable input-to-output ratio, some cache leverage.
-- **Typical:** Experienced AI coders who use CLAUDE.md, project context, and session continuity.
-- **Fix:** Increase cache reads by reusing sessions. Reduce input by trimming unnecessary context.
+### ARCH (K.02) — total ≥ 68.8B
+- **Sub-stages:** ARCH I (≥ 186B), ARCH II (≥ 98.5B), ARCH III (≥ 68.8B)
+- **Profile:** System builders. Sustained volume, coherent output.
 
-## SEEKER (0 ≤ 10xDEV < 1.0)
-- **Profile:** Learning operator. Compounding loop not yet formed.
-- **Behavior:** Exploring — input-heavy, building toward reuse.
-- **Fix:** Commit context to cache (longer sessions, --continue) to start compounding.
+### POWER (K.03) — total ≥ 19.1B
+- **Sub-stages:** POWER I (≥ 40.0B), POWER II (≥ 27.0B), POWER III (≥ 19.1B)
+- **Profile:** Above the center. Volume compounding.
 
-## REFINER (-0.3 ≤ 10xDEV < 0)
-- **Profile:** Raw volume operators. High input tokens, low cache reuse.
-- **Behavior:** Brute-force — lots of context fed in, relatively little output back.
-- **Typical:** New AI users, verbose prompters, no session continuity.
-- **Fix:** Build cache across sessions. Stop re-explaining context. Use --continue.
+### BASE (K.04) — total ≥ 7.7B
+- **Sub-stages:** BASE I (≥ 14.0B), BASE II (≥ 10.2B), BASE III (≥ 7.7B)
+- **Profile:** The center of the field. The average operator's experience.
 
-## IGNITER (10xDEV < -0.3)
-- **Profile:** Sub-baseline. Negative compounding — context is being lost faster than it's built.
-- **Behavior:** Each turn re-ingests more than it reuses; the loop runs in reverse.
-- **Fix:** Stop starting fresh sessions. Commit context once and reuse it.
+### SEEKER (K.05) — total ≥ 3.0B
+- **Sub-stages:** SEEKER I (≥ 5.4B), SEEKER II (≥ 4.0B), SEEKER III (≥ 3.0B)
+- **Profile:** Approaching the center. Experience accumulating.
+
+### REFINER (K.06) — total ≥ 1.3B
+- **Sub-stages:** REFINER I (≥ 2.4B), REFINER II (≥ 1.8B), REFINER III (≥ 1.3B)
+- **Profile:** Practicing with purpose. Early sustained volume.
+
+### BEARER (K.07) — total ≥ 432M
+- **Sub-stages:** BEARER I (≥ 984M), BEARER II (≥ 715M), BEARER III (≥ 432M)
+- **Profile:** Quiet accumulation. The first real volume.
+
+### IGNITER (K.08) — total ≥ 0
+- **Sub-stages:** IGNITER I (≥ 216M), IGNITER II (≥ 89.0M), IGNITER III (≥ 0)
+- **Profile:** Dormant potential. The still soul. Waiting.
 
 ## UNCLASSED (no data)
 - **Profile:** Empty session — all four pillars are zero.
-- **Behavior:** No tokens recorded for this window.
-- **Fix:** Run some sessions; the tier will resolve once there is data.
+- **Fix:** Run some sessions; the stage will resolve once there is data.
 
-Tiers are recalculated on every submission. Your tier can change between windows (7d, 30d, 90d, all-time).
+## TRANSMITTER (peak badge, not a class)
+
+TRANSMITTER is **not** on the experience ladder. It is a temporary peak badge
+(RS.08) that any experience tier can earn during a high-frequency,
+high-resonance window. An operator "transmits" when they hit both:
+
+- **High frequency:** token throughput (total tokens in window) ≥ 1B
+- **High resonance:** SIGNA RATE (composite signal quality) ≥ 85
+
+The badge is per-window (daily/weekly) and lapses when frequency or resonance
+drops. The server evaluates it via `evaluateTransmitterBadge()` in
+`lib/analytics/transmitter-badge.ts`; the client does not evaluate the badge
+locally (the owner is still calibrating the thresholds). The server is the
+authority.
+
+---
+
+Tiers are recalculated on every submission. Your stage can change between
+windows (7d, 30d, 90d, all-time) as total tokens accumulate.
