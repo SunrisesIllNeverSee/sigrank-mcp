@@ -123,8 +123,8 @@ export const SIGNAL_CLASSES = [
  */
 export const RS05_CLASS_THRESHOLDS = [
   { class: "ARCH+ I", totalMin: 7068201104627 },
-  { class: "ARCH+ II", totalMin: 7068201104627 },
-  { class: "ARCH+ III", totalMin: 7068201104627 },
+  { class: "ARCH+ II", totalMin: 3000000000000 },
+  { class: "ARCH+ III", totalMin: 1000000000000 },
   { class: "ARCH I", totalMin: 186207267611 },
   { class: "ARCH II", totalMin: 98543134083 },
   { class: "ARCH III", totalMin: 68766193943 },
