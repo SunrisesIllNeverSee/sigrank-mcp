@@ -519,7 +519,7 @@ assert.ok(
 
 // ── ADAPTER REGISTRY TESTS (2026-06-23) ──────────────────────────────────────
 
-// --- 16. ALL_PLATFORMS includes claude + codex + all 13 new adapters ---
+// --- 16. ALL_PLATFORMS includes claude + codex + all 16 registry adapters ---
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
 for (const p of [
@@ -536,12 +536,13 @@ for (const p of [
   "goose",
   "kilo",
   "hermes",
+  "omp",
 ])
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  17,
-  `ALL_PLATFORMS has 17 entries, got ${ALL_PLATFORMS.length}`,
+  18,
+  `ALL_PLATFORMS has 18 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // --- 17. Each adapter in ADAPTERS has required contract shape ---
@@ -916,6 +917,425 @@ console.log(
   "✓ goose: cumulative double-count regression · multi-session sum · per-message adapters unaffected",
 );
 
+// ── OMP (oh-my-pi) ADAPTER TESTS (2026-08-08) ─────────────────────────────────
+// oh-my-pi (`omp`) is a SEPARATE harness from pi-agent (`piAdapter`) — it forked
+// from pi long ago and has its own on-disk format. Fixtures are built under the
+// OS tmpdir; a test NEVER reads the operator's real ~/.omp.
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join as pathJoin } from "node:path";
+import { toPlatformPrimary } from "./submit.mjs";
+
+// Env vars must not leak the operator's real dirs into the fixture reads.
+delete process.env.OMP_DATA_DIR;
+delete process.env.PI_AGENT_DIR;
+
+const jsonl = (...objs) => objs.map((o) => JSON.stringify(o)).join("\n") + "\n";
+const OMP_TS = "2026-06-18T12:00:00.000Z"; // inside 7d of NOW
+
+const ompRoot = await mkdtemp(pathJoin(tmpdir(), "sigrank-omp-"));
+const ompSession = pathJoin(ompRoot, "20260618_sess-A");
+await mkdir(pathJoin(ompSession, "agent"), { recursive: true });
+
+// Line 1 = fixed-width title slot, line 2 = session header. Neither carries usage —
+// the bogus top-level token fields here exist so a naive `ev.usage || ev` fallback
+// (piAdapter's shape) would fail loudly instead of silently inflating the pillars.
+const ompTitleLine = {
+  pad: "".padEnd(8, " "),
+  title: "fixture",
+  type: "title",
+  updatedAt: OMP_TS,
+  v: 1,
+  input: 999999,
+  output: 999999,
+  cacheRead: 999999,
+  cacheWrite: 999999,
+};
+const ompSessionLine = {
+  cwd: "/fixture",
+  id: "sess-A",
+  timestamp: OMP_TS,
+  type: "session",
+  version: 1,
+  input: 888888,
+  output: 888888,
+};
+const ompMsg = (id, usage) => ({
+  id,
+  parentId: null,
+  timestamp: OMP_TS,
+  type: "message",
+  message: {
+    model: "fixture-model",
+    provider: "fixture",
+    role: "assistant",
+    usage,
+  },
+});
+const ompNoise = (type, id) => ({
+  id,
+  timestamp: OMP_TS,
+  type,
+  // usage in the SAME place a message carries it — only type:"message" may count.
+  message: {
+    role: "assistant",
+    usage: { input: 70000, output: 70000, cacheRead: 70000, cacheWrite: 70000 },
+  },
+});
+
+await writeFile(
+  pathJoin(ompSession, "main.jsonl"),
+  jsonl(
+    ompTitleLine,
+    ompSessionLine,
+    // TRAP 1: reasoningTokens (12) is ALREADY inside output (18). Never add it.
+    // totalTokens 5392 === 3582+18+1792+0 proves it.
+    ompMsg("e1", {
+      input: 3582,
+      output: 18,
+      cacheRead: 1792,
+      cacheWrite: 0,
+      totalTokens: 5392,
+      reasoningTokens: 12,
+    }),
+    // Four DISTINCT values so a cacheWrite/cacheRead swap fails loudly.
+    ompMsg("e2", {
+      input: 11,
+      output: 22,
+      cacheWrite: 33,
+      cacheRead: 44,
+      totalTokens: 110,
+    }),
+    // TRAP 2: usage.cost reuses the SAME four key names for USD floats.
+    ompMsg("e3", {
+      input: 100,
+      output: 200,
+      cacheWrite: 300,
+      cacheRead: 400,
+      totalTokens: 1000,
+      cost: {
+        input: 0.0071639,
+        output: 0.000216,
+        cacheRead: 0.0003584,
+        cacheWrite: 0.5,
+        total: 0.5077383,
+      },
+    }),
+    // Zero-usage entry → skipped by the input+output+cacheCreate+cacheRead guard.
+    ompMsg("e4", {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { total: 0.25 },
+    }),
+    ompNoise("custom", "n1"),
+    ompNoise("custom_message", "n2"),
+    ompNoise("model_change", "n3"),
+    ompNoise("thinking_level_change", "n4"),
+    ompNoise("session_init", "n5"),
+    ompNoise("credential_pin", "n6"),
+  ),
+);
+// Nested SUBAGENT transcript — must be walked recursively (real operator work,
+// same policy as Claude's subagents/).
+await writeFile(
+  pathJoin(ompSession, "agent", "__advisor.jsonl"),
+  jsonl(
+    ompTitleLine,
+    { ...ompSessionLine, id: "sess-A-advisor" },
+    ompMsg("e-adv", {
+      input: 7,
+      output: 5,
+      cacheWrite: 3,
+      cacheRead: 1,
+      totalTokens: 16,
+    }),
+  ),
+);
+
+// --- 25e. omp is registered as its own platform ---
+const ompAdapterReg = ADAPTERS["omp"];
+assert.ok(ompAdapterReg, "ADAPTERS.omp is registered");
+assert.strictEqual(
+  ompAdapterReg.platform,
+  "omp",
+  "omp: adapter.platform === omp",
+);
+assert.ok(ALL_PLATFORMS.includes("omp"), "ALL_PLATFORMS includes omp");
+assert.strictEqual(
+  ompAdapterReg.defaultRoot(),
+  pathJoin(os.homedir(), ".omp", "agent", "sessions"),
+  "omp: defaultRoot is ~/.omp/agent/sessions",
+);
+
+// --- 25f. omp satisfies the native adapter shape contract (messages, not records) ---
+assert.ok(
+  typeof ompAdapterReg.messages === "function",
+  "omp: has messages() generator",
+);
+assert.strictEqual(
+  typeof ompAdapterReg.records,
+  "undefined",
+  "omp: has no records() — it is not an io_ratio platform",
+);
+assert.ok(
+  !ompAdapterReg.estimated,
+  "omp: estimated is not truthy (native 4-pillar)",
+);
+
+const ompRecs = [];
+for await (const m of ompAdapterReg.messages(ompRoot)) ompRecs.push(m);
+const ompById = new Map(ompRecs.map((r) => [r.id, r]));
+
+// --- 25g. header lines, non-message types and zero-usage entries contribute nothing ---
+assert.strictEqual(
+  ompRecs.length,
+  4,
+  `omp: 4 usage-bearing records (title/session/noise/zero skipped), got ${ompRecs.length}`,
+);
+for (const noiseId of ["n1", "n2", "n3", "n4", "n5", "n6", "e4"])
+  assert.ok(!ompById.has(noiseId), `omp: entry ${noiseId} contributes nothing`);
+assert.ok(
+  !ompRecs.some(
+    (r) =>
+      r.input === 999999 ||
+      r.input === 888888 ||
+      r.input === 70000 ||
+      r.output === 70000,
+  ),
+  "omp: no title/session/non-message token value ever reaches a record",
+);
+
+// --- 25h. four pillars map natively; cacheWrite→cacheCreate, cacheRead→cacheRead ---
+const ompE2 = ompById.get("e2");
+assert.strictEqual(ompE2.input, 11, "omp: usage.input → input");
+assert.strictEqual(ompE2.output, 22, "omp: usage.output → output");
+assert.strictEqual(
+  ompE2.cacheCreate,
+  33,
+  "omp: usage.cacheWrite → cacheCreate",
+);
+assert.strictEqual(ompE2.cacheRead, 44, "omp: usage.cacheRead → cacheRead");
+
+// --- 25i. TRAP 1: reasoningTokens is ALREADY inside output — never added ---
+const ompE1 = ompById.get("e1");
+assert.strictEqual(
+  ompE1.output,
+  18,
+  `omp: reasoningTokens NOT added to output (expected 18, got ${ompE1.output} — 30 means double-counted)`,
+);
+assert.strictEqual(
+  ompE1.input,
+  3582,
+  "omp: input unaffected by reasoningTokens",
+);
+assert.strictEqual(ompE1.cacheRead, 1792, "omp: cacheRead unaffected");
+assert.strictEqual(ompE1.cacheCreate, 0, "omp: cacheWrite 0 → cacheCreate 0");
+
+// --- 25j. TRAP 2: usage.cost (USD floats under the SAME key names) never leaks ---
+const ompE3 = ompById.get("e3");
+assert.strictEqual(ompE3.input, 100, "omp: cost.input never overwrites input");
+assert.strictEqual(
+  ompE3.output,
+  200,
+  "omp: cost.output never overwrites output",
+);
+assert.strictEqual(
+  ompE3.cacheCreate,
+  300,
+  "omp: cost.cacheWrite never overwrites cacheCreate",
+);
+assert.strictEqual(
+  ompE3.cacheRead,
+  400,
+  "omp: cost.cacheRead never overwrites cacheRead",
+);
+for (const k of ["input", "output", "cacheCreate", "cacheRead"])
+  assert.ok(
+    Number.isInteger(ompE3[k]),
+    `omp: pillar ${k} is an integer token count, not a USD float`,
+  );
+assert.ok(
+  !("cost" in ompE3) && !("total" in ompE3),
+  "omp: no cost field is ever emitted on a record",
+);
+
+// --- 25k. ts from the entry's top-level ISO timestamp; sid/id populated for dedup ---
+assert.strictEqual(ompE1.ts, OMP_TS, "omp: ts = entry top-level timestamp");
+assert.strictEqual(
+  ompE1.sid,
+  "sess-A",
+  "omp: sid = session header .id (dedup key half 1)",
+);
+assert.strictEqual(
+  ompE1.id,
+  "e1",
+  "omp: id = entry top-level .id (dedup key half 2)",
+);
+
+// --- 25l. nested subagent transcripts are walked recursively ---
+const ompAdv = ompById.get("e-adv");
+assert.ok(ompAdv, "omp: nested agent/__advisor.jsonl is walked recursively");
+assert.strictEqual(ompAdv.input, 7, "omp: subagent input counted");
+assert.strictEqual(ompAdv.cacheCreate, 3, "omp: subagent cacheCreate counted");
+assert.strictEqual(
+  ompAdv.sid,
+  "sess-A-advisor",
+  "omp: subagent sid from its own session header",
+);
+
+// --- 25m. end-to-end through tokenpull(): 4 pillars aggregate natively ---
+const ompResult = await tokenpull({
+  adapter: ompAdapterReg,
+  root: ompRoot,
+  now: NOW,
+});
+const ompAll = ompResult.windows.find((w) => w.window === "all");
+assert.strictEqual(ompAll.pillars.input, 3700, "omp: summed input");
+assert.strictEqual(ompAll.pillars.output, 245, "omp: summed output");
+assert.strictEqual(ompAll.pillars.cacheCreate, 336, "omp: summed cacheCreate");
+assert.strictEqual(ompAll.pillars.cacheRead, 2237, "omp: summed cacheRead");
+
+// --- 25n. tokenpullAny routes omp through the NATIVE path (not tokenpullCodex) ---
+const ompAny = await tokenpullAny("omp", { root: ompRoot, now: NOW });
+assert.ok(
+  !ompAny.estimated,
+  "omp: tokenpullAny → native path, estimated never set",
+);
+assert.strictEqual(
+  ompAny.ioRatio,
+  undefined,
+  "omp: no ioRatio — tokenpullCodex was not used",
+);
+assert.strictEqual(
+  ompAny.windows.find((w) => w.window === "all").pillars.cacheCreate,
+  336,
+  "omp: tokenpullAny keeps native cacheCreate",
+);
+
+// --- 25o. the walker must not silently truncate a real omp tree (>10k files) ---
+// The operator's tree is 20,565 files; walkFiles' default max is 10,000, which would
+// silently drop half the tokens. Fixture: 10,100 single-message files, unique ids.
+const ompBigRoot = await mkdtemp(pathJoin(tmpdir(), "sigrank-omp-big-"));
+const OMP_BIG_N = 10_100;
+await Promise.all(
+  Array.from({ length: OMP_BIG_N }, (_, i) =>
+    writeFile(
+      pathJoin(ompBigRoot, `s${i}.jsonl`),
+      jsonl(
+        ompMsg(`big-${i}`, {
+          input: 1,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 1,
+        }),
+      ),
+    ),
+  ),
+);
+let ompBigCount = 0;
+for await (const _m of ompAdapterReg.messages(ompBigRoot)) ompBigCount++;
+assert.strictEqual(
+  ompBigCount,
+  OMP_BIG_N,
+  `omp: walks past walkFiles' 10k default cap (expected ${OMP_BIG_N}, got ${ompBigCount})`,
+);
+await rm(ompBigRoot, { recursive: true, force: true });
+
+// --- 25p. omp submits as its own platform.primary, not bucketed to "other" ---
+assert.strictEqual(
+  toPlatformPrimary("omp"),
+  "omp",
+  "omp: toPlatformPrimary keeps omp (it is in PLATFORM_ENUM)",
+);
+assert.strictEqual(
+  toPlatformPrimary("kimi"),
+  "other",
+  "toPlatformPrimary still buckets non-enum adapters to other",
+);
+
+// --- 25q. REGRESSION: piAdapter (pi-agent) is untouched by the omp addition ---
+const piAdapterReg = ADAPTERS["pi"];
+assert.strictEqual(piAdapterReg.platform, "pi", "pi: platform still 'pi'");
+assert.strictEqual(
+  piAdapterReg.defaultRoot(),
+  pathJoin(os.homedir(), ".pi", "agent", "sessions"),
+  "pi: defaultRoot still ~/.pi/agent/sessions",
+);
+const piRoot = await mkdtemp(pathJoin(tmpdir(), "sigrank-pi-"));
+await writeFile(
+  pathJoin(piRoot, "s.jsonl"),
+  jsonl({
+    id: "p1",
+    sessionId: "ps1",
+    timestamp: OMP_TS,
+    usage: {
+      inputTokens: 5,
+      outputTokens: 6,
+      cacheCreationTokens: 7,
+      cacheReadTokens: 8,
+    },
+  }),
+);
+const piRecs = [];
+for await (const m of piAdapterReg.messages(piRoot)) piRecs.push(m);
+assert.strictEqual(
+  piRecs.length,
+  1,
+  "pi: still reads its own *Tokens field names",
+);
+assert.deepStrictEqual(
+  {
+    input: piRecs[0].input,
+    output: piRecs[0].output,
+    cacheCreate: piRecs[0].cacheCreate,
+    cacheRead: piRecs[0].cacheRead,
+    sid: piRecs[0].sid,
+  },
+  { input: 5, output: 6, cacheCreate: 7, cacheRead: 8, sid: "ps1" },
+  "pi: inputTokens/outputTokens/cacheCreationTokens/cacheReadTokens unchanged",
+);
+await rm(piRoot, { recursive: true, force: true });
+await rm(ompRoot, { recursive: true, force: true });
+
+// --- 25r. auto-detect still probes omp when tokscale succeeds without it ---
+// tokscale reports claude/codex/copilot/gemini/grok/kimi/kiro/opencode/pi and knows
+// nothing about oh-my-pi, so pullActivePlatforms' tokscale branch would have pulled a
+// list with no omp → no cascade row despite GBs of native local data.
+import { withTokscaleBlind } from "./tools.mjs";
+import { TOKSCALE_BLIND_PLATFORMS } from "./lib/constants.mjs";
+
+const detectedNoOmp = ["claude", "codex", "copilot", "gemini", "kimi", "pi"];
+const targets = withTokscaleBlind(detectedNoOmp);
+assert.ok(
+  targets.includes("omp"),
+  "detection: omp is probed even when tokscale never reports it",
+);
+for (const p of detectedNoOmp)
+  assert.ok(targets.includes(p), `detection: tokscale-detected ${p} is kept`);
+assert.strictEqual(
+  withTokscaleBlind(["claude", "omp"]).filter((p) => p === "omp").length,
+  1,
+  "detection: union does not duplicate an already-detected platform",
+);
+assert.deepStrictEqual(
+  withTokscaleBlind(null),
+  [...TOKSCALE_BLIND_PLATFORMS],
+  "detection: null detection still yields the blind platforms",
+);
+for (const p of TOKSCALE_BLIND_PLATFORMS)
+  assert.ok(
+    ALL_PLATFORMS.includes(p),
+    `detection: blind platform ${p} is a registered adapter`,
+  );
+
+console.log(
+  "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · tokscale-blind detection · PLATFORM_ENUM · pi untouched",
+);
+
 // ── rank_windows + watch_tokenpull TESTS ─────────────────────────────────────
 
 // --- 26. rank_windows: scores all 4 windows independently from named pastes ---
@@ -1094,7 +1514,7 @@ console.log(
   "✓ hardening: div-by-zero guards · parsePillars warnings · fetch timeout · codex tooling filter · narrate safety",
 );
 console.log(
-  "✓ adapters: registry (15 platforms) · amp · qwen · goose · gemini · opencode · droid · tokenpullAny routing",
+  "✓ adapters: registry (16 platforms) · amp · qwen · goose · gemini · opencode · droid · omp · tokenpullAny routing",
 );
 console.log(
   "✓ rank_windows: 4-window paste scoring · partial input · no-network · canon Υ · source_tool · empty throws",

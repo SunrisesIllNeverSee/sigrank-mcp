@@ -25,6 +25,7 @@ const PLATFORM_ENUM = new Set([
   "chatgpt",
   "gemini",
   "pi",
+  "omp",
   "codex",
   "multi",
   "other",

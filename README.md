@@ -342,6 +342,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | Amp                | ✅ `~/.local/share/amp/threads`                | Native 4-pillar; per-message                                                                                      |
 | Kimi               | ✅ `~/.kimi/sessions`                          | Native 4-pillar; `StatusUpdate` lines only                                                                        |
 | pi-agent           | ✅ `~/.pi/agent/sessions`                      | Native 4-pillar; per-message JSONL                                                                                |
+| oh-my-pi (`omp`)   | ✅ `~/.omp/agent/sessions` (recursive, incl. nested subagent transcripts) | Native 4-pillar from `.message.usage` on `type:"message"` entries (`cacheWrite`→`cacheCreate`); **`reasoningTokens` is already inside `output`** — never added, or it double-counts; `usage.cost` reuses the same four key names for USD floats and is dropped; dedup by (session header `id`, entry `id`). Separate harness from pi-agent |
 | OpenClaw           | ✅ `~/.openclaw`                               | Native 4-pillar; per-message JSONL                                                                                |
 | Droid              | ✅ `~/.factory/sessions/*.settings.json`       | Native 4-pillar; `thinking_tokens`→output                                                                         |
 | Codebuff           | ✅ `~/.config/manicode`                        | Native 4-pillar; `chat-messages.json`                                                                             |
@@ -382,19 +383,19 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 ## Dev / test
 
 ```bash
-node test.mjs          # 13 test groups, 200 assertions (no network, no fs writes)
+node test.mjs          # 14 test groups, 313 assertions (no network; fs writes confined to OS-tmpdir fixtures)
 node sign.test.mjs     # ed25519 signing + canon parity
 node index.mjs         # stdio MCP server directly (pipe to MCP client)
 ```
 
-Tests verify (13 groups, 200 assertions):
+Tests verify (14 groups, 313 assertions):
 
 - `rank_paste` canon: MO§ES `(1251211, 11296121, 128196310, 2555179769)` → Υ 18436.98 · TRANSMITTER
 - `submit_paste` preview (no codename) + POST shape (injected fetch, no live writes)
 - `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
 - `tokenpull_submit` all 4 windows POST, sha256 hash, ddmmyy stamp
 - `tokenpullCodex` io_ratio conversion per-window
-- Adapter registry (15 platforms) + per-adapter shape contracts
+- Adapter registry (16 platforms) + per-adapter shape contracts
 - `rank_windows` 4-window paste scoring, partial input, no-network
 - `watch_tokenpull` cascade snapshot, interval_s, submit path
 - `enroll` posts identity (public key only), maps 201 enrolled + 410 code_invalid
@@ -414,7 +415,7 @@ Tests verify (13 groups, 200 assertions):
 | `tui.mjs`       | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
 | `cascade.mjs`   | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class)           |
 | `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform                   |
-| `adapters.mjs`  | Platform adapter registry (15+ platforms)                               |
+| `adapters.mjs`  | Platform adapter registry (16+ platforms)                               |
 | `tools.mjs`     | MCP tool table + dispatcher                                             |
 | `connect.mjs`   | Connect-code enrollment + device identity                               |
 | `keystore.mjs`  | Local key management (paste-keys, not API keys)                         |

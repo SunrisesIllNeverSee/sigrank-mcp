@@ -961,8 +961,11 @@ async function runSigRank() {
   writeln(`  ${gold("⊙ SigRank")}  ${bold("Operator Dashboard")}`);
   writeln(`  ${dim("reading local data…")}`);
 
+  // ../tokenpull.mjs — cli.mjs lives in presentation/, so "./tokenpull.mjs" resolved to
+  // presentation/tokenpull.mjs (nonexistent) and threw ERR_MODULE_NOT_FOUND, taking the
+  // whole dashboard read down. Matches the `../adapters.mjs` static import above.
   const { tokenpullAny, freshVerifierPillars } =
-    await import("./tokenpull.mjs");
+    await import("../tokenpull.mjs");
 
   // Local sources first (fast) — board fetch with 5s timeout runs in parallel
   const boardPromise = Promise.race([
@@ -971,7 +974,7 @@ async function runSigRank() {
   ]);
 
   // FIX A1-CLI (2026-06-27): verifiers (ccusage/tokscale/tokendash) are fetched
-  // ON-DEMAND for ACTIVE platforms only — not synchronously for all 15 platforms
+  // ON-DEMAND for ACTIVE platforms only — not synchronously for every ALL_PLATFORMS entry
   // upfront (which blocked Dashboard paint up to ~40s, same class of bug as TUI
   // FIX A1). The sync ccusagePillars()/tokscalePillars()/tokenDashPillars() loop
   // over ALL_PLATFORMS is replaced by parallel freshVerifierPillars() calls after
