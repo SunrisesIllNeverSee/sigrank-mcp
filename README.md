@@ -96,6 +96,7 @@ Or just explore without signing in:
 ```bash
 sigrank          # launches the full tabbed TUI (dashboard, compare, board, watch)
 npx sigrank board --once    # print the live leaderboard once
+bunx sigrank board --once   # same, via Bun (faster startup if you have it)
 ```
 
 ## Install from GitHub
