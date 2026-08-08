@@ -13,7 +13,7 @@
 
 ## Verification
 
-- [ ] `node test.mjs` passes (29 assertions)
+- [ ] `node test.mjs` passes (313 assertions)
 - [ ] `node sign.test.mjs` passes
 - [ ] No message content read or logged (token-only invariant)
 - [ ] No credentials required or stored
