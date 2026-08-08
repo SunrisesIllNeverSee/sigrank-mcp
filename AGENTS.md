@@ -1,5 +1,28 @@
 # SigRank MCP — Agent Rules
 
+## Quick reference
+
+| What | Command |
+|------|---------|
+| Unit tests | `node test.mjs` (313 assertions) |
+| Signing tests | `node sign.test.mjs` |
+| Run CLI locally | `node index.mjs` (TUI if TTY, MCP server if piped) |
+| Install deps | `npm install` |
+
+**Bun (faster alternative):** All commands work with Bun (~10-30x faster):
+
+| What | Bun command |
+|------|-------------|
+| Install deps | `bun install` |
+| Unit tests | `bun test.mjs` |
+| Signing tests | `bun sign.test.mjs` |
+| Run CLI locally | `bun index.mjs` |
+| Run published CLI | `bunx sigrank` (same as `npx sigrank` but faster) |
+
+Bun is installed at `~/.bun/bin/bun` (v1.3.13). It reads the same `package.json`
+and `package-lock.json` — no migration needed. Use `bunx` instead of `npx` for
+one-off package execution.
+
 ## Publishing
 
 **Auto-publish is ON (2026-07-31).** Push to main triggers `.github/workflows/publish.yml`,
