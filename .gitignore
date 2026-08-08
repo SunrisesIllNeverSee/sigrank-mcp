@@ -2,3 +2,6 @@ node_modules/
 *.tgz
 D-REP-SCRATCH.md
 .DS_Store
+
+# Bun lockfile (npm lockfile is canonical)
+bun.lock
