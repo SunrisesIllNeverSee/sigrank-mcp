@@ -904,38 +904,104 @@ export const otherAdapter = {
 // File cap: a real omp tree runs to 20k+ transcripts, past walkFiles' 10_000 default,
 // which would silently drop half the operator's tokens — pass an explicit cap.
 const OMP_MAX_FILES = 500_000;
+
+// ── Stage 1: bounded-concurrency + line-guard optimization ───────────────────
+// Based on George-RD's measured findings (PR #32 review comment):
+//   - CPU-bound, not disk-bound: 90.5% of one thread, tree fully page-cached
+//   - c=8 is optimal: 45.06s → 34.92s (1.29x), regresses at c12/c16
+//   - Line guard MUST pass both "message" AND "session" lines, or it breaks
+//     the (session_id, entry_id) dedup key — session header lines carry the id
+//   - Two-term guard: 0 false negatives across 2.18M lines
+//   - All 504 duplicate keys carry byte-identical pillar tuples → order-safe
+//   - Only ~1-3% end-to-end win from the guard alone (omp's skippable lines are
+//     19.8% of lines but 15.3% of bytes); the guard costs 1.2s but saves parse
+//     on lines that can't contain usage. Folded into concurrency, not standalone.
+const OMP_CONCURRENCY = 8;
+
+/** Check if a line could contain an omp usage record or session header.
+ *  Conservative: false positives are fine, false negatives are not.
+ *  Must match both "message" (usage) and "session" (dedup key) lines. */
+function ompLineCouldMatter(line) {
+  // Fast substring check before JSON.parse — rejects ~20% of lines that are
+  // neither message nor session entries (tool calls, reasoning, etc.)
+  return line.includes('"message"') || line.includes('"session"');
+}
+
+/** Parse a single omp transcript file and yield usage records.
+ *  Isolated so it can be called concurrently from the bounded pool. */
+function* parseOmpFile(text, path) {
+  if (!text) return;
+  let sid = null;
+  for (const line of text.split("\n")) {
+    const s = line.trim();
+    if (!s) continue;
+    // Line guard: skip lines that can't be message or session entries.
+    // George-RD verified 0 false negatives across 2.18M lines with this guard.
+    if (!ompLineCouldMatter(s)) continue;
+    let ev;
+    try {
+      ev = JSON.parse(s);
+    } catch {
+      continue;
+    }
+    if (!ev) continue;
+    if (ev.type === "session") {
+      sid = ev.id || null;
+      continue;
+    }
+    if (ev.type !== "message") continue;
+    const u = ev.message && ev.message.usage;
+    if (!u) continue;
+    const input = Number(u.input || 0);
+    const output = Number(u.output || 0); // reasoningTokens ALREADY inside — TRAP 1
+    const cacheCreate = Number(u.cacheWrite || 0);
+    const cacheRead = Number(u.cacheRead || 0);
+    if (input + output + cacheCreate + cacheRead === 0) continue;
+    yield {
+      id: ev.id || null,
+      sid,
+      ts: ev.timestamp || null,
+      input,
+      output,
+      cacheCreate,
+      cacheRead,
+      file: path,
+    };
+  }
+}
+
 export const ompAdapter = {
   platform: "omp",
   defaultRoot: () => join(homedir(), ".omp", "agent", "sessions"),
   async *messages(root) {
     for (const r of roots("OMP_DATA_DIR", root)) {
+      // Collect all file paths first (readdir is 0.8% of scan time — negligible)
+      const paths = [];
       for await (const path of walkFiles(r, isJsonl, { n: 0 }, OMP_MAX_FILES)) {
-        const text = await readUtf8(path);
-        let sid = null;
-        for (const [ev] of parseJsonl(text, path)) {
-          if (!ev) continue;
-          if (ev.type === "session") {
-            sid = ev.id || null; // line-2 header: session half of the dedup key
-            continue;
-          }
-          if (ev.type !== "message") continue;
-          const u = ev.message && ev.message.usage;
-          if (!u) continue;
-          const input = Number(u.input || 0);
-          const output = Number(u.output || 0); // reasoningTokens ALREADY inside — TRAP 1
-          const cacheCreate = Number(u.cacheWrite || 0);
-          const cacheRead = Number(u.cacheRead || 0);
-          if (input + output + cacheCreate + cacheRead === 0) continue;
-          yield {
-            id: ev.id || null,
-            sid,
-            ts: ev.timestamp || null,
-            input,
-            output,
-            cacheCreate,
-            cacheRead,
-            file: path,
-          };
+        paths.push(path);
+      }
+
+      // Bounded-concurrency read+parse: George-RD measured c=8 as optimal
+      // (1.29x speedup, 45s → 35s). Order-safe: all 504 duplicate keys carry
+      // byte-identical pillar tuples, so completion order can't change totals.
+      const concurrency = OMP_CONCURRENCY;
+      const inflight = new Set();
+      const queue = [...paths];
+
+      while (queue.length > 0 || inflight.size > 0) {
+        while (inflight.size < concurrency && queue.length > 0) {
+          const path = queue.shift();
+          const p = (async () => {
+            const text = await readUtf8(path);
+            return { path, records: [...parseOmpFile(text, path)] };
+          })();
+          inflight.add(p);
+          p.finally(() => inflight.delete(p));
+        }
+        const done = await Promise.race(inflight);
+        inflight.delete(done);
+        for (const record of done.records) {
+          yield record;
         }
       }
     }
