@@ -1336,6 +1336,107 @@ console.log(
   "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · tokscale-blind detection · PLATFORM_ENUM · pi untouched",
 );
 
+// --- 25s. watch scoping: --platform pulls only the platform it renders ---
+// `watch` re-pulls on EVERY refresh tick (default 30s). Auto-detect unions in the
+// tokscale-blind platforms (omp) — whose local tree is ~10 GiB — so
+// `watch --platform claude` burned ~46s per tick scanning oh-my-pi data that the
+// scoped view then filtered out at render time, leaving the watcher permanently
+// saturated (scan > refresh interval). Scoping the pull must NOT undo the
+// withTokscaleBlind guarantee for the unscoped default.
+import { pullActivePlatforms } from "./tools.mjs";
+import { detectActivePulls } from "./presentation/cli.mjs";
+
+// Stub the per-platform pull + tokscale detection through opts so nothing touches
+// the real filesystem (same opts-injection convention as opts.adapter in
+// pullByPlatform). `pulled` records exactly which platforms were probed.
+function makePullSpy(detected) {
+  const pulled = [];
+  return {
+    pulled,
+    opts: {
+      detectClients: async () => detected,
+      callTool: async (_name, args) => {
+        pulled.push(args.platform);
+        return {
+          platform: args.platform,
+          windows: [
+            {
+              window: "7d",
+              pillars: { input: 1, output: 1, cacheCreate: 0, cacheRead: 0 },
+              messages: 1,
+            },
+          ],
+        };
+      },
+    },
+  };
+}
+
+// 1. An explicitly scoped pull probes only that platform — never the omp tree.
+const scopedSpy = makePullSpy(["claude", "codex"]);
+await pullActivePlatforms({ platforms: ["claude"] }, scopedSpy.opts);
+assert.deepStrictEqual(
+  scopedSpy.pulled,
+  ["claude"],
+  "watch scope: explicit ['claude'] pulls claude and nothing else",
+);
+assert.ok(
+  !scopedSpy.pulled.includes("omp"),
+  "watch scope: a scoped pull never probes the ~10 GiB omp tree",
+);
+
+// 2. The unscoped default still unions in omp even when tokscale never reports it
+//    (the existing withTokscaleBlind guarantee — must not regress).
+const unscopedSpy = makePullSpy(["claude", "codex"]);
+await pullActivePlatforms({}, unscopedSpy.opts);
+assert.ok(
+  unscopedSpy.pulled.includes("omp"),
+  "watch scope: unscoped auto-detect still probes omp (withTokscaleBlind intact)",
+);
+for (const p of ["claude", "codex"])
+  assert.ok(
+    unscopedSpy.pulled.includes(p),
+    `watch scope: unscoped auto-detect keeps tokscale-detected ${p}`,
+  );
+
+// 3. The watch tick loader itself: `detectActivePulls` owns BOTH the scope and the
+//    rows, so there is no "pull everything, then filter at render time" path left to
+//    forget the filter on. --platform claude ⇒ claude is the only platform probed.
+const watchScopedSpy = makePullSpy(["claude", "codex"]);
+const scopedRows = await detectActivePulls("claude", watchScopedSpy.opts);
+assert.deepStrictEqual(
+  watchScopedSpy.pulled,
+  ["claude"],
+  "watch --platform claude: pull set is exactly the rendered platform",
+);
+assert.ok(
+  !watchScopedSpy.pulled.includes("omp"),
+  "watch --platform claude: pull set excludes omp (the ~46s/tick regression)",
+);
+assert.deepStrictEqual(
+  scopedRows.map((d) => d.platform),
+  ["claude"],
+  "watch --platform claude: renders exactly the requested platform",
+);
+
+// 4. --platform all / '' / no --platform behave as unscoped: omp still probed.
+for (const allish of ["all", "", null, undefined]) {
+  const spy = makePullSpy(["claude", "codex"]);
+  const rows = await detectActivePulls(allish, spy.opts);
+  assert.ok(
+    spy.pulled.includes("omp"),
+    `watch --platform ${JSON.stringify(allish)}: unscoped → omp is still pulled`,
+  );
+  assert.ok(
+    rows.some((d) => d.platform === "omp"),
+    `watch --platform ${JSON.stringify(allish)}: unscoped → omp row is rendered`,
+  );
+}
+
+console.log(
+  "✓ watch scoping: --platform scopes the pull · omp not probed when scoped · unscoped default keeps withTokscaleBlind · all/none == unscoped",
+);
+
 // ── rank_windows + watch_tokenpull TESTS ─────────────────────────────────────
 
 // --- 26. rank_windows: scores all 4 windows independently from named pastes ---

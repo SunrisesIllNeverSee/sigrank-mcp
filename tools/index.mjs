@@ -109,10 +109,14 @@ export function withTokscaleBlind(detected) {
   return [...new Set([...(detected || []), ...TOKSCALE_BLIND_PLATFORMS])];
 }
 
-/** Pull a specific set of platforms in parallel, filter to active ones. */
+/** Pull a specific set of platforms in parallel, filter to active ones.
+ *  opts.callTool overrides the per-platform pull for tests (same opts-injection
+ *  convention as opts.adapter in pullByPlatform) so the target-set logic is
+ *  assertable without a real filesystem scan. */
 async function _pullExplicit(platforms, opts = {}) {
+  const pull = opts.callTool || callTool;
   const settled = await Promise.allSettled(
-    platforms.map((p) => callTool("tokenpull", { platform: p }, opts)),
+    platforms.map((p) => pull("tokenpull", { platform: p }, opts)),
   );
   const active = settled
     .filter((r) => r.status === "fulfilled" && r.value)
@@ -146,7 +150,9 @@ export async function pullActivePlatforms({ platforms } = {}, opts = {}) {
   // Flow: tokscale surfaces ALL clients → map to our platform names →
   // ccusage is primary for Claude (more accurate) → other platforms use
   // their adapters. Anything in tokscale NOT in ccusage gets included.
-  const detected = await _tokscaleDetectClients().catch(() => null);
+  // opts.detectClients overrides the tokscale probe for tests (no shelling out).
+  const detect = opts.detectClients || _tokscaleDetectClients;
+  const detected = await detect().catch(() => null);
   if (detected && detected.length > 0) {
     return _pullExplicit(withTokscaleBlind(detected), opts);
   }
