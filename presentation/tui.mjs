@@ -644,8 +644,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? 96 : 114))))}`);
 
   if (active.length === 0) {
+    // Count is derived from the registry — a hardcoded number drifts every time an
+    // adapter is added (it read "14 platforms" while ALL_PLATFORMS held 17).
     emit(
-      `  ${dim("  reading token logs… (14 platforms, ~5s · press [R] to refresh)")}`,
+      `  ${dim(`  reading token logs… (${ALL_PLATFORMS.length} platforms, ~5s · press [R] to refresh)`)}`,
     );
   }
 
@@ -1586,7 +1588,10 @@ function renderConnect(id, codeBuf = "", msg = "") {
 // null/'all'/'all-windows' means "everything". Each row is a (platform, window) cascade cell:
 // Υ Yield + SNR/Lev/Vel/class. Iterates active platforms (input+output > 0 in any window).
 async function renderWatch(platform = "all", win = "all-windows") {
-  const { tokenpullAny } = await import("./tokenpull.mjs");
+  // ../tokenpull.mjs — this file lives in presentation/, so "./tokenpull.mjs" resolved
+  // to presentation/tokenpull.mjs (nonexistent) and threw ERR_MODULE_NOT_FOUND for
+  // every row. Matches the static `../tokenpull.mjs` import at the top of this file.
+  const { tokenpullAny } = await import("../tokenpull.mjs");
   const ALL_PLATFORMS = [
     "claude",
     "codex",
@@ -1602,6 +1607,7 @@ async function renderWatch(platform = "all", win = "all-windows") {
     "copilot",
     "openclaw",
     "pi",
+    "omp",
   ];
   const platFilter = platform && platform !== "all" ? platform : null;
   const winFilter = win && win !== "all-windows" ? win : null;
@@ -2064,7 +2070,7 @@ export async function runTui({
     dashData = { active: [], _loading: true };
     await redraw();
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
-    // the other 13 platforms in the background + redraw. The user sees their cascade
+    // the remaining ALL_PLATFORMS entries in the background + redraw. The user sees their cascade
     // within ~1 read instead of a 7s blank "loading dashboard…".
     dashData = await loadDashboardData().catch((e) => {
       status = `dashboard error: ${e.message}`;
@@ -2481,6 +2487,7 @@ export async function runTui({
         "copilot",
         "openclaw",
         "pi",
+        "omp",
       ];
       if (k === "p" && (activeTab === 2 || activeTab === 4)) {
         if (activeTab === 2) {

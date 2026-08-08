@@ -9,7 +9,10 @@
 import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { execFileAsync } from "./_helpers.mjs";
 import { buildFetch, DEFAULT_API_BASE, DEFAULT_FETCH_TIMEOUT } from "./_helpers.mjs";
-import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
+import {
+  TOKSCALE_CLIENT_MAP,
+  TOKSCALE_BLIND_PLATFORMS,
+} from "../lib/constants.mjs";
 
 import { TOOL_DEF as rankPasteTool, handleRankPaste } from "./rank-paste.mjs";
 import { TOOL_DEF as getLeaderboardTool, handleGetLeaderboard } from "./get-leaderboard.mjs";
@@ -98,10 +101,22 @@ async function _tokscaleDetectClients() {
   return [...clients];
 }
 
-/** Pull a specific set of platforms in parallel, filter to active ones. */
+/** Detection targets = what tokscale saw ∪ the platforms tokscale is blind to.
+ *  Without the union, an operator with GBs of oh-my-pi telemetry gets no omp row
+ *  on any machine where tokscale succeeds, because tokscale never names that
+ *  client. Pure + exported so the union is unit-testable without shelling out. */
+export function withTokscaleBlind(detected) {
+  return [...new Set([...(detected || []), ...TOKSCALE_BLIND_PLATFORMS])];
+}
+
+/** Pull a specific set of platforms in parallel, filter to active ones.
+ *  opts.callTool overrides the per-platform pull for tests (same opts-injection
+ *  convention as opts.adapter in pullByPlatform) so the target-set logic is
+ *  assertable without a real filesystem scan. */
 async function _pullExplicit(platforms, opts = {}) {
+  const pull = opts.callTool || callTool;
   const settled = await Promise.allSettled(
-    platforms.map((p) => callTool("tokenpull", { platform: p }, opts)),
+    platforms.map((p) => pull("tokenpull", { platform: p }, opts)),
   );
   const active = settled
     .filter((r) => r.status === "fulfilled" && r.value)
@@ -129,15 +144,17 @@ export async function pullActivePlatforms({ platforms } = {}, opts = {}) {
     return _pullExplicit(platforms, opts);
   }
   // Auto-detect: run tokscale once to discover all active clients, then pull
-  // only those. This is much faster than trying all 17 adapters (most fail
-  // silently on a machine that doesn't have that tool installed).
+  // only those (plus the tokscale-blind platforms). This is much faster than trying
+  // all adapters (most fail silently on a machine that doesn't have that tool).
   //
   // Flow: tokscale surfaces ALL clients → map to our platform names →
   // ccusage is primary for Claude (more accurate) → other platforms use
   // their adapters. Anything in tokscale NOT in ccusage gets included.
-  const detected = await _tokscaleDetectClients().catch(() => null);
+  // opts.detectClients overrides the tokscale probe for tests (no shelling out).
+  const detect = opts.detectClients || _tokscaleDetectClients;
+  const detected = await detect().catch(() => null);
   if (detected && detected.length > 0) {
-    return _pullExplicit(detected, opts);
+    return _pullExplicit(withTokscaleBlind(detected), opts);
   }
   // Fallback: tokscale not installed or failed → try all adapters (old behavior)
   return _pullExplicit(ALL_PLATFORMS, opts);

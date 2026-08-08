@@ -47,7 +47,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Unit tests (29 assertions)
+      - name: Unit tests
         run: node test.mjs
 
       - name: Signing tests

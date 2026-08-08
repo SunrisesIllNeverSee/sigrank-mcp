@@ -24,6 +24,7 @@
  *      tokenpullCodex(); adapters that yield native 4-pillar via messages() go through
  *      tokenpull() directly. The split happens at the tokenpullAny() routing layer.)
  *   - Reasoning / thinking tokens → folded into `output` (they are output-side spend)
+ *     EXCEPTION: omp already reports reasoningTokens INSIDE output — see adapter #16
  *   - No cache-creation data available → cacheCreate: 0 + adapter sets `estimated: true`
  *   - Cost fields (USD) → NEVER used or forwarded (SigRank scores cost efficiency from
  *     token ratios, not from dollar amounts — cost efficiency is derived, not ingested)
@@ -875,6 +876,68 @@ export const otherAdapter = {
   },
 };
 
+// ── 16. oh-my-pi (omp) ───────────────────────────────────────────────────────
+// ~/.omp/agent/sessions/<bucket>/<timestamp>_<sessionId>/<name>.jsonl (recursive)
+// NOT pi-agent (#4): oh-my-pi forked from pi long ago and is a separate harness
+// with its own on-disk format. Line 1 is a fixed-width 256-byte {"type":"title"}
+// slot; line 2 is {"type":"session"} and carries the session `.id`. Neither line
+// holds usage. Other observed `.type` values (all usage-free): custom,
+// custom_message, model_change, thinking_level_change, session_init, credential_pin.
+// Usage lives at `.message.usage` on `.type === "message"` entries:
+//   { input, output, cacheRead, cacheWrite, totalTokens, reasoningTokens, cost:{…} }
+// Native 4-pillar (no estimation): input→input, output→output,
+// cacheWrite→cacheCreate, cacheRead→cacheRead.
+// TRAP 1 — reasoningTokens is ALREADY INSIDE output. Do NOT fold it in. Every other
+//   adapter here folds reasoning into output, so the reflex is wrong for omp; adding
+//   it double-counts. Proof: totalTokens === input+output+cacheRead+cacheWrite
+//   exactly, and reasoningTokens is always ≤ output.
+// TRAP 2 — usage.cost reuses the SAME four key names (input/output/cacheRead/
+//   cacheWrite, plus total) for USD floats. Read the four counts straight off
+//   `usage`; never descend into `cost`. Cost fields are never forwarded (file header).
+// Nested subagent transcripts (critic.jsonl beside critic/__advisor.jsonl) are real
+// operator work and ARE counted — same policy as Claude's `subagents/`.
+// Dedup key is (session header `.id`, entry top-level `.id`) — `.message` has no id.
+// File cap: a real omp tree runs to 20k+ transcripts, past walkFiles' 10_000 default,
+// which would silently drop half the operator's tokens — pass an explicit cap.
+const OMP_MAX_FILES = 500_000;
+export const ompAdapter = {
+  platform: "omp",
+  defaultRoot: () => join(homedir(), ".omp", "agent", "sessions"),
+  async *messages(root) {
+    for (const r of roots("OMP_DATA_DIR", root)) {
+      for await (const path of walkFiles(r, isJsonl, { n: 0 }, OMP_MAX_FILES)) {
+        const text = await readUtf8(path);
+        let sid = null;
+        for (const [ev] of parseJsonl(text, path)) {
+          if (!ev) continue;
+          if (ev.type === "session") {
+            sid = ev.id || null; // line-2 header: session half of the dedup key
+            continue;
+          }
+          if (ev.type !== "message") continue;
+          const u = ev.message && ev.message.usage;
+          if (!u) continue;
+          const input = Number(u.input || 0);
+          const output = Number(u.output || 0); // reasoningTokens ALREADY inside — TRAP 1
+          const cacheCreate = Number(u.cacheWrite || 0);
+          const cacheRead = Number(u.cacheRead || 0);
+          if (input + output + cacheCreate + cacheRead === 0) continue;
+          yield {
+            id: ev.id || null,
+            sid,
+            ts: ev.timestamp || null,
+            input,
+            output,
+            cacheCreate,
+            cacheRead,
+            file: path,
+          };
+        }
+      }
+    }
+  },
+};
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
 export const ADAPTERS = {
@@ -893,6 +956,7 @@ export const ADAPTERS = {
   hermes: hermesAdapter,
   devin: devinAdapter,
   other: otherAdapter,
+  omp: ompAdapter,
 };
 
 export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);

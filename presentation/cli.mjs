@@ -782,10 +782,17 @@ async function runCompare({ platform = "claude" } = {}) {
 const WATCH_WINDOWS = ["7d", "30d", "90d", "all"];
 
 // Detect which platforms have real local data (input+output > 0 in any window) via tokenpull.
-// Returns an array of pull results (the same shape tokenpullAny yields), one per active platform.
-async function detectActivePulls() {
-  // Unified: one loader for me / watch / the TUI Dashboard (was a separate tokenpullAny loop).
-  return pullActivePlatforms();
+// Returns an array of pull results (the same shape tokenpullAny yields), one per active
+// platform, through the shared loader used by `me` / `watch` / the TUI Dashboard.
+//
+// `platform` scopes the PULL, not just the render: the watcher re-pulls every `refresh`
+// seconds (default 30) and an unscoped auto-detect also probes the tokscale-blind ~10 GiB
+// oh-my-pi tree (~46s), so `watch --platform claude` used to scan everything and then
+// display one row — scan longer than refresh interval, permanently saturated.
+// null / '' / 'all' still mean "everything", keeping withTokscaleBlind's omp row.
+export async function detectActivePulls(platform, opts = {}) {
+  const scoped = platform && platform !== "all" ? [platform] : undefined;
+  return pullActivePlatforms({ platforms: scoped }, opts).catch(() => []);
 }
 
 async function runWatch({
@@ -815,9 +822,9 @@ async function runWatch({
   write(HIDE_CURSOR);
 
   const draw = async () => {
-    // Re-detect each tick so a platform that just started writing logs appears automatically.
-    let pulls = await detectActivePulls().catch(() => []);
-    if (platFilter) pulls = pulls.filter((d) => d.platform === platFilter);
+    // Re-pull each tick so a platform that just started writing logs appears automatically.
+    // Scoped by platFilter, so a focused watch never scans platforms it cannot display.
+    const pulls = await detectActivePulls(platFilter);
 
     if (lines > 0) write(CURSOR_UP(lines));
 
@@ -961,8 +968,11 @@ async function runSigRank() {
   writeln(`  ${gold("⊙ SigRank")}  ${bold("Operator Dashboard")}`);
   writeln(`  ${dim("reading local data…")}`);
 
+  // ../tokenpull.mjs — cli.mjs lives in presentation/, so "./tokenpull.mjs" resolved to
+  // presentation/tokenpull.mjs (nonexistent) and threw ERR_MODULE_NOT_FOUND, taking the
+  // whole dashboard read down. Matches the `../adapters.mjs` static import above.
   const { tokenpullAny, freshVerifierPillars } =
-    await import("./tokenpull.mjs");
+    await import("../tokenpull.mjs");
 
   // Local sources first (fast) — board fetch with 5s timeout runs in parallel
   const boardPromise = Promise.race([
@@ -971,7 +981,7 @@ async function runSigRank() {
   ]);
 
   // FIX A1-CLI (2026-06-27): verifiers (ccusage/tokscale/tokendash) are fetched
-  // ON-DEMAND for ACTIVE platforms only — not synchronously for all 15 platforms
+  // ON-DEMAND for ACTIVE platforms only — not synchronously for every ALL_PLATFORMS entry
   // upfront (which blocked Dashboard paint up to ~40s, same class of bug as TUI
   // FIX A1). The sync ccusagePillars()/tokscalePillars()/tokenDashPillars() loop
   // over ALL_PLATFORMS is replaced by parallel freshVerifierPillars() calls after
