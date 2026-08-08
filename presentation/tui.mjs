@@ -1657,6 +1657,7 @@ async function renderWatch(platform = "all", win = "all-windows") {
     "openclaw",
     "pi",
     "omp",
+    "proxy",
   ];
   const platFilter = platform && platform !== "all" ? platform : null;
   const winFilter = win && win !== "all-windows" ? win : null;

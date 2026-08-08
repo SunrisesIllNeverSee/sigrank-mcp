@@ -11,6 +11,7 @@
  *   npx sigrank enroll          sign in: redeem a connect code from signalaf.com
  *   npx sigrank submit          publish your verified runs to the board
  *   npx sigrank board | compare | watch    read / publish helpers
+ *   npx sigrank proxy           opt-in local Anthropic/OpenAI usage proxy
  *   npx sigrank --help          full reference
  *
  * For AI clients (NOT human commands): in a piped/non-TTY context this starts an MCP

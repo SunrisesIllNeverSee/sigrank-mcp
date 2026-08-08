@@ -10,7 +10,11 @@ SigRank is a public AI-operator leaderboard. This policy summarizes what data we
 
 ## What we never collect
 
-We do **not** read or transmit the content of your prompts or AI conversations. The local agent extracts only numeric token counts and metadata; transcripts never leave your device.
+We do **not** collect or receive the content of your prompts or AI conversations
+at the SigRank service. Local-log adapters extract only numeric usage metadata.
+If you explicitly run the optional local API proxy, it forwards provider-bound
+requests and responses in memory but does not persist their content; only usage
+metadata is written locally or submitted to SigRank.
 
 ## Consent
 

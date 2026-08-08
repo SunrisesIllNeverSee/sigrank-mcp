@@ -12,6 +12,7 @@ Email: [security@signalaf.com](mailto:security@signalaf.com) or report privately
 - The submit/verify signing flow (ed25519)
 - The keystore and key management
 - Token privacy guarantees (token-only, no message content)
+- The opt-in loopback API proxy, including credential/content non-persistence
 
 ## Out of scope
 

@@ -1030,6 +1030,49 @@ export const ompAdapter = {
   },
 };
 
+// ── SigRank local API proxy ──────────────────────────────────────────────────
+// ~/.sigrank-mcp/proxy-sessions.jsonl — one provider-reported usage record per
+// API call. Native 4-pillar data; OpenAI's inclusive input count is normalized
+// by proxy.mjs before it reaches this adapter.
+export const proxyAdapter = {
+  platform: "proxy",
+  defaultRoot: () =>
+    join(homedir(), ".sigrank-mcp", "proxy-sessions.jsonl"),
+  async *messages(root) {
+    const path = root || this.defaultRoot();
+    const text = await readUtf8(path);
+    for (const [ev] of parseJsonl(text, path)) {
+      if (!ev || typeof ev !== "object") continue;
+      const input = Number(ev.input);
+      const output = Number(ev.output);
+      const cacheCreate = Number(ev.cacheCreate);
+      const cacheRead = Number(ev.cacheRead);
+      if (
+        ![input, output, cacheCreate, cacheRead].every(
+          (n) => Number.isFinite(n) && n >= 0,
+        )
+      ) {
+        continue;
+      }
+      if (input + output + cacheCreate + cacheRead === 0) continue;
+      yield {
+        // tokenpull() keeps the final record for a duplicate id, which gives
+        // this adapter the requested same-timestamp keep-last behavior.
+        id: typeof ev.ts === "string" && ev.ts ? ev.ts : null,
+        sid: null,
+        ts: typeof ev.ts === "string" ? ev.ts : null,
+        input,
+        output,
+        cacheCreate,
+        cacheRead,
+        model: typeof ev.model === "string" ? ev.model : null,
+        backend: typeof ev.backend === "string" ? ev.backend : null,
+        file: path,
+      };
+    }
+  },
+};
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
 export const ADAPTERS = {
@@ -1049,6 +1092,7 @@ export const ADAPTERS = {
   devin: devinAdapter,
   other: otherAdapter,
   omp: ompAdapter,
+  proxy: proxyAdapter,
 };
 
 export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);

@@ -173,12 +173,15 @@ Commands
   watch                    live tune meter — ALL active platforms × all windows, every 30s
   watch --platform codex   watch only one platform (optional filter)
   watch --window 7d        watch only one window (optional filter)
+  proxy                    opt-in local Anthropic/OpenAI usage proxy
+  proxy --port 9000        run the proxy on a custom loopback port
 
 Options
   --window    7d · 30d · 90d · all  (default: 30d for board; all windows for watch)
   --platform  claude · codex · amp · gemini · opencode · goose · …
   --refresh   poll interval in seconds (default: 30)
   --once      print once and exit (board only)
+  --port      proxy port (default: 8787)
 
 For AI clients (not typeable)
   In a piped/non-TTY context, sigrank is an MCP stdio server.
@@ -193,6 +196,34 @@ Examples
   sigrank watch --window 7d --refresh 60
   sigrank board --window all --once
 ```
+
+### Optional API usage proxy
+
+Some desktop coding agents receive provider usage in API responses but do not
+persist it in their local session files. SigRank can capture those
+provider-reported counts through a manually started loopback proxy:
+
+```bash
+sigrank proxy              # http://localhost:8787
+sigrank proxy --port 9000  # custom port
+```
+
+Then point a compatible tool's API base URL at the displayed local URL. The
+first release supports Anthropic Messages (`/v1/messages`), OpenAI Chat
+Completions (`/v1/chat/completions`), and OpenAI Responses (`/v1/responses`).
+The tool must support a custom API base URL; this is not guaranteed for every
+desktop client.
+
+The proxy is **off by default**: it opens no port and observes no traffic unless
+you explicitly run `sigrank proxy`. It binds only to loopback and stops when the
+command exits. Request and response content, API keys, and tool calls are
+forwarded transiently but never written to disk. Only usage metadata is appended
+to `~/.sigrank-mcp/proxy-sessions.jsonl` (directory `0700`, file `0600`).
+
+Anthropic and OpenAI calls are currently grouped under one `proxy` platform row.
+For streamed Chat Completions, SigRank sets OpenAI's
+`stream_options.include_usage=true` so the provider includes the final usage
+chunk; response chunks are still forwarded immediately.
 
 ### The TUI is the whole app
 
@@ -354,6 +385,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | Gemini CLI         | ✅ `~/.gemini/tmp`                             | Estimated (`cacheCreate=0`); `cacheRead` from `cached` field; `thought`→output; `input` = `input−cached` (fresh)  |
 | GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | Native 4-pillar (OTel spans: `llm.token_count.{prompt,completion,cache_creation,cache_read}`); requires `COPILOT_OTEL_ENABLED=true` + `COPILOT_OTEL_EXPORTER_TYPE=file` set **before** session start |
 | OpenCode           | ⚠️ `~/.local/share/opencode`                   | Data gap — logs store `cost:0` and derive tokens via LiteLLM at runtime; raw token counts not persisted. No pillars readable with current format |
+| SigRank proxy      | ✅ `~/.sigrank-mcp/proxy-sessions.jsonl`       | Opt-in native 4-pillar usage reported by Anthropic/OpenAI; same-timestamp records keep the last call; OpenAI cached input is separated from fresh input |
 | Other (user JSON)  | ✅ `$SIGRANK_OTHER_PATH`                       | User-supplied JSON `{ "windows": { "all": {input,output,cacheCreate,cacheRead} } }`; all-time only (no timestamps) |
 | Cursor             | 🔜                                             | Chat log path TBD                                                                                                 |
 | Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                                                                            |
@@ -364,7 +396,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 
 ## Privacy
 
-- **Token-only, always.** No message content is ever read, logged, or transmitted — only token counts (`input`, `output`, `cache_creation`, `cache_read`), message IDs, and timestamps.
+- **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank.
 - **Local by default.** `tokenpull` reads only `~/.claude/projects` (Claude) or `~/.codex` (Codex) on your device. Numbers stay on your machine unless you explicitly submit with a codename.
 - **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
 - **Board reads are anonymous.** No account needed to browse, compare, or watch.
@@ -384,7 +416,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 ## Dev / test
 
 ```bash
-node test.mjs          # 14 test groups, 313 assertions (no network; fs writes confined to OS-tmpdir fixtures)
+node test.mjs          # 313-assertion baseline + proxy tests (local mocks only; temp filesystem)
 node sign.test.mjs     # ed25519 signing + canon parity
 node index.mjs         # stdio MCP server directly (pipe to MCP client)
 ```
@@ -396,7 +428,8 @@ Tests verify (14 groups, 313 assertions):
 - `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
 - `tokenpull_submit` all 4 windows POST, sha256 hash, ddmmyy stamp
 - `tokenpullCodex` io_ratio conversion per-window
-- Adapter registry (16 platforms) + per-adapter shape contracts
+- Adapter registry (17 platforms) + per-adapter shape contracts
+- Local proxy: Anthropic/OpenAI JSON + fragmented SSE, live pass-through, secure JSONL, error forwarding
 - `rank_windows` 4-window paste scoring, partial input, no-network
 - `watch_tokenpull` cascade snapshot, interval_s, submit path
 - `enroll` posts identity (public key only), maps 201 enrolled + 410 code_invalid
@@ -412,6 +445,7 @@ Tests verify (14 groups, 313 assertions):
 | File            | Responsibility                                                          |
 | --------------- | ----------------------------------------------------------------------- |
 | `index.mjs`     | Entry point — TTY detection, routes to CLI or MCP server                |
+| `proxy.mjs`     | Opt-in loopback Anthropic/OpenAI proxy and usage capture                |
 | `cli.mjs`       | CLI commands: board, compare, watch, enroll, submit, help               |
 | `tui.mjs`       | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
 | `cascade.mjs`   | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class)           |
