@@ -339,7 +339,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | ------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Claude Code        | ✅ `~/.claude/projects` (recursive, incl. `subagents/`) | Native 4-pillar; dedup by `(session_id, message_id)` — final snapshot wins                                  |
 | Codex              | ✅ `~/.codex/sessions` (+ `archived_sessions`) | `input_tokens` incl. cached → `input` + `cacheCreate` split window-level via `io_ratio`; `cacheRead` native (`cached_input_tokens`); `reasoning_output`→output; verified vs ccusage (~1%) |
-| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | SQLite; same `io_ratio` split as Codex (Alpha 2.0 default); `cacheRead` native                                   |
+| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | SQLite; native 4-pillar from `metadata.metrics` (`input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`); `input_tokens` is fresh (excludes cache)                                   |
 | Amp                | ✅ `~/.local/share/amp/threads`                | Native 4-pillar; per-message                                                                                      |
 | Kimi               | ✅ `~/.kimi/sessions`                          | Native 4-pillar; `StatusUpdate` lines only                                                                        |
 | pi-agent           | ✅ `~/.pi/agent/sessions`                      | Native 4-pillar; per-message JSONL                                                                                |

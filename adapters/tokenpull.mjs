@@ -359,9 +359,12 @@ export async function tokenpullCodex({
 export async function tokenpullAny(platform, opts = {}) {
   if (!platform || platform === "claude")
     return tokenpull({ adapter: claudeAdapter, ...opts });
-  // Codex + Devin: both combine input + cache write in input_tokens, so both go
-  // through tokenpullCodex() which splits via ioRatio (Beta from Claude, Alpha 2.0).
-  if (platform === "codex" || platform === "devin") {
+  // Codex: input_tokens includes cache write, so it goes through tokenpullCodex()
+  // which splits via ioRatio (Beta from Claude, Alpha 2.0). Devin was previously
+  // routed here too, but its metrics object carries native cache_creation_tokens
+  // and cache_read_tokens as separate fields with input_tokens as fresh input —
+  // no estimation needed. Devin now goes through the standard tokenpull() path.
+  if (platform === "codex") {
     let ioRatio = opts.ioRatio || 2.0;
     if (!opts.ioRatio) {
       try {

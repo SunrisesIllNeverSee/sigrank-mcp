@@ -744,16 +744,15 @@ export const hermesAdapter = {
 
 // ── 14. Devin CLI ────────────────────────────────────────────────────────────
 // SQLite: ~/.local/share/devin/cli/sessions.db
-// Same combined-input problem as Codex: input_tokens INCLUDES cache write, so we
-// yield { ts, output, cacheRead, uncached } and let tokenpullCodex() do the
-// ioRatio split (input = output × ioRatio, cacheCreate = uncached − input).
-// ioRatio comes from Claude (Beta = operator's Claude input/output ratio) or
-// the Alpha 2.0 default (matches Codex; the "7:1:2 average → 0.5" note in a
-// prior revision was wrong — tokenpullAny defaults ioRatio to 2.0 for both).
+// Native 4-pillar: metrics.input_tokens is FRESH input (does NOT include cache
+// read or cache creation — verified against live data where input=3 alongside
+// cache_creation_tokens=23500). cache_read_tokens and cache_creation_tokens are
+// separate fields (nullable → treat null as 0). output_tokens includes any
+// reasoning tokens (no separate reasoning field in metrics). No estimation needed.
 export const devinAdapter = {
   platform: "devin",
   defaultRoot: () => join(homedir(), ".local", "share", "devin", "cli"),
-  async *records(root) {
+  async *messages(root) {
     for (const r of roots("DEVIN_HOME", root)) {
       const dbPath = join(r, "sessions.db");
       const rows = await sqliteJson(
@@ -762,6 +761,7 @@ export const devinAdapter = {
                 json_extract(chat_message, '$.metadata.metrics.input_tokens') as input_tokens,
                 json_extract(chat_message, '$.metadata.metrics.output_tokens') as output_tokens,
                 json_extract(chat_message, '$.metadata.metrics.cache_read_tokens') as cache_read_tokens,
+                json_extract(chat_message, '$.metadata.metrics.cache_creation_tokens') as cache_creation_tokens,
                 json_extract(chat_message, '$.metadata.created_at') as created_at
          FROM message_nodes
          WHERE json_extract(chat_message, '$.role') = 'assistant'
@@ -770,15 +770,19 @@ export const devinAdapter = {
         60_000,
       );
       for (const row of rows) {
-        const inputIncl = Number(row.input_tokens || 0);
-        const cached = Number(row.cache_read_tokens || 0);
+        const input = Number(row.input_tokens || 0);
         const output = Number(row.output_tokens || 0);
-        if (inputIncl + output + cached === 0) continue;
+        const cacheRead = Number(row.cache_read_tokens || 0);
+        const cacheCreate = Number(row.cache_creation_tokens || 0);
+        if (input + output + cacheRead + cacheCreate === 0) continue;
         yield {
+          id: `devin:${row.row_id}`,
+          sid: row.session_id || null,
           ts: row.created_at || null,
+          input,
           output,
-          cacheRead: cached,
-          uncached: Math.max(0, inputIncl - cached),
+          cacheCreate,
+          cacheRead,
           file: dbPath,
         };
       }

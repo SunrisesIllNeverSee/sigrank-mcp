@@ -556,8 +556,9 @@ for (const [platform, adapter] of Object.entries(ADAPTERS)) {
     typeof adapter.defaultRoot === "function",
     `${platform} has defaultRoot()`,
   );
-  // Most adapters use messages(); codex/devin use records() (input-inclusive format
-  // handled by tokenpullCodex, not the standard tokenpull pipeline).
+  // Most adapters use messages(); codex uses records() (input-inclusive format
+  // handled by tokenpullCodex, not the standard tokenpull pipeline). Devin
+  // previously used records() but now uses messages() with native 4-pillar.
   assert.ok(
     typeof adapter.messages === "function" ||
       typeof adapter.records === "function",
