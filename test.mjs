@@ -13,6 +13,11 @@ import {
 } from "./tokenpull.mjs";
 import { ADAPTERS, ALL_PLATFORMS } from "./adapters.mjs";
 import {
+  DASHBOARD_MANUAL_PLATFORMS,
+  dashboardAutoPlatforms,
+  dashboardEnabledPlatforms,
+} from "./presentation/tui.mjs";
+import {
   generateIdentity,
   bindingForFreshIdentity,
   clearIdentity,
@@ -543,6 +548,33 @@ assert.strictEqual(
   ALL_PLATFORMS.length,
   18,
   `ALL_PLATFORMS has 18 entries, got ${ALL_PLATFORMS.length}`,
+);
+
+// Dashboard policy: expensive omp history is opt-in, but registration and
+// explicit calls remain untouched everywhere else.
+assert.deepStrictEqual(
+  DASHBOARD_MANUAL_PLATFORMS,
+  ["omp"],
+  "Dashboard manual platform list contains only omp",
+);
+assert.ok(
+  !dashboardAutoPlatforms().includes("omp"),
+  "Dashboard automatic loading excludes omp",
+);
+assert.deepStrictEqual(
+  dashboardAutoPlatforms().sort(),
+  ALL_PLATFORMS.filter((p) => p !== "omp").sort(),
+  "Dashboard automatic loading retains every non-omp platform",
+);
+assert.deepStrictEqual(
+  dashboardEnabledPlatforms({ includeManual: false }).sort(),
+  ALL_PLATFORMS.filter((p) => p !== "omp").sort(),
+  "Dashboard omp OFF selection excludes only omp",
+);
+assert.deepStrictEqual(
+  dashboardEnabledPlatforms({ includeManual: true }).sort(),
+  [...ALL_PLATFORMS].sort(),
+  "Dashboard omp ON selection restores the full platform registry",
 );
 
 // --- 17. Each adapter in ADAPTERS has required contract shape ---

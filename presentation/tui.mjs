@@ -29,6 +29,25 @@ import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 // matches cli.mjs; never hardcode, that's what caused the version drift).
 const VERSION = pkgVersion();
 
+// Expensive platform readers that the Dashboard only runs on explicit user
+// request. They remain in ALL_PLATFORMS and are still available to me, watch,
+// Compare, and MCP tool calls when the caller explicitly selects the platform.
+export const DASHBOARD_MANUAL_PLATFORMS = Object.freeze(["omp"]);
+export function dashboardAutoPlatforms(platforms = ALL_PLATFORMS) {
+  return platforms.filter((p) => !DASHBOARD_MANUAL_PLATFORMS.includes(p));
+}
+export function dashboardEnabledPlatforms({
+  includeManual = false,
+  platforms = ALL_PLATFORMS,
+} = {}) {
+  const automatic = dashboardAutoPlatforms(platforms);
+  if (!includeManual) return automatic;
+  return [
+    ...automatic,
+    ...DASHBOARD_MANUAL_PLATFORMS.filter((p) => platforms.includes(p)),
+  ];
+}
+
 // ── ANSI ───────────────────────────────────────────────────────────────────
 const ESC = "\x1b[";
 const c = {
@@ -299,7 +318,7 @@ function sparkline(values) {
 // (tools.mjs keeps its own `_ccusagePillars`/`_tokscalePillars`/`_tokenDashPillars` —
 // still used by the `tokenpull_compare` MCP tool.)
 
-async function loadDashboardData() {
+async function loadDashboardData({ includeOmp = false } = {}) {
   const boardPromise = Promise.race([
     fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=${LEADERBOARD_METRIC}`, {
       headers: { accept: "application/json" },
@@ -324,25 +343,55 @@ async function loadDashboardData() {
     tdPillars: null,
     boardData,
     _loading: true,
-    _remaining: ALL_PLATFORMS.filter((p) => p !== "claude"),
+    _remaining: dashboardEnabledPlatforms({
+      includeManual: includeOmp,
+    }).filter((p) => p !== "claude"),
+    _ompAvailable: true,
+    _ompEnabled: includeOmp,
+    _ompLoading: false,
+    _ompScanned: false,
   };
 }
 
-/** FIX 0: fill the remaining platforms after the primary render. Mutates dashData.active. */
-async function fillDashboardRest(dashData) {
-  if (!dashData?._remaining) return false;
-  // Unify: fill the remaining platforms through the SAME shared loader.
-  const rest = await pullActivePlatforms({
-    platforms: dashData._remaining,
-  }).catch(() => []);
-  for (const d of rest) {
-    if (!dashData.active.find((a) => a.platform === d.platform))
-      dashData.active.push(d);
+const dashboardPlatformRank = (p) =>
+  p === "claude" ? -2 : p === "codex" ? -1 : ALL_PLATFORMS.indexOf(p);
+
+async function pullDashboardPlatform(dashData, platform) {
+  try {
+    const active = await pullActivePlatforms({ platforms: [platform] });
+    for (const d of active) {
+      if (!dashData.active.find((a) => a.platform === d.platform))
+        dashData.active.push(d);
+    }
+    dashData.active.sort(
+      (a, b) =>
+        dashboardPlatformRank(a.platform) - dashboardPlatformRank(b.platform),
+    );
+    return { ok: true, found: active.some((d) => d.platform === platform) };
+  } catch {
+    return { ok: false, found: false };
   }
-  // stable display order: claude → codex → rest (matches the shared loader)
-  const rank = (p) =>
-    p === "claude" ? -2 : p === "codex" ? -1 : ALL_PLATFORMS.indexOf(p);
-  dashData.active.sort((a, b) => rank(a.platform) - rank(b.platform));
+}
+
+/**
+ * FIX 0: fill the remaining platforms after the primary render. Mutates
+ * dashData.active and calls onPlatformLoaded after each individual scan so the
+ * TUI can paint rows progressively.
+ */
+async function fillDashboardRest(
+  dashData,
+  { shouldLoadPlatform, onPlatformStarted, onPlatformLoaded } = {},
+) {
+  if (!dashData?._remaining) return false;
+  // Pull one platform at a time. Some adapters scan large session trees, so
+  // waiting for the entire batch would prevent the dashboard from updating
+  // while the slowest platform is still being read.
+  for (const platform of dashData._remaining) {
+    if (shouldLoadPlatform && !shouldLoadPlatform(platform)) continue;
+    await onPlatformStarted?.(platform);
+    const result = await pullDashboardPlatform(dashData, platform);
+    await onPlatformLoaded?.(platform, result);
+  }
   dashData._loading = false;
   dashData._remaining = null;
   return true;
@@ -647,7 +696,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     // Count is derived from the registry — a hardcoded number drifts every time an
     // adapter is added (it read "14 platforms" while ALL_PLATFORMS held 17).
     emit(
-      `  ${dim(`  reading token logs… (${ALL_PLATFORMS.length} platforms, ~5s · press [R] to refresh)`)}`,
+      `  ${dim(`  reading token logs… (${dashboardAutoPlatforms().length} automatic · omp is manual [O])`)}`,
     );
   }
 
@@ -1952,6 +2001,7 @@ export async function runTui({
   let submitPreview = false; // FIX I1: [S] opens a preview grid before sending (see→confirm→send)
   let boardYouOnly = false; // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
   let cascadeScroll = 0; // SCROLL-VIEW (2026-06-27): cascade-section scroll offset (Dashboard only)
+  let ompEnabled = false; // Session-only Dashboard toggle; deliberately OFF on every launch.
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
   const redraw = async () => {
@@ -1993,7 +2043,12 @@ export async function runTui({
             ? `   ${dim("↑↓ scroll cascade")}`
             : ""
           : "";
-      setFooter(readFooter(`${hint}${scrollHint}${submitHint}`));
+      const ompHint = !dashData?._ompAvailable
+        ? ""
+        : dashData._ompLoading
+          ? `   ${dim(ompEnabled ? "omp: on · scanning…" : "omp: off · finishing scan…")}`
+          : `   ${dim("[O]")} omp: ${ompEnabled ? "on" : "off"}`;
+      setFooter(readFooter(`${hint}${scrollHint}${ompHint}${submitHint}`));
     } else if (activeTab === 1) {
       // Trends
       if (!dashData) {
@@ -2072,7 +2127,7 @@ export async function runTui({
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
     // the remaining ALL_PLATFORMS entries in the background + redraw. The user sees their cascade
     // within ~1 read instead of a 7s blank "loading dashboard…".
-    dashData = await loadDashboardData().catch((e) => {
+    dashData = await loadDashboardData({ includeOmp: ompEnabled }).catch((e) => {
       status = `dashboard error: ${e.message}`;
       return null;
     });
@@ -2089,7 +2144,40 @@ export async function runTui({
     }
     [, boardData] = await Promise.all([
       dashData?._remaining
-        ? fillDashboardRest(dashData)
+        ? fillDashboardRest(dashData, {
+            shouldLoadPlatform: (platform) =>
+              platform !== "omp" || ompEnabled,
+            onPlatformStarted: async (platform) => {
+              if (platform !== "omp") return;
+              dashData._ompLoading = true;
+              status =
+                "omp is on · scanning history… large histories may take tens of seconds";
+              await redraw();
+            },
+            onPlatformLoaded: async (platform, result) => {
+              if (platform === "omp") {
+                dashData._ompLoading = false;
+                dashData._ompScanned = result.ok && ompEnabled;
+                if (!ompEnabled) {
+                  dashData.active = dashData.active.filter(
+                    (d) => d.platform !== "omp",
+                  );
+                  status = "omp: off · completed scan result discarded";
+                } else if (!result.ok) {
+                  status = "omp scan failed · switch [O] off, then on to retry";
+                } else if (!result.found) {
+                  status = "omp: on · scan complete · no usage data found";
+                } else {
+                  status = "omp: on · scan complete";
+                }
+              } else {
+                status = dashData._ompLoading
+                  ? `${platform} ready · omp scanning…`
+                  : `claude ready · ${platform} ready · filling other platforms…`;
+              }
+              await redraw();
+            },
+          })
         : Promise.resolve(false),
       loadBoardData(boardWindow).catch(() => null),
     ]);
@@ -2349,6 +2437,64 @@ export async function runTui({
         return; // swallow all other keys while the preview is open
       }
 
+      // Session-only omp toggle. OFF removes the row and excludes omp from later
+      // refreshes; ON scans immediately and includes it until the TUI exits.
+      if (activeTab === 0 && k === "o" && dashData?._ompAvailable) {
+        // A filesystem traversal already in progress cannot be cancelled safely.
+        // Switching OFF marks its result for discard; switching back ON waits
+        // until that traversal finishes so two 10 GiB scans never overlap.
+        if (dashData._ompLoading) {
+          if (ompEnabled) {
+            ompEnabled = false;
+            dashData._ompEnabled = false;
+            status = "omp: off · current scan will be discarded when it finishes";
+          } else {
+            status = "omp: off · waiting for the current scan to finish";
+          }
+          await redraw();
+          return;
+        }
+
+        ompEnabled = !ompEnabled;
+        dashData._ompEnabled = ompEnabled;
+        if (!ompEnabled) {
+          dashData.active = dashData.active.filter((d) => d.platform !== "omp");
+          dashData._ompScanned = false;
+          status = "omp: off · excluded from Dashboard refreshes";
+          await redraw();
+          return;
+        }
+
+        const targetDashData = dashData;
+        targetDashData._ompLoading = true;
+        status =
+          "omp: on · scanning history… large histories may take tens of seconds";
+        await redraw();
+
+        const result = await pullDashboardPlatform(targetDashData, "omp");
+        targetDashData._ompLoading = false;
+        targetDashData._ompScanned = result.ok && ompEnabled;
+
+        if (!ompEnabled) {
+          targetDashData.active = targetDashData.active.filter(
+            (d) => d.platform !== "omp",
+          );
+        }
+
+        // [R] may replace dashData while this scan is running. Do not let the
+        // result or status from that stale Dashboard generation overwrite it.
+        if (dashData !== targetDashData) return;
+        status = !ompEnabled
+          ? "omp: off · completed scan result discarded"
+          : !result.ok
+            ? "omp scan failed · switch [O] off, then on to retry"
+            : result.found
+              ? `omp: on · loaded ${new Date().toLocaleTimeString("en-US", { hour12: false })}`
+              : "omp: on · scan complete · no usage data found";
+        await redraw();
+        return;
+      }
+
       // ESC → go back to Dashboard from any tab
       if (key === "\x1b" && activeTab !== 0) {
         activeTab = 0;
@@ -2558,6 +2704,11 @@ export async function runTui({
       }
 
       if (k === "r") {
+        if (dashData?._ompLoading) {
+          status = "omp scan already in progress · refresh is available when it finishes";
+          await redraw();
+          return;
+        }
         status = "refreshing…";
         cascadeScroll = 0; // SCROLL-VIEW: reset scroll on refresh
         // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
