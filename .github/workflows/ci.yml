@@ -59,9 +59,16 @@ jobs:
       - name: Version format check (3-digit ruleset)
         run: node scripts/check-version.mjs
 
-  # Cross-repo contract test — catches platform-enum drift between the MCP server
-  # and the web app. The codex landing was triple-blocked because these enums
-  # drifted. This job checks out the web repo and diffs the two enums.
+      # Intra-repo contract tests (no cross-repo checkout needed)
+      - name: Intra-repo constants contract (adapter registry ↔ submit enum ↔ tokscale map)
+        run: node --test __tests__/contract/constants-contract.test.mjs
+
+      - name: Intra-repo leaderboard-metric contract (no inline yield_ literals)
+        run: node --test __tests__/contract/leaderboard-metric-contract.test.mjs
+
+  # Cross-repo contract tests — catch drift between the MCP server and the web
+  # app. The codex landing was triple-blocked because platform enums drifted.
+  # This job checks out the web repo and runs all cross-repo contract tests.
   cross-repo-contract:
     runs-on: ubuntu-latest
     steps:
@@ -81,6 +88,12 @@ jobs:
 
       - name: Cross-repo platform-enum contract test
         run: node __tests__/contract/platform-enum-contract.test.mjs ${{ github.workspace }}/_sigrank-app
+
+      - name: Cross-repo class-tier contract test
+        run: node __tests__/contract/class-tier-contract.test.mjs ${{ github.workspace }}/_sigrank-app
+
+      - name: Cross-repo leaderboard-metric contract test
+        run: node __tests__/contract/leaderboard-metric-contract.test.mjs ${{ github.workspace }}/_sigrank-app
 
   # Verify the published tarball doesn't leak test fixtures or sensitive files.
   # The files[] whitelist in package.json controls what ships; this job is

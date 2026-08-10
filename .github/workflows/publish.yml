@@ -88,13 +88,32 @@ jobs:
         run: npm publish
 
       # ── Commit the version bump + push (only runs if publish succeeded) ──
+      # Rebases on latest main before pushing to avoid non-fast-forward rejection
+      # when a concurrent push lands between checkout and this step. Without this,
+      # the version commit is lost and package.json falls behind npm — which breaks
+      # the app's cross-repo contract test (mcp-version-drift.test.mjs).
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
           git commit -m "${{ steps.bump.outputs.new_version }}"
-          git push origin main
+          # Pull --rebase in case a concurrent push landed on main since checkout.
+          # Retry up to 3 times to handle transient push races.
+          for attempt in 1 2 3; do
+            git pull --rebase origin main || { echo "✗ rebase failed on attempt $attempt"; exit 1; }
+            if git push origin main; then
+              echo "✓ Version commit pushed on attempt $attempt"
+              break
+            fi
+            echo "⋯ Push rejected (attempt $attempt), rebaseing and retrying..."
+            if [ "$attempt" -eq 3 ]; then
+              echo "✗ Failed to push version commit after 3 attempts"
+              echo "  npm has ${{ steps.bump.outputs.new_version }} but package.json on main is stale."
+              echo "  Manually bump package.json to ${{ steps.bump.outputs.new_version }} and push."
+              exit 1
+            fi
+          done
 
       # Version sync: sigrank-app checks npm daily at 07:00 UTC and auto-updates
       # its MCP_VERSION constant. No dispatch needed — the app pulls, we don't push.
