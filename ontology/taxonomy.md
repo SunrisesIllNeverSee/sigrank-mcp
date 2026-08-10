@@ -10,9 +10,13 @@ timestamp: 2026-07-21
 
 SignalAF uses two distinct classification concepts:
 
-- **Class tier:** a server-side classification based on compression and SIGNA RATE. The highest tiers require both conditions; lower tiers use compression only. Thresholds are ordered descending and first match wins.
-- **Archetype:** a descriptive grouping of field records. The current field loader reads eight archetypes produced by K-Means clustering.
+- **Class tier:** a server-side classification based on total tokens accumulated. 8 tiers × 3 sub-stages = 24 stages (IGNITER III → ARCH+ I). Thresholds are ordered descending and first match wins.
+- **Build archetype:** a composition classifier describing the operator's operating shape — not their rank. 10 deterministic types across 4 families:
+  - **Reuse depth:** INPUT-BOUND → PRIMING → CONTEXTUAL → DEEP READER → ARCHIVIST
+  - **Construction:** BUILDER → RECURSIVE → AMPLIFIER
+  - **Generation:** KINETIC
+  - **Convergence:** CONVERGENT (P80+ on all 3 axes)
 
-Neither is an identity claim. Tier thresholds and scoring weights are server-controlled; archetypes depend on their source dataset and clustering run.
+Neither is an identity claim. Tier thresholds are server-controlled; archetypes are derived from the operator's cascade dimensions (leverage, velocity, construction) and are dynamic — the same operator can move between states as their composition changes.
 
-Sources: `lib/analytics/scoring-engine.ts`, `lib/analytics/field-data.ts`.
+Sources: `lib/analytics/scoring-engine.ts`, `lib/analytics/build-archetypes.ts`, `presentation/narrate.mjs`.

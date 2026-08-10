@@ -9,9 +9,9 @@ of truth. The TUI, CLI, MCP output schemas, and this doc all read from that
 one list.
 
 The class is an **experience** axis — it measures how much volume the operator
-has accumulated. It is separate from the **cascade archetype** (the operator's
-token-flow shape: kinetic loop, archival sponge, volatile ingestor, etc.) and
-from the **TRANSMITTER peak badge** (a temporary state — see below).
+has accumulated. It is separate from the **build archetype** (the operator's
+composition shape: CONVERGENT, KINETIC, INPUT-BOUND, ARCHIVIST, AMPLIFIER, etc.)
+and from the **TRANSMITTER peak badge** (a temporary state — see below).
 
 A 25th value, **UNCLASSED**, is returned when total tokens are null or
 non-finite (empty / all-zero session). It is distinct from IGNITER III so
