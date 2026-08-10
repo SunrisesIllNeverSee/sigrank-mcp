@@ -32,6 +32,7 @@
   },
   "files": [
     "index.mjs",
+    "proxy.mjs",
     "lib/",
     "tools/",
     "analytics/",

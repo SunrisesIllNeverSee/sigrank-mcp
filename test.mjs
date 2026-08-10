@@ -26,6 +26,7 @@ import {
 import { verifyPayload } from "./sign.mjs";
 import { isSignedIn, isCodeChar } from "./connect.mjs";
 import assert from "node:assert";
+import { runProxyTests } from "./__tests__/proxy.test.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
 
@@ -524,7 +525,7 @@ assert.ok(
 
 // ── ADAPTER REGISTRY TESTS (2026-06-23) ──────────────────────────────────────
 
-// --- 16. ALL_PLATFORMS includes claude + codex + all 16 registry adapters ---
+// --- 16. ALL_PLATFORMS includes claude + codex + all 17 registry adapters ---
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
 for (const p of [
@@ -542,12 +543,13 @@ for (const p of [
   "kilo",
   "hermes",
   "omp",
+  "proxy",
 ])
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  18,
-  `ALL_PLATFORMS has 18 entries, got ${ALL_PLATFORMS.length}`,
+  19,
+  `ALL_PLATFORMS has 19 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
@@ -1648,7 +1650,7 @@ console.log(
   "✓ hardening: div-by-zero guards · parsePillars warnings · fetch timeout · codex tooling filter · narrate safety",
 );
 console.log(
-  "✓ adapters: registry (16 platforms) · amp · qwen · goose · gemini · opencode · droid · omp · tokenpullAny routing",
+  "✓ adapters: registry (17 platforms) · amp · qwen · goose · gemini · opencode · droid · omp · proxy · tokenpullAny routing",
 );
 console.log(
   "✓ rank_windows: 4-window paste scoring · partial input · no-network · canon Υ · source_tool · empty throws",
@@ -2411,3 +2413,5 @@ if (hasTkscale) {
 console.log(
   "✓ tokscale_analytics: redactPath · num · isBookkeepingModel · tool registration · competitive_intel guard · live shape (7 functions)",
 );
+
+await runProxyTests();

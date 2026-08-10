@@ -13,6 +13,8 @@
  *   npx sigrank watch                RT tune meter — ALL active platforms × all windows
  *   npx sigrank watch --platform X   watch one platform only (optional filter)
  *   npx sigrank watch --window 7d    watch one window only (optional filter)
+ *   npx sigrank proxy                opt-in Anthropic/OpenAI usage proxy
+ *   npx sigrank proxy --port 9000    proxy on a custom loopback port
  *
  * Color palette mirrors the SigRank web dark theme:
  *   gold = rank #1 headline
@@ -1585,6 +1587,12 @@ async function showHelp() {
   writeln(
     `    ${cyan("watch --window 7d")}        watch only one window (optional filter)`,
   );
+  writeln(
+    `    ${cyan("proxy")}                    opt-in local Anthropic/OpenAI usage proxy`,
+  );
+  writeln(
+    `    ${cyan("proxy --port 9000")}        run the proxy on a custom loopback port`,
+  );
   writeln();
   writeln(`  ${bold("Options")}`);
   writeln(
@@ -1595,6 +1603,7 @@ async function showHelp() {
   );
   writeln(`    ${dim("--refresh")}   poll interval in seconds (default: 30)`);
   writeln(`    ${dim("--once")}      print once and exit (board only)`);
+  writeln(`    ${dim("--port")}      proxy port (default: 8787)`);
   writeln();
   writeln(`  ${bold("For AI clients (not typeable)")}`);
   writeln(
@@ -1614,7 +1623,39 @@ async function showHelp() {
   writeln(`    ${dim("sigrank compare --platform codex")}`);
   writeln(`    ${dim("sigrank watch --window 7d --refresh 60")}`);
   writeln(`    ${dim("sigrank board --window all --once")}`);
+  writeln(`    ${dim("sigrank proxy --port 9000")}`);
   writeln();
+}
+
+async function runProxy({ port = 8787 } = {}) {
+  const { startProxy, defaultProxyLogPath, parseProxyPort } = await import(
+    "../proxy.mjs"
+  );
+  const proxy = await startProxy({ port: parseProxyPort(port) });
+  writeln();
+  writeln(`SigRank proxy running on http://localhost:${proxy.port}`);
+  writeln();
+  writeln("Set your tool's API base URL to:");
+  writeln(`  Anthropic: http://localhost:${proxy.port}`);
+  writeln(`  OpenAI:    http://localhost:${proxy.port}`);
+  writeln();
+  writeln(`Usage data will be captured to ${defaultProxyLogPath()}`);
+  writeln();
+  writeln(
+    dim("The proxy is active only while this command is running. Press Ctrl-C to stop."),
+  );
+
+  let stopping = false;
+  const stop = async () => {
+    if (stopping) return;
+    stopping = true;
+    await proxy.close();
+    writeln("\nSigRank proxy stopped.");
+    process.exit(0);
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  return proxy;
 }
 
 // ── ENTRY POINT ───────────────────────────────────────────────────────────────
@@ -1790,6 +1831,7 @@ export async function runCli(argv) {
     "output",
     "cache-read",
     "combined-input",
+    "port",
   ]);
   const flags = {};
   for (let i = 1; i < args.length; i++) {
@@ -1845,6 +1887,8 @@ export async function runCli(argv) {
         refresh: Number(flags.refresh) || 30,
         submit: flags.submit === true || flags.submit === "true",
       });
+    } else if (cmd === "proxy") {
+      await runProxy({ port: flags.port ?? 8787 });
     } else if (cmd === "enroll") {
       await runEnroll({ label: flags.label });
     // `review` was removed from the public CLI (owner decision 2026-07-16):
