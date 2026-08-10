@@ -27,6 +27,7 @@ import { verifyPayload } from "./sign.mjs";
 import { isSignedIn, isCodeChar } from "./connect.mjs";
 import assert from "node:assert";
 import { runProxyTests } from "./__tests__/proxy.test.mjs";
+import { runOmpCacheTests } from "./__tests__/omp-cache.test.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
 
@@ -2415,3 +2416,10 @@ console.log(
 );
 
 await runProxyTests();
+
+// omp-cache tests need SIGRANK_OMP_CACHE=1 to test the cache path
+const _savedOmpCache = process.env.SIGRANK_OMP_CACHE;
+process.env.SIGRANK_OMP_CACHE = "1";
+await runOmpCacheTests();
+if (_savedOmpCache === undefined) delete process.env.SIGRANK_OMP_CACHE;
+else process.env.SIGRANK_OMP_CACHE = _savedOmpCache;

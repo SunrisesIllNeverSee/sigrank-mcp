@@ -46,6 +46,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import { cachedOmpScan, ompCacheEnabled } from "../omp-cache.mjs";
 
 const execFileP = promisify(execFileCb);
 const DAY_MS = 86_400_000; // shared with tokenpull.mjs but kept local to avoid circular import
@@ -77,7 +78,7 @@ export async function* walkFiles(dir, pred, counter = { n: 0 }, max = 10_000) {
   }
 }
 
-const isJsonl = (n) =>
+export const isJsonl = (n) =>
   n.endsWith(".jsonl") ||
   n.endsWith(".jsonl.deleted") ||
   n.match(/\.jsonl\.reset\.\d+$/);
@@ -924,8 +925,9 @@ function ompLineCouldMatter(line) {
 }
 
 /** Parse a single omp transcript file and yield usage records.
- *  Isolated so it can be called concurrently from the bounded pool. */
-function* parseOmpFile(text, path) {
+ *  Isolated so it can be called concurrently from the bounded pool.
+ *  Exported for omp-cache.mjs and tests. */
+export function* parseOmpFile(text, path) {
   if (!text) return;
   let sid = null;
   for (const line of text.split("\n")) {
@@ -971,38 +973,64 @@ export const ompAdapter = {
   defaultRoot: () => join(homedir(), ".omp", "agent", "sessions"),
   async *messages(root) {
     for (const r of roots("OMP_DATA_DIR", root)) {
-      // Collect all file paths first (readdir is 0.8% of scan time — negligible)
-      const paths = [];
-      for await (const path of walkFiles(r, isJsonl, { n: 0 }, OMP_MAX_FILES)) {
-        paths.push(path);
+      // Stage 2: if SIGRANK_OMP_CACHE is set, use the incremental SQLite cache.
+      // The cache wraps the Stage 1 scanner — on a warm run with no changed
+      // files, it serves records from SQLite without reading transcripts.
+      // Falls back to uncached on any error.
+      if (ompCacheEnabled()) {
+        yield* cachedOmpScan({
+          rootDir: r,
+          uncachedScan: async function* () {
+            yield* ompUncachedScan(r);
+          },
+          parseOmpFile,
+          readUtf8,
+          walkFiles,
+          isJsonl,
+          maxFiles: OMP_MAX_FILES,
+        });
+        continue;
       }
 
-      // Bounded-concurrency read+parse: George-RD measured c=8 as optimal
-      // (1.29x speedup, 45s → 35s). Order-safe: all 504 duplicate keys carry
-      // byte-identical pillar tuples, so completion order can't change totals.
-      const concurrency = OMP_CONCURRENCY;
-      const inflight = new Set();
-      const queue = [...paths];
-
-      while (queue.length > 0 || inflight.size > 0) {
-        while (inflight.size < concurrency && queue.length > 0) {
-          const path = queue.shift();
-          const p = (async () => {
-            const text = await readUtf8(path);
-            return { path, records: [...parseOmpFile(text, path)] };
-          })();
-          inflight.add(p);
-          p.finally(() => inflight.delete(p));
-        }
-        const done = await Promise.race(inflight);
-        inflight.delete(done);
-        for (const record of done.records) {
-          yield record;
-        }
-      }
+      // Default: uncached Stage 1 scan
+      yield* ompUncachedScan(r);
     }
   },
 };
+
+/** Stage 1 uncached scan — bounded concurrency + line guard.
+ *  Isolated so the cache wrapper can call it as the fallback/parity reference. */
+async function* ompUncachedScan(rootDir) {
+  // Collect all file paths first (readdir is 0.8% of scan time — negligible)
+  const paths = [];
+  for await (const path of walkFiles(rootDir, isJsonl, { n: 0 }, OMP_MAX_FILES)) {
+    paths.push(path);
+  }
+
+  // Bounded-concurrency read+parse: George-RD measured c=8 as optimal
+  // (1.29x speedup, 45s → 35s). Order-safe: all 504 duplicate keys carry
+  // byte-identical pillar tuples, so completion order can't change totals.
+  const concurrency = OMP_CONCURRENCY;
+  const inflight = new Set();
+  const queue = [...paths];
+
+  while (queue.length > 0 || inflight.size > 0) {
+    while (inflight.size < concurrency && queue.length > 0) {
+      const path = queue.shift();
+      const p = (async () => {
+        const text = await readUtf8(path);
+        return { path, records: [...parseOmpFile(text, path)] };
+      })();
+      inflight.add(p);
+      p.finally(() => inflight.delete(p));
+    }
+    const done = await Promise.race(inflight);
+    inflight.delete(done);
+    for (const record of done.records) {
+      yield record;
+    }
+  }
+}
 
 // ── SigRank local API proxy ──────────────────────────────────────────────────
 // ~/.sigrank-mcp/proxy-sessions.jsonl — one provider-reported usage record per
