@@ -17,12 +17,8 @@ Yield rewards operators who maximize output while minimizing input — and who b
 | **Velocity** | Output / Input | Raw output efficiency — how much output you generate per token of input |
 | **10xDEV** | Composite score | Weighted blend of yield, leverage, and velocity for cross-platform comparison |
 
-## Class Tier Thresholds
+## Class Tiers
 
-| Tier | Yield Range | Profile |
-|------|-------------|---------|
-| **Burner** | Υ < 1.0 | Raw volume — high input, low cache reuse, brute-force output |
-| **Builder** | 1.0 ≤ Υ < 10.0 | Balanced — moderate cache, decent output efficiency |
-| **10xer** | Υ ≥ 10.0 | Cascade-optimized — high cache reads, minimal input, efficient output |
+Class tiers are based on **total tokens accumulated**, not yield ranges. The 8-tier experience ladder (descending: ARCH+, ARCH, POWER, BASE, SEEKER, REFINER, BEARER, IGNITER) measures operator progression. TRANSMITTER is a separate peak badge (K.00), not a ladder tier. See `class-tiers.md` for the full ladder and thresholds.
 
 The formula is deterministic and computed locally. No network calls needed for scoring.

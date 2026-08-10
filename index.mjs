@@ -102,7 +102,7 @@ async function startMcpServer() {
     {
       name: "check-my-efficiency",
       description:
-        "Pull your local token usage, compute your SigRank yield, and compare your efficiency against the leaderboard. Shows your class tier (Burner/Builder/10xer) and where you rank.",
+        "Pull your local token usage, compute your SigRank yield, and compare your efficiency against the leaderboard. Shows your class tier (ARCH+ to IGNITER) and where you rank.",
       arguments: [],
     },
     {
@@ -191,14 +191,14 @@ async function startMcpServer() {
       uri: "sigrank://scoring-formula",
       name: "SigRank Scoring Formula",
       description:
-        "The yield cascade formula and all derived metrics: Υ (Yield = Cache Reads × Output / Input²), SNR (signal-to-noise), Leverage (Cr/I), Velocity (O/I), 10xDEV score, and class tier thresholds (Burner / Builder / 10xer).",
+        "The yield cascade formula and all derived metrics: Υ (Yield = Cache Reads × Output / Input²), SNR (signal-to-noise), Leverage (Cr/I), Velocity (O/I), 10xDEV score, and class tier thresholds (8-tier experience ladder, see class-tiers.md).",
       mimeType: "text/markdown",
     },
     {
       uri: "sigrank://class-tiers",
       name: "Class Tier Definitions",
       description:
-        "Definitions and thresholds for the three SigRank operator classes: Burner (raw volume), Builder (balanced efficiency), and 10xer (cascade-optimized). Includes the yield ranges that define each tier.",
+        "Definitions and thresholds for the eight SigRank operator class tiers (ARCH+ through IGNITER) plus the TRANSMITTER peak badge. See class-tiers.md for the full ladder.",
       mimeType: "text/markdown",
     },
     {

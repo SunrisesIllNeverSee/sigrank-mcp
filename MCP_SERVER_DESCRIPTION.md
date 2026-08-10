@@ -49,7 +49,7 @@ npx sigrank tui
 Features:
 - Live cascade metrics (Υ Yield, SNR, Leverage, Velocity, 10xDEV)
 - Real-time leaderboard feed from signalaf.com
-- Operator class tier display (Burner / Builder / 10xer)
+- Operator class tier display (8-tier experience ladder: ARCH+ to IGNITER)
 - Per-window breakdowns (7d / 30d / 90d / all-time)
 - Keyboard-driven — no mouse needed
 
