@@ -98,6 +98,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
           git commit -m "${{ steps.bump.outputs.new_version }}"
+          # Discard any unstaged changes from npm ci/build steps so rebase can proceed.
+          git checkout -- . || true
           # Pull --rebase in case a concurrent push landed on main since checkout.
           # Retry up to 3 times to handle transient push races.
           for attempt in 1 2 3; do
