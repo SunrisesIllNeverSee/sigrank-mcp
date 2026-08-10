@@ -744,38 +744,24 @@ export const hermesAdapter = {
 
 // ── 14. Devin CLI ────────────────────────────────────────────────────────────
 // SQLite: ~/.local/share/devin/cli/sessions.db
-// Native 4-pillar: metrics.input_tokens is FRESH input (does NOT include cache
-// read or cache creation — verified against live data where input=3 alongside
-// cache_creation_tokens=23500). cache_read_tokens and cache_creation_tokens are
-// separate fields. output_tokens includes any reasoning tokens.
-//
-// DEDUP: the Devin CLI stores duplicate messages — same timestamp + same
-// metrics but different row_ids (up to 8x duplication observed). Using row_id
-// as the message id inflates all pillars ~2.85x. We dedup at the SQL level
-// with SELECT DISTINCT on the natural key (created_at + metrics).
-//
-// CACHE_CREATION FALLBACK: the Devin CLI records cache_creation_tokens natively
-// for Claude models (claude-sonnet-4-6, claude-opus-4-6) but writes NULL for
-// GLM-5-2 and other non-Claude models. When the field is NULL, estimate
-// cacheCreate from cache_read using the construction ratio (cw/cr = 0.0635)
-// calibrated from the 8K Claude-era rows (50.3M cw / 792M cr). This preserves
-// the compounding signal — without it, cacheCreate=0 makes every window look
-// like a "stateless pipe" (no cache commits), which is a data gap, not reality.
-const DEVIN_CONSTRUCTION_RATIO = 0.0635;
+// Same combined-input problem as Codex: input_tokens INCLUDES cache write, so we
+// yield { ts, output, cacheRead, uncached } and let tokenpullCodex() do the
+// ioRatio split (input = output × ioRatio, cacheCreate = uncached − input).
+// ioRatio comes from Claude (Beta = operator's Claude input/output ratio) or
+// the Alpha 2.0 default (matches Codex; the "7:1:2 average → 0.5" note in a
+// prior revision was wrong — tokenpullAny defaults ioRatio to 2.0 for both).
 export const devinAdapter = {
   platform: "devin",
   defaultRoot: () => join(homedir(), ".local", "share", "devin", "cli"),
-  async *messages(root) {
+  async *records(root) {
     for (const r of roots("DEVIN_HOME", root)) {
       const dbPath = join(r, "sessions.db");
       const rows = await sqliteJson(
         dbPath,
-        `SELECT DISTINCT
+        `SELECT row_id, session_id,
                 json_extract(chat_message, '$.metadata.metrics.input_tokens') as input_tokens,
                 json_extract(chat_message, '$.metadata.metrics.output_tokens') as output_tokens,
                 json_extract(chat_message, '$.metadata.metrics.cache_read_tokens') as cache_read_tokens,
-                json_extract(chat_message, '$.metadata.metrics.cache_creation_tokens') as cache_creation_tokens,
-                json_extract(chat_message, '$.metadata.session_id') as session_id,
                 json_extract(chat_message, '$.metadata.created_at') as created_at
          FROM message_nodes
          WHERE json_extract(chat_message, '$.role') = 'assistant'
@@ -784,27 +770,15 @@ export const devinAdapter = {
         60_000,
       );
       for (const row of rows) {
-        const input = Number(row.input_tokens || 0);
+        const inputIncl = Number(row.input_tokens || 0);
+        const cached = Number(row.cache_read_tokens || 0);
         const output = Number(row.output_tokens || 0);
-        const cacheRead = Number(row.cache_read_tokens || 0);
-        // Use native cache_creation_tokens when present; estimate from cache_read
-        // when NULL (GLM-5-2 era doesn't record the field).
-        const cacheCreate =
-          row.cache_creation_tokens != null
-            ? Number(row.cache_creation_tokens || 0)
-            : Math.round(cacheRead * DEVIN_CONSTRUCTION_RATIO);
-        if (input + output + cacheRead + cacheCreate === 0) continue;
-        // Dedup key: timestamp + metrics — the Devin CLI stores duplicate
-        // messages with different row_ids, so row_id can't be used.
-        const dedupId = `devin:${row.created_at}|${input}|${output}|${cacheRead}`;
+        if (inputIncl + output + cached === 0) continue;
         yield {
-          id: dedupId,
-          sid: row.session_id || null,
           ts: row.created_at || null,
-          input,
           output,
-          cacheCreate,
-          cacheRead,
+          cacheRead: cached,
+          uncached: Math.max(0, inputIncl - cached),
           file: dbPath,
         };
       }
