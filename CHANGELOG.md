@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.0.201](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.200...v0.0.201) (2026-08-12)
+
+### Chores
+
+* sync package.json + server.json + manifest.json to 0.0.201 (match npm published version)
+
+## [0.0.200](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.179...v0.0.200) (2026-07-27 — 2026-08-10)
+
+### Features
+
+* 24-sub-stage experience ladder — mirror server's RS05_CLASS_THRESHOLDS ([adbd6e2](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/adbd6e2))
+* oh-my-pi (omp) added as a native 4-pillar platform adapter (#32) ([c7ddb78](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/c7ddb78))
+* opt-in provider usage proxy for capturing real token counts from API responses ([410113f](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/410113f))
+* omp dashboard loading is now opt-in in the TUI ([23613ed](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/23613ed))
+* omp Stage 2 — incremental SQLite cache for omp scans ([ffdf67c](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/ffdf67c))
+* sync 10 build archetypes — new names, families, construction-before-reuse precedence ([120be0b](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/120be0b))
+
+### Bug Fixes
+
+* resolve 8-pass review + privacy — single source of truth for version, tiers, cascade, constants ([56653ab](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/56653ab))
+* npm audit fix — resolve 3 transitive dependency vulnerabilities ([3bb7a11](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/3bb7a11))
+* resolve package.json path in cli.mjs (./ → ../) ([4fe94cd](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/4fe94cd))
+* ARCH+ sub-stage thresholds — 7T/3T/1T split (was all 7T) ([da0f12e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/da0f12e))
+* add 9router to TOKSCALE_CLIENT_MAP — closes platform sync gap ([d4b35ad](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/d4b35ad))
+* dedup duplicate messages + estimate cacheCreate when NULL ([ff60117](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/ff60117))
+* read native cache_creation_tokens instead of estimating, then reverted back to ioRatio estimation ([fc83512](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/fc83512), [f310f49](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/f310f49))
+* replace legacy 3-tier references with canonical 8-tier ladder ([f37701b](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/f37701b))
+* harden publish push-back + wire 3 missing contract tests into CI ([cdaa511](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/cdaa511))
+* publish to npm BEFORE git commit (prevents drift on failed publish) ([083b066](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/083b066))
+
+### Performance
+
+* omp Stage 1 — bounded concurrency (c=8) + line guard ([9643c91](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/9643c91))
+
+### CI/Chores
+
+* auto-publish to npm on push to main + dispatch version-sync to app ([f6ebc35](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/f6ebc35))
+* remove cross-repo dispatch — app auto-syncs from npm directly ([d590885](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/d590885))
+* full repo cleanup — organize, dedupe, sync versions ([9992127](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/9992127))
+* add workflow_dispatch trigger to publish.yml ([6ec383b](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/6ec383b))
+* add .DS_Store to .gitignore ([fa78f50](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/fa78f50))
+* gitignore bun.lock ([adee455](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/adee455))
+* add bunx sigrank to README quickstart ([977b92e](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/977b92e))
+* add Bun/bunx quick reference to AGENTS.md ([2c73d0c](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/2c73d0c))
+* sync server.json to 0.0.200 + publish to MCP Registry ([9c97b5f](https://github.com/SunrisesIllNeverSee/sigrank-mcp/commit/9c97b5f))
+
 ## [0.0.179](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.178...v0.0.179) (2026-07-27)
 
 ### Features
