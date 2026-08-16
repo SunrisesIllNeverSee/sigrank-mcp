@@ -1,12 +1,12 @@
-# SigRank MCP
+# SigRank SignalAF MCP
 
-> **🏆 SigRank is live: [signalaf.com](https://signalaf.com)** — the leaderboard for how
+> **🏆 SigRank SignalAF is live: [signalaf.com](https://signalaf.com)** — the leaderboard for how
 > efficiently you use AI, not how much. Run `npx sigrank` to see your cascade now.
 > _Token counts only. Never your prompts._
 
 <div align="center">
 
-<p><img src="./.github/assets/og-card.png" alt="SigRank — the new standard in AI evaluation &amp; benchmarks" width="800"></p>
+<p><img src="./.github/assets/og-card.png" alt="SigRank SignalAF — the new standard in AI evaluation &amp; benchmarks" width="800"></p>
 
 **The yield cascade + live leaderboard as MCP tools any agent can call.**
 
@@ -31,7 +31,7 @@ For all builders, burners and 10xers.
 
 ## Table of Contents
 
-- [The SigRank ecosystem](#the-sigrank-ecosystem)
+- [The SigRank SignalAF ecosystem](#the-sigrank-signalaf-ecosystem)
 - [Quickstart](#quickstart--3-steps-to-the-board)
 - [Install from GitHub](#install-from-github)
 - [Install via Smithery](#install-via-smithery)
@@ -49,20 +49,20 @@ For all builders, burners and 10xers.
 
 |                                       The board                                       |                               Your operator profile                               |
 | :-----------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------: |
-| [![SigRank leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all)  | [![SigRank operator profile](./.github/assets/profile.png)](https://signalaf.com) |
+| [![SigRank SignalAF leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all)  | [![SigRank SignalAF operator profile](./.github/assets/profile.png)](https://signalaf.com) |
 | Every operator ranked by **Υ Yield** — the architecture of the cascade, not raw spend |      Cascade layer, class, and fingerprint — derived from four token counts       |
 
 > **Run [`sigrank enroll`](#sign-in--submit) then [`sigrank submit`](#sign-in--submit) to get ranked and claim your public profile at [signalaf.com](https://signalaf.com).**
 
 ---
 
-## The SigRank ecosystem
+## The SigRank SignalAF ecosystem
 
 | Repo | What it is | Install |
 |------|-----------|---------|
 | **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | The instrument — extracts 4 token pillars, computes the cascade, submits to the leaderboard. MCP server + TUI dashboard. | `npx sigrank` |
 | **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | The leaderboard — signalaf.com. Privacy-preserving operator profiles, class tiers, board rankings. | [signalaf.com](https://signalaf.com) |
-| **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
+| **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank SignalAF's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
 | **[sigarena](https://github.com/SunrisesIllNeverSee/sigarena)** | The satellite — public LLM operator evals at sigeconomy.com. Read-only leaderboard, SEO/AEO surface. | [sigeconomy.com](https://sigeconomy.com) |
 | **[signaf](https://github.com/SunrisesIllNeverSee/signa)** | The coach — reads your session logs, builds a taste profile, measures ASI, coaches you on token efficiency. | `npx @burnmydays/signaf` |
 | **[sigrank-vscode](https://github.com/SunrisesIllNeverSee/sigrank-vscode)** | The IDE extension — see your cascade metrics inline in VS Code. | `code --install-extension sigrank.sigrank` |
@@ -73,7 +73,7 @@ For all builders, burners and 10xers.
 | Site | What it is |
 | ---- | ---------- |
 | **[SIGNOMY](https://signomy.xyz)** | Governed AI agent marketplace where ranked agents form teams, fill slots, run missions, and earn revenue under constitutional protocol. Agents are free. Operators pay. |
-| **[MO§ES](https://mos2es.com)** | The governance framework that underpins SigRank, SIGNOMY, and all governed agent operations. Structural accountability for agentic systems. |
+| **[MO§ES](https://mos2es.com)** | The governance framework that underpins SigRank SignalAF, SIGNOMY, and all governed agent operations. Structural accountability for agentic systems. |
 
 ## Quickstart — 3 steps to the board
 
@@ -127,7 +127,7 @@ sigrank
 
 ## Install via Smithery
 
-SigRank is available on [Smithery](https://smithery.ai/servers/burnmydays/sigrank) as a stdio MCP bundle — one-click install for Claude Desktop, Cursor, and other MCP clients.
+SigRank SignalAF is available on [Smithery](https://smithery.ai/servers/burnmydays/sigrank) as a stdio MCP bundle — one-click install for Claude Desktop, Cursor, and other MCP clients.
 
 ### Smithery CLI
 
@@ -135,7 +135,7 @@ SigRank is available on [Smithery](https://smithery.ai/servers/burnmydays/sigran
 # Install Smithery CLI
 npm install -g smithery
 
-# Connect to SigRank (downloads the MCPB bundle locally)
+# Connect to SigRank SignalAF (downloads the MCPB bundle locally)
 smithery mcp add burnmydays/sigrank --id sigrank
 
 # List available tools
@@ -157,7 +157,7 @@ smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
 ## Commands
 
 ```
-⊙ SigRank CLI  v0.0.177
+⊙ SigRank SignalAF CLI  v0.0.177
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board
@@ -202,7 +202,7 @@ Examples
 ### Optional API usage proxy
 
 Some desktop coding agents receive provider usage in API responses but do not
-persist it in their local session files. SigRank can capture those
+persist it in their local session files. SigRank SignalAF can capture those
 provider-reported counts through a manually started loopback proxy:
 
 ```bash
@@ -223,7 +223,7 @@ forwarded transiently but never written to disk. Only usage metadata is appended
 to `~/.sigrank-mcp/proxy-sessions.jsonl` (directory `0700`, file `0600`).
 
 Anthropic and OpenAI calls are currently grouped under one `proxy` platform row.
-For streamed Chat Completions, SigRank sets OpenAI's
+For streamed Chat Completions, SigRank SignalAF sets OpenAI's
 `stream_options.include_usage=true` so the provider includes the final usage
 chunk; response chunks are still forwarded immediately.
 
@@ -387,7 +387,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | Gemini CLI         | ✅ `~/.gemini/tmp`                             | Estimated (`cacheCreate=0`); `cacheRead` from `cached` field; `thought`→output; `input` = `input−cached` (fresh)  |
 | GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | Native 4-pillar (OTel spans: `llm.token_count.{prompt,completion,cache_creation,cache_read}`); requires `COPILOT_OTEL_ENABLED=true` + `COPILOT_OTEL_EXPORTER_TYPE=file` set **before** session start |
 | OpenCode           | ⚠️ `~/.local/share/opencode`                   | Data gap — logs store `cost:0` and derive tokens via LiteLLM at runtime; raw token counts not persisted. No pillars readable with current format |
-| SigRank proxy      | ✅ `~/.sigrank-mcp/proxy-sessions.jsonl`       | Opt-in native 4-pillar usage reported by Anthropic/OpenAI; same-timestamp records keep the last call; OpenAI cached input is separated from fresh input |
+| SigRank SignalAF proxy      | ✅ `~/.sigrank-mcp/proxy-sessions.jsonl`       | Opt-in native 4-pillar usage reported by Anthropic/OpenAI; same-timestamp records keep the last call; OpenAI cached input is separated from fresh input |
 | Other (user JSON)  | ✅ `$SIGRANK_OTHER_PATH`                       | User-supplied JSON `{ "windows": { "all": {input,output,cacheCreate,cacheRead} } }`; all-time only (no timestamps) |
 | Cursor             | 🔜                                             | Chat log path TBD                                                                                                 |
 | Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                                                                            |
@@ -398,7 +398,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 
 ## Privacy
 
-- **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank.
+- **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank SignalAF.
 - **Local by default.** `tokenpull` reads only `~/.claude/projects` (Claude) or `~/.codex` (Codex) on your device. Numbers stay on your machine unless you explicitly submit with a codename.
 - **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
 - **Board reads are anonymous.** No account needed to browse, compare, or watch.
@@ -467,7 +467,7 @@ Tests verify (14 groups, 313 assertions):
 
 ## Contributing
 
-Contributions welcome. SigRank MCP is built in the open.
+Contributions welcome. SigRank SignalAF MCP is built in the open.
 
 - [Contributing guide](./.github/CONTRIBUTING.md)
 - [Security policy](https://github.com/SunrisesIllNeverSee/sigrank-mcp/security/policy)
