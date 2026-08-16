@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.203](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.202...v0.0.203) (2026-08-12)
+
+### Chores
+
+* auto-publish version bump (github-actions bot)
+
+## [0.0.202](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.201...v0.0.202) (2026-08-12)
+
+### Docs
+
+* add bestuser-router-mcp + sigarena to ecosystem table in README — all 4 repos now have identical 7-repo ecosystem tables
+
 ## [0.0.201](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.200...v0.0.201) (2026-08-12)
 
 ### Chores
