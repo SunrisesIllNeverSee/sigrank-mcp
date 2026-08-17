@@ -92,11 +92,24 @@ jobs:
       # when a concurrent push lands between checkout and this step. Without this,
       # the version commit is lost and package.json falls behind npm — which breaks
       # the app's cross-repo contract test (mcp-version-drift.test.mjs).
+      - name: Sync server.json + manifest.json to new version
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          # Update server.json (MCP registry manifest)
+          if [ -f server.json ]; then
+            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" server.json
+          fi
+          # Update manifest.json (MCPB manifest)
+          if [ -f manifest.json ]; then
+            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" manifest.json
+          fi
+          echo "✓ Synced server.json + manifest.json to $NEW_VERSION"
+
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
+          git add package.json server.json manifest.json
           git commit -m "${{ steps.bump.outputs.new_version }}"
           # Discard any unstaged changes from npm ci/build steps so rebase can proceed.
           git checkout -- . || true
