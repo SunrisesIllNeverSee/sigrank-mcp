@@ -44,3 +44,53 @@ They pollute the npm version history and break the monotonic sequence.
 - `NPM_TOKEN` — npm automation token (npmjs.com → Access Tokens → Automation)
 
 The app repo auto-syncs by checking npm daily — no cross-repo PAT needed.
+
+---
+
+## Master Canon Context (Search Authority)
+
+This repository is the **SigRank MCP server** — the on-device scanner and MCP
+tool. It is governed by the Search Authority master canon.
+
+### When to load canon context
+
+Before modifying any of the following, load the relevant canon context:
+
+- canonical product definitions (what SigRank measures)
+- metrics or formulas (Yield, Leverage, Velocity, SNR, 10xDEV, Construction)
+- taxonomy (archetypes, classes, ranks)
+- ingest architecture or telemetry primitives (input, output, cache read, cache write)
+- ecosystem relationships (SigRank ↔ Conservation Law, MO§ES, etc.)
+- terminology (MO§ES™ rendering, deprecated terms)
+- product boundaries (operator-vs-model, enterprise vs public canon)
+
+### How to load canon context
+
+```bash
+export SEARCH_AUTHORITY_PATH="${SEARCH_AUTHORITY_PATH:-$HOME/Developer/active/search-authority}"
+python3 "$SEARCH_AUTHORITY_PATH/canon_cli.py" context sigrank
+```
+
+Or use the canon MCP server (compatible agents):
+
+```bash
+python3 "$SEARCH_AUTHORITY_PATH/canon_mcp.py"
+```
+
+If the canon repository is unavailable, **do not invent canonical context** —
+ask the owner. The canon outranks ad-hoc public copy or generated model output
+for normative product/research truth.
+
+### What is NOT authority-sensitive
+
+Dependency bumps, build config, test infrastructure, and publishing workflow
+changes do **not** require loading the canon.
+
+### Key governance rules
+
+- SigRank evaluates AI **operators**, not AI models.
+- Archetype = shape. Class = scale/qualification. Rank = field position.
+- Do NOT redefine Class as total-token volume.
+- Exactly ONE MO§ES entity. Canonical display: MO§ES™. Never render: MO§E§.
+- The harness may measure authority, but it cannot manufacture authority.
+- Automated systems may not promote claims into owner-approved truth.
