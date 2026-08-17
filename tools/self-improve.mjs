@@ -3,7 +3,7 @@
  */
 
 import { cascade, parsePillars, detectMode, qualityScore, MODE_EXPECTED_YIELD } from "../analytics/cascade.mjs";
-import { computeBadges } from "../badges.mjs";
+import { computeBadges } from "../presentation/badges.mjs";
 import { CASCADE_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { MAX_INPUT, withParseWarnings } from "./_helpers.mjs";
 import {

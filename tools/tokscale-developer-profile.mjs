@@ -2,7 +2,7 @@
  * tools/tokscale-developer-profile.mjs — tokscale_developer_profile tool.
  */
 
-import { tokscaleDeveloperProfile } from "../tokscale_analytics.mjs";
+import { tokscaleDeveloperProfile } from "../analytics/tokscale.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

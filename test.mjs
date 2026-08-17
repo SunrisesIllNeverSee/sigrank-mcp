@@ -2214,7 +2214,7 @@ import {
   tokscaleDeviceProfile,
   tokscaleMcpUsage,
   tokscaleCompetitiveIntel,
-} from "./tokscale_analytics.mjs";
+} from "./analytics/tokscale.mjs";
 import os from "node:os";
 
 // redactPath: home dir → ~, non-home untouched, edge cases safe

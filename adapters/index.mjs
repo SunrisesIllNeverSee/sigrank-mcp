@@ -46,7 +46,7 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
-import { cachedOmpScan, ompCacheEnabled } from "../omp-cache.mjs";
+import { cachedOmpScan, ompCacheEnabled } from "./omp-cache.mjs";
 
 const execFileP = promisify(execFileCb);
 const DAY_MS = 86_400_000; // shared with tokenpull.mjs but kept local to avoid circular import

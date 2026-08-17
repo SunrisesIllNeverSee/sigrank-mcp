@@ -3,7 +3,7 @@
  *
  * Tests earn conditions, progress tracking, and the collection structure.
  */
-import { computeBadges } from "../badges.mjs";
+import { computeBadges } from "../presentation/badges.mjs";
 import { cascade } from "../cascade.mjs";
 import assert from "node:assert";
 

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 
-import { cachedOmpScan, ompCacheEnabled, rebuildOmpCache, getCacheStats } from "../omp-cache.mjs";
+import { cachedOmpScan, ompCacheEnabled, rebuildOmpCache, getCacheStats } from "../adapters/omp-cache.mjs";
 
 const execFileP = promisify(execFileCb);
 

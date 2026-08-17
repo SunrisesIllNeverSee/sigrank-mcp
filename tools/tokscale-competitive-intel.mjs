@@ -2,7 +2,7 @@
  * tools/tokscale-competitive-intel.mjs — tokscale_competitive_intel tool.
  */
 
-import { tokscaleCompetitiveIntel } from "../tokscale_analytics.mjs";
+import { tokscaleCompetitiveIntel } from "../analytics/tokscale.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

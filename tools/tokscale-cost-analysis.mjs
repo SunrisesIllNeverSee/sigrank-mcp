@@ -2,7 +2,7 @@
  * tools/tokscale-cost-analysis.mjs — tokscale_cost_analysis tool.
  */
 
-import { tokscaleCostAnalysis } from "../tokscale_analytics.mjs";
+import { tokscaleCostAnalysis } from "../analytics/tokscale.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

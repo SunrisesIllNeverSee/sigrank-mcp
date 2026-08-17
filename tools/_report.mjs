@@ -6,7 +6,7 @@
  */
 
 import { cascade, detectMode, qualityScore, MODE_EXPECTED_YIELD } from "../analytics/cascade.mjs";
-import { computeBadges } from "../badges.mjs";
+import { computeBadges } from "../presentation/badges.mjs";
 import { execFileAsync } from "./_helpers.mjs";
 
 /**
