@@ -1097,4 +1097,4 @@ export const ADAPTERS = {
   proxy: proxyAdapter,
 };
 
-export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);
+export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex", "grok"]);

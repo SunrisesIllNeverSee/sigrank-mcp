@@ -526,9 +526,10 @@ assert.ok(
 
 // ── ADAPTER REGISTRY TESTS (2026-06-23) ──────────────────────────────────────
 
-// --- 16. ALL_PLATFORMS includes claude + codex + all 17 registry adapters ---
+// --- 16. ALL_PLATFORMS includes claude + codex + grok + all 17 registry adapters ---
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
+assert.ok(ALL_PLATFORMS.includes("grok"), "ALL_PLATFORMS includes grok");
 for (const p of [
   "amp",
   "kimi",
@@ -549,8 +550,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  19,
-  `ALL_PLATFORMS has 19 entries, got ${ALL_PLATFORMS.length}`,
+  20,
+  `ALL_PLATFORMS has 20 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
