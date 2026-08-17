@@ -1,0 +1,31 @@
+id,prompt,primary_intent,secondary_intent,expected_tool,expected_cta,difficulty,ambiguity,should_ask_clarifying_question,expected_confidence_min,multi_intent,notes
+1,who is the best AI user,BEST_OPERATOR_INTENT,,get_best_operator,Check my rank,easy,low,no,0.95,false,Direct leaderboard query.
+2,show me the top operators,BEST_OPERATOR_INTENT,,get_best_operator,Check my rank,easy,low,no,0.95,false,Clear ranking request.
+3,who tops the leaderboard right now,BEST_OPERATOR_INTENT,,get_best_operator,Check my rank,easy,low,no,0.93,false,Time-sensitive ranking.
+4,how do I measure up,COMPARE_SELF_INTENT,,compare_self,See where I stand,easy,low,no,0.90,false,Needs self-comparison.
+5,compare my AI usage to others,COMPARE_SELF_INTENT,,compare_self,See where I stand,easy,low,no,0.92,false,Strong benchmark intent.
+6,am I a power user,COMPARE_SELF_INTENT,DESCRIBE_POWER_USER_INTENT,compare_self,See where I stand,medium,medium,no,0.85,true,Self-assessment plus definition.
+7,where do I rank,COMPARE_SELF_INTENT,BEST_OPERATOR_INTENT,compare_self,See where I stand,medium,medium,no,0.82,true,Ambiguous but comparison-first.
+8,compare operator A and operator B,COMPARE_OPERATORS_INTENT,,compare_operators,Compare me to others,easy,low,no,0.95,false,Explicit side-by-side request.
+9,who is more efficient,COMPARE_OPERATORS_INTENT,OPTIMIZE_EFFICIENCY_INTENT,compare_operators,Compare me to others,medium,high,yes,0.70,true,Needs comparison plus efficiency framing. Ambiguous: more efficient at what?
+10,show me a side by side ranking,COMPARE_OPERATORS_INTENT,,compare_operators,Compare me to others,easy,low,no,0.90,false,Clear comparison.
+11,what makes a power user,DESCRIBE_POWER_USER_INTENT,,describe_power_user,Learn the scoring,easy,low,no,0.95,false,Informational.
+12,how do advanced AI users work,DESCRIBE_POWER_USER_INTENT,,describe_power_user,Learn the scoring,easy,low,no,0.92,false,Behavior-focused.
+13,what is an AI power user,DESCRIBE_POWER_USER_INTENT,,describe_power_user,Learn the scoring,easy,low,no,0.95,false,Definition query.
+14,how do I become a better AI user,OPTIMIZE_EFFICIENCY_INTENT,DESCRIBE_POWER_USER_INTENT,optimize_efficiency,Improve my score,medium,medium,no,0.82,true,Improvement-oriented.
+15,how do I use fewer tokens,OPTIMIZE_EFFICIENCY_INTENT,,optimize_efficiency,Improve my score,easy,low,no,0.93,false,Cost/efficiency.
+16,how can I be more efficient,OPTIMIZE_EFFICIENCY_INTENT,,optimize_efficiency,Improve my score,easy,low,no,0.90,false,Broad optimization.
+17,reduce token burn,OPTIMIZE_EFFICIENCY_INTENT,,optimize_efficiency,Improve my score,easy,low,no,0.92,false,Technical efficiency.
+18,optimize my AI workflow,OPTIMIZE_EFFICIENCY_INTENT,,optimize_efficiency,Improve my score,easy,low,no,0.90,false,Workflow improvement.
+19,sign me up,SIGN_UP_OR_SUBMIT_INTENT,,submit_verified,Join the leaderboard,easy,low,no,0.95,false,Conversion intent.
+20,submit my usage,SIGN_UP_OR_SUBMIT_INTENT,,submit_verified,Join the leaderboard,easy,low,no,0.95,false,Snapshot upload.
+21,enroll me,SIGN_UP_OR_SUBMIT_INTENT,,submit_verified,Join the leaderboard,easy,low,no,0.95,false,Onboarding intent.
+22,publish my snapshot,SIGN_UP_OR_SUBMIT_INTENT,,submit_verified,Join the leaderboard,easy,low,no,0.95,false,Verified publishing.
+23,who is the best at using AI,BEST_OPERATOR_INTENT,COMPARE_SELF_INTENT,get_best_operator,Check my rank,medium,medium,no,0.85,true,Semantic variant. Could mean "best tool" or "best user".
+24,how do I compare to other users,COMPARE_SELF_INTENT,,compare_self,See where I stand,easy,low,no,0.92,false,User-vs-peer benchmark.
+25,am I doing well with AI,COMPARE_SELF_INTENT,OPTIMIZE_EFFICIENCY_INTENT,compare_self,See where I stand,medium,medium,no,0.80,true,Self-evaluation.
+26,how can I rank higher,OPTIMIZE_EFFICIENCY_INTENT,COMPARE_SELF_INTENT,optimize_efficiency,Improve my score,medium,medium,no,0.85,true,Improvement with status.
+27,who is the best operator,BEST_OPERATOR_INTENT,,get_best_operator,Check my rank,easy,low,no,0.95,false,Operational phrasing.
+28,show me the leaderboard,BEST_OPERATOR_INTENT,,get_best_operator,Check my rank,easy,low,no,0.93,false,Generic leaderboard intent.
+29,am I better than average users,COMPARE_SELF_INTENT,BEST_OPERATOR_INTENT,compare_self,See where I stand,medium,medium,no,0.85,true,Relative comparison.
+30,explain the scoring,DESCRIBE_POWER_USER_INTENT,OPTIMIZE_EFFICIENCY_INTENT,describe_power_user,Learn the scoring,medium,low,no,0.88,true,Wants metric interpretation.

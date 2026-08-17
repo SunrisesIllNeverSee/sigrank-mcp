@@ -4,7 +4,7 @@
 
 import {
   tokscaleMarketShare,
-} from "../analytics/tokscale.mjs";
+} from "../tokscale_analytics.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

@@ -2,7 +2,7 @@
  * tools/tokscale-model-trends.mjs — tokscale_model_trends tool.
  */
 
-import { tokscaleModelTrends } from "../analytics/tokscale.mjs";
+import { tokscaleModelTrends } from "../tokscale_analytics.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

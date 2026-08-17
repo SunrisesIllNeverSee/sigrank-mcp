@@ -5,6 +5,3 @@ D-REP-SCRATCH.md
 
 # Bun lockfile (npm lockfile is canonical)
 bun.lock
-
-# MCP bundle (built during publish, not source)
-*.mcpb

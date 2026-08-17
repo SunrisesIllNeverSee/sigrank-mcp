@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   parseProxyPort,
   startProxy,
-} from "../adapters/proxy.mjs";
+} from "../proxy.mjs";
 import { proxyAdapter } from "../adapters/index.mjs";
 import { tokenpull } from "../adapters/tokenpull.mjs";
 

@@ -2,7 +2,7 @@
  * tools/tokscale-device-profile.mjs — tokscale_device_profile tool.
  */
 
-import { tokscaleDeviceProfile } from "../analytics/tokscale.mjs";
+import { tokscaleDeviceProfile } from "../tokscale_analytics.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {

@@ -33,7 +33,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
+import { TOKSCALE_CLIENT_MAP } from "./lib/constants.mjs";
 
 // Resolve local node_modules/.bin for the bundled tokscale binary.
 const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));

@@ -2,7 +2,7 @@
  * tools/tokscale-mcp-usage.mjs — tokscale_mcp_usage tool.
  */
 
-import { tokscaleMcpUsage } from "../analytics/tokscale.mjs";
+import { tokscaleMcpUsage } from "../tokscale_analytics.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const TOOL_DEF = {
