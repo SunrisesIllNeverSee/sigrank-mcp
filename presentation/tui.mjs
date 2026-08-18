@@ -260,27 +260,12 @@ function cascadeFrom(p) {
 // ── Unicode bar chart (no dep) ───────────────────────────────────────────────
 const BLOCKS = " ▏▎▍▌▋▊▉█";
 
-// Linear bar — use when all values are the same order of magnitude.
-function barChart(values, labels, opts = {}) {
-  const { width = 30, colorFn = (s) => s, maxVal } = opts;
-  const max = maxVal ?? Math.max(...values.filter(Number.isFinite), 1);
-  const lines = [];
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i] ?? 0;
-    const pct = Math.min(v / max, 1);
-    const full = Math.floor(pct * width);
-    const frac = Math.floor((pct * width - full) * 8);
-    const bar = colorFn("█".repeat(full) + (frac > 0 ? BLOCKS[frac] : ""));
-    const lbl = padEnd(dim(labels[i] ?? ""), 10);
-    const val = padStart(fmtTok(v), 8);
-    lines.push(`    ${lbl}  ${padEnd(bar, width)}  ${val}`);
-  }
-  return lines;
-}
-
 // Log-scale bar — use when values span multiple orders of magnitude (e.g. token pillars
 // where cacheRead >> input). Maps log10(v) to bar width so each 10x = same visual step.
-// minLog floor prevents zero/tiny values from going negative.
+// minLog floor prevents zero/tiny values from going negative. WIRED into the Dashboard
+// Token Composition section (logTokenBar) so cache-heavy operators like MOSES (1000×
+// scale differences between pillars) render every pillar visibly instead of one pillar
+// erasing the other three.
 function logBar(v, maxLog, width = 40, colorCode = c.cyan) {
   if (!v || v <= 0) return { bar: dim("·".repeat(width)), pct: 0 };
   const log = Math.log10(v);
@@ -297,14 +282,23 @@ function logBar(v, maxLog, width = 40, colorCode = c.cyan) {
 // ── Sparkline (no dep) ────────────────────────────────────────────────────────
 const SPARK = "▁▂▃▄▅▆▇█";
 function sparkline(values) {
-  const valid = values.filter(Number.isFinite);
+  const valid = values.filter((v) => v != null && Number.isFinite(v));
   if (valid.length === 0) return dim("no data");
+  // With only 1 valid point there's no trend to show — render a flat marker
+  // at the mid-height so it doesn't look like a rising/falling edge.
+  if (valid.length === 1) {
+    return values
+      .map((v) =>
+        v != null && Number.isFinite(v) ? SPARK[4] : dim(" "),
+      )
+      .join("");
+  }
   const min = Math.min(...valid),
     max = Math.max(...valid);
   return values
     .map((v) => {
-      if (!Number.isFinite(v)) return dim("·");
-      const idx = max === min ? 7 : Math.round(((v - min) / (max - min)) * 7);
+      if (v == null || !Number.isFinite(v)) return dim(" "); // gap, not a fake low point
+      const idx = max === min ? 4 : Math.round(((v - min) / (max - min)) * 7);
       return SPARK[idx];
     })
     .join("");
@@ -524,11 +518,34 @@ function tokenBar(p, width = 40) {
   return bar;
 }
 
+// Log-scale per-pillar breakdown — 4 separate log10 bars (input / cacheW / cacheR / output)
+// so every pillar stays visible even when one dominates by 1000× (e.g. MOSES cacheRead
+// 2.5B vs input 1.25M). The linear tokenBar() above erases small pillars in that case;
+// this companion view shows the true shape. Returns an array of 4 lines:
+//   ["  I  ▏▎▍▌  1.25M", "  W  ▏▎▍▌▋  128M", "  R  ▏▎▍▌▋▊▉█  2.5B", "  O  ▏▎▍  11.3M"]
+// maxLog is derived from the largest pillar so the biggest pillar fills the bar.
+function logTokenBar(p, width = 36) {
+  if (!p) return [dim("  no data")];
+  const vals = [
+    { lbl: "I", v: p.input ?? 0, color: c.cyan },
+    { lbl: "W", v: p.cacheCreate ?? 0, color: c.blue },
+    { lbl: "R", v: p.cacheRead ?? 0, color: c.boldGold },
+    { lbl: "O", v: p.output ?? 0, color: c.green },
+  ];
+  const maxV = Math.max(...vals.map((x) => x.v), 1);
+  const maxLog = Math.log10(maxV);
+  if (maxLog <= 0) return [dim("  no data")]; // all pillars ≤ 1 → nothing to show
+  return vals.map(({ lbl, v, color }) => {
+    const { bar } = logBar(v, maxLog, width, color);
+    return `  ${paint(color, lbl)}  ${bar}  ${dim(fmtTok(v))}`;
+  });
+}
+
 // Generalized cascade-metric sparkline across windows (7d→30d→90d→all).
 // pick: (cas) => number · fmt: (v) => string. Used by the Trends tab for every metric.
 // FIX G1: window headers are rendered once at the top of each metric block (mirror
-// renderCompare's column layout). metricSpark/yieldSpark now return sparkline + RIGHT-
-// ALIGNED values in fixed COL_W columns — NO per-value `w:` prefix (the header row
+// renderCompare's column layout). metricSpark returns sparkline + RIGHT-ALIGNED
+// values in fixed COL_W columns — NO per-value `w:` prefix (the header row
 // carries the window labels). Null windows render a dim `—` (columns stay aligned).
 const TREND_COL_W = 10;
 const TREND_WINS = ["7d", "30d", "90d", "all"];
@@ -550,23 +567,14 @@ function metricSpark(d, pick, fmt) {
   const cols = vals.map((v) =>
     v != null ? padStart(fmt(v), TREND_COL_W) : padStart(dim("—"), TREND_COL_W),
   );
-  return sparkline(vals) + `  ${cols.join("  ")}`;
-}
-
-// Yield sparkline across windows
-function yieldSpark(d) {
-  const vals = TREND_WINS.map((w) => {
-    const wd = d.windows?.find((x) => x.window === w);
-    if (!wd) return null;
-    const cas = cascadeFrom(wd.pillars);
-    return cas?.yield ?? null;
-  });
-  const cols = vals.map((v) =>
-    v != null
-      ? padStart(fmtY(v), TREND_COL_W)
-      : padStart(dim("—"), TREND_COL_W),
+  // Non-numeric pick values (e.g. Op Ratio returns an object) can't sparkline —
+  // show just the formatted columns. Numeric values get the sparkline prefix.
+  const numericVals = vals.map((v) =>
+    v != null && Number.isFinite(v) ? v : null,
   );
-  return sparkline(vals) + `  ${cols.join("  ")}`;
+  const hasNumeric = numericVals.some((v) => v != null);
+  if (!hasNumeric) return `  ${cols.join("  ")}`;
+  return sparkline(numericVals) + `  ${cols.join("  ")}`;
 }
 
 // ── TAB 1: DASHBOARD ─────────────────────────────────────────────────────────
@@ -828,6 +836,30 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         `    ${padEnd(bold(active.map((d) => d.platform).join("+")), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input + cp.output + cp.cacheCreate + cp.cacheRead))}`,
       );
     }
+    // Log-scale per-pillar breakdown — companion to the linear stacked bar above.
+    // The linear bar erases small pillars when one dominates by 1000× (MOSES-class:
+    // cacheRead 2.5B vs input 1.25M → input gets 0 width). The log view shows every
+    // pillar's true shape so the operator can see the full composition at a glance.
+    // Only renders for the combined row (or the single platform when there's one) to
+    // avoid blowing the height budget on multi-platform setups.
+    if (used < budget - boardLines - 5) {
+      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+      for (const d of active) {
+        const all = d.windows?.find((w) => w.window === "all");
+        if (!all) continue;
+        cp.input += all.pillars.input ?? 0;
+        cp.output += all.pillars.output ?? 0;
+        cp.cacheCreate += all.pillars.cacheCreate ?? 0;
+        cp.cacheRead += all.pillars.cacheRead ?? 0;
+      }
+      const total = cp.input + cp.output + cp.cacheCreate + cp.cacheRead;
+      if (total > 0) {
+        emit(
+          `  ${dim("log-scale (each 10× = same step — every pillar visible)")}`,
+        );
+        for (const line of logTokenBar(cp, 36)) emit(line);
+      }
+    }
   }
 
   // ── Your insights + the Three Degrees panel (replaces the old top-3 mini board)
@@ -1042,11 +1074,43 @@ function renderTrends(data, subIdx = 0) {
   emit();
 
   if (sub === "You" || sub === "Platform") {
+    // FIX (2026-08-18): "You" previously took only active[0]?.windows (the first
+    // platform by sort order — usually claude). If that platform had no timestamps
+    // (NULL-TIMESTAMP WINDOW ASYMMETRY → 7d/30d/90d empty) or no local data, "You"
+    // showed nothing even when other platforms had data. Now aggregate ALL active
+    // platforms' windows into one combined "you" row, summing pillars per window
+    // so every platform contributes to every window it has data for.
     const rows =
       sub === "You"
         ? active?.length
-          ? [{ platform: "you", windows: active[0]?.windows }]
-          : [] // primary cascade
+          ? [
+              {
+                platform: "you",
+                windows: TREND_WINS.map((wk) => {
+                  let input = 0,
+                    output = 0,
+                    cacheCreate = 0,
+                    cacheRead = 0,
+                    messages = 0;
+                  for (const d of active) {
+                    const wd = d.windows?.find((x) => x.window === wk);
+                    if (wd) {
+                      input += wd.pillars.input ?? 0;
+                      output += wd.pillars.output ?? 0;
+                      cacheCreate += wd.pillars.cacheCreate ?? 0;
+                      cacheRead += wd.pillars.cacheRead ?? 0;
+                      messages += wd.messages ?? 0;
+                    }
+                  }
+                  return {
+                    window: wk,
+                    pillars: { input, output, cacheCreate, cacheRead },
+                    messages,
+                  };
+                }),
+              },
+            ]
+          : []
         : (active ?? []);
     if (!rows.length) {
       emit(`  ${dim("  reading your cascade… (press [R] to refresh)")}`);
@@ -1071,7 +1135,7 @@ function renderTrends(data, subIdx = 0) {
         if (used >= budget - 2) break;
         if (m.stub) {
           emit(
-            `    ${padEnd(dim(m.label), 10)}  ${dim("▁▁▁▁  calculating… (" + m.stub + ")")}`,
+            `    ${padEnd(dim(m.label), 10)}  ${dim("    calculating… (" + m.stub + ")")}`,
           );
         } else {
           emit(
@@ -1083,7 +1147,7 @@ function renderTrends(data, subIdx = 0) {
       // rank trend — wired later; honest placeholder for now
       if (used < budget - 1)
         emit(
-          `    ${padEnd(dim("Rank"), 10)}  ${dim("▁▁▁▁  calculating… (rank history wires post-ingest)")}`,
+          `    ${padEnd(dim("Rank"), 10)}  ${dim("    calculating… (rank history wires post-ingest)")}`,
         );
       else trendsDropped += 1;
       emit();
@@ -1104,7 +1168,11 @@ function renderTrends(data, subIdx = 0) {
 
 // ── TAB 3: COMPARE ───────────────────────────────────────────────────────────
 function renderCompare(data) {
-  const { tpData, cc, ts, td, platform } = data;
+  // FIX (2026-08-18): guard against null data — the debug renderOnce path
+  // (node tui.mjs --render 1) passes null when loadCompareData fails, and
+  // destructure of null throws. Coalesce to a safe empty shape.
+  const { tpData, cc, ts, td } = data ?? {};
+  const platform = data?.platform ?? "claude";
   const WINS = ["7d", "30d", "90d", "all"];
   const w = W();
   const budget = H() - 4;
@@ -1163,7 +1231,26 @@ function renderCompare(data) {
       );
     }
   }
+  // FIX (2026-08-18): surface WHY external verifiers are absent so the user knows
+  // it's a missing-tool issue, not a bug. Each verifier is null when its CLI/DB
+  // isn't installed or returned no data for this platform.
+  const missing = [];
+  if (!cc) missing.push("ccusage (npm i -g ccusage)");
+  if (!td) missing.push("token-dashboard (~/.claude/token-dashboard.db)");
+  if (!ts) missing.push("tokscale (npm i -g tokscale)");
+  if (missing.length)
+    emit(`  ${dim(`  no data from: ${missing.join(" · ")}`)}`);
   emit();
+
+  // FIX (2026-08-18): if ALL sources are empty (tokenpull has no windows AND all
+  // verifiers are null), show a clear empty-state message instead of bare headers
+  // with zero data rows.
+  if (SOURCES.length === 0) {
+    emit(
+      `  ${dim("  no source data available for this platform — install a verifier or check ~/.claude/projects/")}`,
+    );
+    return;
+  }
 
   const COL_W = 11;
   const hcols = [
@@ -1789,20 +1876,23 @@ function renderSubmitPreview(dashData, id) {
 }
 
 // ── DEBUG: render a tab once (no TTY/alt-screen) + audit each line's visible
-// width vs terminal columns. Usage: `node tui.mjs --render [0|1|2]`. Prints a
-// width report (>w = would overflow/wrap) then the raw frame. For diagnosing
-// layout overflow without an interactive session.
+// width vs terminal columns. Usage: `node tui.mjs --render [0-5]`. Tab indices
+// match the live TABS array: 0=Dashboard, 1=Trends, 2=Compare, 3=Board,
+// 4=Watch, 5=Connect. Prints a width report (>w = would overflow/wrap) then
+// the raw frame. For diagnosing layout overflow without an interactive session.
 async function renderOnce(tabIdx = 0) {
   const w = W();
   const data = {
     0: await loadDashboardData().catch((e) => ({ error: e.message })),
-    1: await loadCompareData("claude").catch(() => null),
-    2: await loadBoardData("30d").catch(() => null),
+    1: await loadDashboardData().catch((e) => ({ error: e.message })),
+    2: await loadCompareData("claude").catch(() => null),
+    3: await loadBoardData("30d").catch(() => null),
   }[tabIdx];
   startBuffer();
   if (tabIdx === 0) renderDashboard(data, "debug");
-  else if (tabIdx === 1) renderCompare(data);
-  else if (tabIdx === 2) renderBoard(data, "30d");
+  else if (tabIdx === 1) renderTrends(data, 0);
+  else if (tabIdx === 2) renderCompare(data);
+  else if (tabIdx === 3) renderBoard(data, "30d");
   else if (tabIdx === 4) await renderWatch("all", "all-windows");
   else if (tabIdx === 5) renderConnect(loadIdentity(), "", "");
   const lines = _screenBuf || [];
