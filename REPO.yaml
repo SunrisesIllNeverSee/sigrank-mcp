@@ -1,0 +1,49 @@
+standard:
+  name: ello-repo-standard
+  version: "1.0.0"
+  mode: migrate
+
+repo:
+  name: sigrank-mcp
+  type: library
+  lifecycle: active
+  repo_id: sigrank_mcp
+  family: sigrank
+  purpose: SigRank MCP — AI operator evaluation and token cascade efficiency tools. The yield cascade + live leaderboard as MCP tools any agent can call. On-device token scanner + tabbed TUI dashboard.
+
+structure:
+  profile: library
+  allowed_root_dirs_extra: [__tests__, adapters, analytics, eval, governance, identity, lib, methodology, observatory, ontology, presentation, prompts, resources, submit, tools, system-devin]
+  allowed_root_files_extra: [adapters.mjs, badges.mjs, banner.svg, cascade.mjs, cli.mjs, connect.mjs, glama.json, index.mjs, keystore.mjs, manifest.json, MCP_SERVER_DESCRIPTION.md, narrate.mjs, omp-cache.mjs, preflight.mjs, proxy.mjs, review.mjs, server.json, sign.mjs, sigrank.mcpb, submit.mjs, test.mjs, tokenpull.mjs, tokscale_analytics.mjs, tools.mjs, tui.mjs, VERSIONING_RULESET.md]
+  document_roots: [docs]
+  artifact_roots: [artifacts]
+  archive_roots: [archive, docs/archive]
+
+naming:
+  forbid_version_suffixes: true
+  forbidden_suffixes: [_final, _final2, _new, _updated, _revised, _copy]
+
+knowledge:
+  okf_enabled: true
+  okf_roots: [docs, .coord]
+  okf_severity: warn
+
+coordination:
+  micro_enabled: true
+  micro_root: .coord/micro
+  macro_enabled: true
+  macro_root: .coord/macro
+  backend: drep
+  drep_root: system-devin
+  owner_role: OWNER
+  rep1_role: LEAD
+  rep2_role: ASSIST
+
+github:
+  ruleset_profile: solo-fast
+  required_check: repo-standard
+
+canon:
+  authority_role: implementation
+  canon_contexts: [sigrank]
+  authority_owner_repo: search_authority
