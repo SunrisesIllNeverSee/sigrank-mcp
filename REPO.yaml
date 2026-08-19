@@ -14,7 +14,7 @@ repo:
 structure:
   profile: library
   allowed_root_dirs_extra: [__tests__, adapters, analytics, eval, governance, identity, lib, methodology, observatory, ontology, presentation, prompts, resources, submit, tools, system-devin]
-  allowed_root_files_extra: [adapters.mjs, badges.mjs, banner.svg, cascade.mjs, cli.mjs, connect.mjs, glama.json, index.mjs, keystore.mjs, manifest.json, MCP_SERVER_DESCRIPTION.md, narrate.mjs, omp-cache.mjs, preflight.mjs, proxy.mjs, review.mjs, server.json, sign.mjs, sigrank.mcpb, submit.mjs, test.mjs, tokenpull.mjs, tokscale_analytics.mjs, tools.mjs, tui.mjs, VERSIONING_RULESET.md]
+  allowed_root_files_extra: [adapters.mjs, badges.mjs, banner.svg, cascade.mjs, cli.mjs, connect.mjs, glama.json, index.mjs, keystore.mjs, manifest.json, MCP_SERVER_DESCRIPTION.md, narrate.mjs, omp-cache.mjs, preflight.mjs, proxy.mjs, review.mjs, server.json, sign.mjs, sigrank.mcpb, submit.mjs, test.mjs, tokenpull.mjs, tokscale_analytics.mjs, tools.mjs, tui.mjs, VERSIONING_RULESET.md, .dockerignore, .gitleaks.toml, .mcpbignore, .npmignore]
   document_roots: [docs]
   artifact_roots: [artifacts]
   archive_roots: [archive, docs/archive]
