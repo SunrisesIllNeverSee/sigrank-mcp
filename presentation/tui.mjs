@@ -54,6 +54,7 @@ export function dashboardEnabledPlatforms({
 // The `c` object is a live proxy to the current theme — changing the theme
 // via setTheme() updates all colors. Supports dark/light/high-contrast/monochrome.
 import * as _themeMod from "./tui-themes.mjs";
+import { platformColor } from "./tui-themes.mjs";
 const ESC = "\x1b[";
 // `c` is a live proxy — reads currentTheme at access time so theme switches
 // take effect immediately. The helper functions below (paint/bold/dim/etc.)
@@ -477,13 +478,18 @@ const TABS = [
   { key: "6", label: "Connect", short: "N" }, // sign in / switch device — the whole app is the TUI
 ];
 
-// Three Degrees of Leverage — reference values pulled from signalaf.com/wiki (2026-06-25).
-// base = AI avg (modeled 7:2:1 baseline) · field = SigRank avg (wild field median) · top = best operator.
-// STATIC for now; goes live (field/top computed from the board) once there's real user volume.
+// Four Degrees of Leverage — reference values matching signalaf.com/wiki/four-degrees.
+//   base  = AA baseline (7:2:1 modeled reference, static)
+//   hcm   = Human Center of Mass (median of all real operators)
+//   power = Power users (median of top 100 real operators)
+//   top   = Top Evals (single top real operator)
+// STATIC fallback values match the web app's GoldColumn fallbacks (lib/marketing/top-operator-column.ts).
+// Goes live (hcm/power/top computed from the board) once there's real user volume.
 const TD = {
-  base: { yield: 1.57, snr: 0.33, vel: 0.5, lev: 3.2, d10: 0.5 },
-  field: { yield: 1.51, snr: 0.07, vel: 0.08, lev: 22.3, d10: 1.35 },
-  top: { yield: 745.4, snr: 0.63, vel: 1.7, lev: 438.6, d10: 2.64 },
+  base:  { yield: 1.75, snr: 0.33, vel: 0.50, lev: 3.5,   d10: 0.54 },
+  hcm:   { yield: 1.57, snr: 0.33, vel: 0.50, lev: 3.2,   d10: 0.50 },
+  power: { yield: 1.51, snr: 0.07, vel: 0.08, lev: 22.3,  d10: 1.35 },
+  top:   { yield: 488.65, snr: 0.58, vel: 1.36, lev: 360.2, d10: 2.56 },
 };
 
 function renderTabBar(activeIdx) {
@@ -737,7 +743,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
   const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
-  // Your Read (hr+header+~3 wins+1 gap = 6) + Three Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
+  // Your Read (hr+header+~3 wins+1 gap = 6) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
   const boardLines = 17;
   const sectionsBelow = barLines + boardLines;
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow);
@@ -789,7 +795,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     if (lastPlatform !== null && row.platform !== lastPlatform) emit();
     renderRow(
       row.platform,
-      (s) => (row.winKey === firstWin[row.platform] ? cyan(s) : dim(s)),
+      (s) => {
+        const pc = platformColor(row.platform);
+        return row.winKey === firstWin[row.platform] ? bold(pc(s)) : dim(s);
+      },
       row.winKey,
       row.pillars,
       row.estimated,
@@ -843,7 +852,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       const all = d.windows?.find((w) => w.window === "all");
       if (!all) continue;
       emit(
-        `    ${padEnd(cyan(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input ?? 0) + (all.pillars.output ?? 0) + (all.pillars.cacheCreate ?? 0) + (all.pillars.cacheRead ?? 0)))}`,
+        `    ${padEnd(platformColor(d.platform)(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input ?? 0) + (all.pillars.output ?? 0) + (all.pillars.cacheCreate ?? 0) + (all.pillars.cacheRead ?? 0)))}`,
       );
     }
     if (active.length > 1) {
@@ -886,9 +895,9 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     }
   }
 
-  // ── Your insights + the Three Degrees panel (replaces the old top-3 mini board)
+  // ── Your insights + the Four Degrees panel (replaces the old top-3 mini board)
   // The user's own cascade (the firstWin/combined row computed above) read against the
-  // Three Degrees reference so the Dashboard says "here's you, here's the field, here's the ceiling."
+  // Four Degrees reference so the Dashboard says "here's you, here's the field, here's the ceiling."
   const you = (() => {
     // Best available cascade for the user: prefer claude's first-window, else any computed row.
     for (const d of active) {
@@ -931,7 +940,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       chk(
         "Υ Yield",
         you.yield,
-        TD.field.yield,
+        TD.hcm.yield,
         TD.top.yield,
         fmtY,
         "compound more — reuse cache, raise output",
@@ -939,7 +948,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       chk(
         "SNR",
         you.snr,
-        TD.field.snr,
+        TD.hcm.snr,
         TD.top.snr,
         fmtSNR,
         "tighten prompts — less input per unit output",
@@ -947,7 +956,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       chk(
         "Leverage",
         you.leverage,
-        TD.field.lev,
+        TD.hcm.lev,
         TD.top.lev,
         (v) => fmtLev(v) + "×",
         "lean on cache-read — amplify prior context",
@@ -955,7 +964,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       chk(
         "Velocity",
         you.velocity,
-        TD.field.vel,
+        TD.hcm.vel,
         TD.top.vel,
         (v) => v.toFixed(2),
         "more output per input token",
@@ -971,39 +980,42 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       emit(`    ${dim("  reading your cascade… (press [R] to refresh)")}`);
     }
 
-    // ── Three Degrees — AI avg · SigRank avg · Top (live values from signalaf.com)
+    // ── Four Degrees — AA baseline · Human Center of Mass · Power users · Top Evals
+    // Matches signalaf.com/wiki/four-degrees (expanded from 3 → 4 degrees 2026-07-17).
     emit();
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Three Degrees")}  ${dim("AI avg · SigRank avg · top — signalaf.com/wiki")}`,
+      `  ${bold("Four Degrees")}  ${dim("AA baseline · Human Center of Mass · Power users · Top Evals — signalaf.com/wiki")}`,
     );
     const tdHead = [
       padEnd(hdr("Metric"), 10),
-      padStart(hdr("AI avg"), 9),
-      padStart(hdr("SigRank avg"), 12),
+      padStart(hdr("AA base"), 9),
+      padStart(hdr("HCM"), 9),
+      padStart(hdr("Power"), 9),
       padStart(hdr("Top"), 9),
     ];
     emit(`    ${tdHead.join("  ")}`);
     const white = (s) => paint(c.white, s);
-    const tdRow = (label, b, f, t, fmt) =>
+    const tdRow = (label, b, h, p, t, fmt) =>
       emit(
-        `    ${padEnd(label, 10)}  ${padStart(white(fmt(b)), 9)}  ${padStart(fmt(f), 12)}  ${padStart(gold(fmt(t)), 9)}`,
+        `    ${padEnd(label, 10)}  ${padStart(dim(fmt(b)), 9)}  ${padStart(white(fmt(h)), 9)}  ${padStart(white(fmt(p)), 9)}  ${padStart(gold(fmt(t)), 9)}`,
       );
-    tdRow("Υ Yield", TD.base.yield, TD.field.yield, TD.top.yield, fmtY);
-    tdRow("SNR", TD.base.snr, TD.field.snr, TD.top.snr, fmtSNR);
-    tdRow("Velocity", TD.base.vel, TD.field.vel, TD.top.vel, (v) =>
+    tdRow("Υ Yield", TD.base.yield, TD.hcm.yield, TD.power.yield, TD.top.yield, fmtY);
+    tdRow("SNR", TD.base.snr, TD.hcm.snr, TD.power.snr, TD.top.snr, fmtSNR);
+    tdRow("Velocity", TD.base.vel, TD.hcm.vel, TD.power.vel, TD.top.vel, (v) =>
       v.toFixed(2),
     );
     tdRow(
       "Leverage",
       TD.base.lev,
-      TD.field.lev,
+      TD.hcm.lev,
+      TD.power.lev,
       TD.top.lev,
       (v) => fmtLev(v) + "×",
     );
-    tdRow("10xDEV", TD.base.d10, TD.field.d10, TD.top.d10, (v) => v.toFixed(2));
+    tdRow("10xDEV", TD.base.d10, TD.hcm.d10, TD.power.d10, TD.top.d10, (v) => v.toFixed(2));
     emit(
-      `    ${dim("reference values until live user volume calibrates SigRank avg")}`,
+      `    ${dim("reference values until live user volume calibrates HCM · Power · Top")}`,
     );
   }
 
@@ -1526,7 +1538,7 @@ function renderSubmissions(
     const cells = [
       padStart(rk, 4),
       nm,
-      padEnd(cyan(trunc(gPlat(e), 10)), 10),
+      padEnd(platformColor(gPlat(e))(trunc(gPlat(e), 10)), 10),
       padEnd(dim(trunc(gWin(e), 6)), 6),
       yld,
       ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 18)] : []),
@@ -1717,6 +1729,7 @@ function renderWatchInfo(platform, win, refresh) {
   const winLabel = !win || win === "all-windows" ? "all windows" : win;
   const allDefault =
     platLabel === "all active platforms" && winLabel === "all windows";
+  const platColorFn = (!platform || platform === "all") ? cyan : platformColor(platform);
   writeln();
   writeln(
     `  ${bold("Live Watch")}  ${dim("the agent that keeps your rank current")}`,
@@ -1724,7 +1737,7 @@ function renderWatchInfo(platform, win, refresh) {
   writeln();
   writeln(`  ${dim("What it does")}`);
   writeln(
-    `    Re-reads your local token logs for ${cyan(platLabel)} across ${cyan(winLabel)} every`,
+    `    Re-reads your local token logs for ${platColorFn(platLabel)} across ${cyan(winLabel)} every`,
   );
   writeln(
     `    ${gold(refresh + "s")} and recomputes each cascade (Υ Yield · SNR · Leverage · class) live, on`,
@@ -1746,7 +1759,7 @@ function renderWatchInfo(platform, win, refresh) {
   writeln();
   writeln(`  ${dim("Settings")}`);
   writeln(
-    `    ${dim("Platform")}  ${cyan(platLabel)}     ${dim("Window")}  ${cyan(winLabel)}     ${dim("Refresh")}  ${gold(refresh + "s")}`,
+    `    ${dim("Platform")}  ${platColorFn(platLabel)}     ${dim("Window")}  ${cyan(winLabel)}     ${dim("Refresh")}  ${gold(refresh + "s")}`,
   );
   writeln(
     `    ${dim(allDefault ? "watching everything (default)" : "focused — press [P]/[W] to widen back to all")}`,

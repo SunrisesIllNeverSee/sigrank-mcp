@@ -124,3 +124,66 @@ export function setTheme(name) {
 export function getThemeNames() {
   return Object.keys(THEMES);
 }
+
+// ── Platform color map ─────────────────────────────────────────────────────
+// Each platform gets a distinct 256-color code so platforms are visually
+// distinguishable in the cascade table, token composition bars, board, and
+// watch tabs. The colors are chosen for distinguishability on dark terminals
+// (the default theme). For light theme, darker 256-color variants are used.
+// Monochrome theme returns no color (bold only) — colorblind-safe.
+//
+// Color assignments (dark theme 256-color codes):
+//   claude    = 75  (blue-cyan)
+//   codex     = 114 (green)
+//   amp       = 179 (orange)
+//   gemini    = 129 (purple-magenta)
+//   kimi      = 213 (pink)
+//   qwen      = 68  (steel blue)
+//   goose     = 142 (olive)
+//   kilo      = 166 (dark orange)
+//   hermes    = 96  (plum)
+//   droid     = 167 (salmon)
+//   codebuff  = 72  (teal-green)
+//   copilot   = 33  (bright blue)
+//   openclaw  = 136 (gold-brown)
+//   pi        = 177 (light purple)
+//   omp       = 220 (gold — the "oh my pi" platform gets gold)
+//   opencode  = 60  (slate)
+//   devin     = 30  (teal)
+//   proxy     = 245 (gray — synthetic passthrough)
+//   other     = 245 (gray — catch-all)
+
+const PLATFORM_COLORS_DARK = {
+  claude: 75, codex: 114, amp: 179, gemini: 129, kimi: 213,
+  qwen: 68, goose: 142, kilo: 166, hermes: 96, droid: 167,
+  codebuff: 72, copilot: 33, openclaw: 136, pi: 177, omp: 220,
+  opencode: 60, devin: 30, proxy: 245, other: 245,
+};
+
+// Light theme: darker shades of the same hues for contrast on white
+const PLATFORM_COLORS_LIGHT = {
+  claude: 24, codex: 28, amp: 130, gemini: 54, kimi: 90,
+  qwen: 19, goose: 100, kilo: 130, hermes: 54, droid: 124,
+  codebuff: 23, copilot: 19, openclaw: 130, pi: 90, omp: 130,
+  opencode: 19, devin: 23, proxy: 242, other: 242,
+};
+
+/**
+ * Returns a paint function for the given platform name, theme-aware.
+ * Usage: `const pc = platformColor("claude"); pc("claude")` → colored string.
+ * Falls back to the theme's cyan for unknown platforms.
+ */
+export function platformColor(platform) {
+  const themeName = currentTheme.name;
+  // Monochrome: no color, just bold (colorblind-safe)
+  if (themeName === "monochrome") {
+    return (s) => `${currentTheme.bold}${s}${currentTheme.reset}`;
+  }
+  const map = themeName === "light" ? PLATFORM_COLORS_LIGHT : PLATFORM_COLORS_DARK;
+  const code = map[platform];
+  if (code == null) {
+    // Unknown platform — fall back to cyan
+    return (s) => `${currentTheme.cyan}${s}${currentTheme.reset}`;
+  }
+  return (s) => `${ESC}38;5;${code}m${s}${currentTheme.reset}`;
+}
