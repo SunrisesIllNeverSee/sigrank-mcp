@@ -1,4 +1,4 @@
-// tui-audit.mjs — headless TUI review system
+// tui-audit.mjs — headless TUI review system (NEUTRAL — works with any TUI MCP)
 //
 // Renders every tab at multiple terminal sizes, then checks:
 //   1. Overflow       — lines wider than the terminal (would wrap/garble)
@@ -19,6 +19,17 @@
 // rendering regressions in any palette. Golden frames and SVG/PNG export only
 // run for the default (dark) theme.
 //
+// ── NEUTRAL CONFIG ──────────────────────────────────────────────────────────
+// This tool is NOT hardcoded to any specific TUI. It accepts a config object
+// that specifies:
+//   - tuiPath:     path to the TUI module (must export render fns + startBuffer)
+//   - tabs:        array of { label, render: async (ctx) => void }
+//   - productName: name for report titles (e.g. "SigRank", "MyApp")
+//   - themePath:   optional path to a tui-themes.mjs-compatible module
+//
+// When invoked via `node tui.mjs --audit`, the SigRank config is used by default.
+// Other projects can import runAudit() directly with their own config.
+//
 // Usage:
 //   node tui.mjs --audit              full audit report (all themes)
 //   node tui.mjs --audit --golden-save   save golden frames (dark theme)
@@ -31,10 +42,23 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTheme, getThemeNames } from "../presentation/tui-themes.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_DIR = join(__dirname, "..", ".tui-golden");
+
+// ── Default config (SigRank) ────────────────────────────────────────────────
+// This is used when the audit is invoked via `node tui.mjs --audit`.
+// Other projects should call runAudit({ config: {...} }) with their own config.
+const DEFAULT_CONFIG = {
+  productName: "SigRank",
+  tuiPath: "../presentation/tui.mjs",
+  themePath: "../presentation/tui-themes.mjs",
+  // Tabs are defined as { label, render: (ctx) => void }
+  // ctx = { tui, data, identity } — the render function calls the appropriate
+  // TUI render function with the appropriate data.
+  // Data is loaded once before all renders (see loadData in runAudit).
+  tabs: null, // null = auto-detect from tui.mjs exports (SigRank default)
+};
 
 // Terminal sizes to test — covers the real-world range from small IDE panels
 // to large dedicated terminals. Each size is [cols, rows, label].
@@ -908,7 +932,8 @@ function withTimeout(promise, ms, { onCatch, onTimeout } = {}) {
 // loads well under the 60s hang threshold.
 const LOAD_TIMEOUT_MS = 8000;
 
-const TAB_LABELS = [
+// Default tab labels for SigRank — overridden by config.tabs when provided.
+const DEFAULT_TAB_LABELS = [
   "Dashboard",
   "Trends",
   "Compare",
@@ -918,14 +943,19 @@ const TAB_LABELS = [
 ];
 
 export async function runAudit(opts = {}) {
-  const { goldenSave = false, goldenCheck = false, svg = false, png = false, ci = false } = opts;
+  const { goldenSave = false, goldenCheck = false, svg = false, png = false, ci = false, config: userConfig = {} } = opts;
+  const config = { ...DEFAULT_CONFIG, ...userConfig };
   const results = [];
   const allFrames = [];
+
+  // Load theme module (configurable for neutral use)
+  const themeMod = await import(config.themePath);
+  const { setTheme, getThemeNames } = themeMod;
   const themeNames = getThemeNames();
   const themeResults = []; // per-theme summary for the report
 
-  // Import the render functions from tui.mjs — in-process, no child processes.
-  const tui = await import("../presentation/tui.mjs");
+  // Import the render functions from the TUI module (configurable for neutral use).
+  const tui = await import(config.tuiPath);
   const {
     renderDashboard,
     renderTrends,
@@ -943,7 +973,14 @@ export async function runAudit(opts = {}) {
     _resetBuf,
   } = tui;
   // loadIdentity is imported from keystore.mjs (same as tui.mjs does).
-  const { loadIdentity } = await import("../keystore.mjs");
+  // For neutral use, this is optional — if keystore.mjs doesn't exist, skip.
+  let loadIdentity = () => null;
+  try {
+    const keystore = await import("../keystore.mjs");
+    loadIdentity = keystore.loadIdentity;
+  } catch {
+    // No keystore — neutral mode, identity is always null
+  }
 
   // Load data once — reused across all themes and sizes (data doesn't change).
   // Each load is try/catch so a failed source doesn't kill the whole audit.
@@ -972,6 +1009,11 @@ export async function runAudit(opts = {}) {
     onCatch: () => ({ active: [], platFilter: null, winFilter: null }),
     onTimeout: { active: [], platFilter: null, winFilter: null },
   });
+
+  // Determine tab labels — use config.tabs if provided, else default SigRank labels.
+  const TAB_LABELS = config.tabs
+    ? config.tabs.map((t) => t.label)
+    : DEFAULT_TAB_LABELS;
 
   // ── Theme loop ──
   // Audit every theme (dark/light/high-contrast/monochrome) so we catch
@@ -1007,12 +1049,19 @@ export async function runAudit(opts = {}) {
       const t0 = performance.now();
       startBuffer();
       try {
-        if (tabIdx === 0) renderDashboard(dashData, "audit");
-        else if (tabIdx === 1) renderTrends(dashData, 0);
-        else if (tabIdx === 2) renderCompare(compareData);
-        else if (tabIdx === 3) renderBoard(boardData, "30d");
-        else if (tabIdx === 4) renderWatchData(watchData);
-        else if (tabIdx === 5) renderConnect(loadIdentity(), "", "");
+        if (config.tabs) {
+          // Config-driven: call the tab's render function with the shared context.
+          const ctx = { tui, dashData, compareData, boardData, watchData, identity: loadIdentity() };
+          await config.tabs[tabIdx].render(ctx);
+        } else {
+          // Default SigRank rendering (backward compatible).
+          if (tabIdx === 0) renderDashboard(dashData, "audit");
+          else if (tabIdx === 1) renderTrends(dashData, 0);
+          else if (tabIdx === 2) renderCompare(compareData);
+          else if (tabIdx === 3) renderBoard(boardData, "30d");
+          else if (tabIdx === 4) renderWatchData(watchData);
+          else if (tabIdx === 5) renderConnect(loadIdentity(), "", "");
+        }
       } catch (e) {
         _resetBuf();
         results.push({
@@ -1093,7 +1142,7 @@ export async function runAudit(opts = {}) {
       if (isDefaultTheme && (svg || png)) {
         const svgDir = join(__dirname, "..", ".tui-screenshots");
         if (!existsSync(svgDir)) mkdirSync(svgDir, { recursive: true });
-        const title = `SigRank · ${tabLabel} (${cols}×${rows})`;
+        const title = `${config.productName} · ${tabLabel} (${cols}×${rows})`;
         const svgContent = frameToSvg(frame.lines, cols, rows, title);
         if (svg) {
           const svgPath = join(svgDir, `${tabLabel.toLowerCase()}_${cols}x${rows}.svg`);
@@ -1187,15 +1236,17 @@ export async function runAudit(opts = {}) {
     suggestions,
     ciExitCode,
     highCount,
+    productName: config.productName,
+    tabLabels: config.tabs ? config.tabs.map((t) => t.label) : DEFAULT_TAB_LABELS,
   };
 }
 
 export function formatAuditReport(auditData) {
-  const { results, goldenResult, themeResults, sparklineTests, grades, suggestions, highCount } = auditData;
+  const { results, goldenResult, themeResults, sparklineTests, grades, suggestions, highCount, productName = "TUI", tabLabels = [] } = auditData;
   const lines = [];
 
   lines.push("╔══════════════════════════════════════════════════════════════════════╗");
-  lines.push("║  SigRank TUI Audit — every tab × every size × every theme            ║");
+  lines.push(`║  ${productName} TUI Audit — every tab × every size × every theme            ║`);
   lines.push("╚══════════════════════════════════════════════════════════════════════╝");
   lines.push("");
 
@@ -1242,7 +1293,7 @@ export function formatAuditReport(auditData) {
   // Per-tab grades
   if (grades) {
     lines.push("── Per-tab grades ──────────────────────────────────────────────────────────");
-    for (const tabLabel of TAB_LABELS) {
+    for (const tabLabel of tabLabels) {
       const g = grades[tabLabel];
       if (g && g.grade !== "—") {
         const bar = "█".repeat(Math.round(g.score / 10)) + "░".repeat(10 - Math.round(g.score / 10));
