@@ -5,6 +5,7 @@ D-REP-SCRATCH.md
 
 # Bun lockfile (npm lockfile is canonical)
 bun.lock
+
 # Repository Standard runtime state
 .coord/micro/state/.session-current
 .coord/micro/state/.role-*
@@ -12,3 +13,7 @@ bun.lock
 .coord/micro/state/snapshots/
 .coord/micro/scratchpad-archive/
 .repo/.cache/
+
+# TUI audit generated artifacts (run `node tui.mjs --audit --golden-save` to regenerate)
+# Golden frames ARE committed — they're the regression baseline for CI.
+.tui-screenshots/

@@ -1,0 +1,27 @@
+
+  Your Cascade  all platforms · all windows
+
+    Platform     Win      Input   Output   CacheW    CacheR   Υ Yield     SNR     Lev Class        
+  ································································································
+    claude       90d      14.4M    19.4M   184.9M      5.0B     466.9   57.3%    348× SEEKER II    
+    claude       all      14.4M    21.3M   201.8M      5.6B     575.1   59.6%    390× SEEKER I     
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  Token Composition  █I in  █W cW  █R cR  █O out
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  Your Read  how your cascade sits vs the field
+    ▲ Υ Yield 466.9 — above field avg
+    ▲ SNR 57.3% — top tier
+    ▲ Leverage 348× — above field avg
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  Three Degrees  AI avg · SigRank avg · top — signalaf.com/wiki
+    Metric         AI avg   SigRank avg        Top
+    Υ Yield           1.6           1.5      745.4
+    SNR             33.0%          7.0%      63.0%
+    Velocity         0.50          0.08       1.70
+    Leverage           3×           22×       439×
+    10xDEV           0.50          1.35       2.64
+    reference values until live user volume calibrates SigRank avg
+  audit
+

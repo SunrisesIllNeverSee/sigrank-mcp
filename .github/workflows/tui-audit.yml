@@ -1,0 +1,80 @@
+name: TUI Audit
+
+# Headless layout audit for the SigRank TUI. Renders every tab at 4 terminal
+# sizes (80×24, 100×30, 120×40, 140×50), checks overflow, alignment, dead-space,
+# sparkline integrity, responsive design, and visual weight. Exits non-zero on
+# HIGH severity issues. Also checks golden frames for visual regressions.
+#
+# Golden frames are committed to .tui-golden/ — if a render change alters the
+# output, --golden-check reports the diff. To update baselines after an
+# intentional change, run locally:
+#   node presentation/tui.mjs --audit --golden-save
+#   git add .tui-golden/ && git commit -m "chore: update TUI golden frames"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  tui-audit:
+    name: TUI layout audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: TUI audit (CI mode — blocks on HIGH severity)
+        run: node presentation/tui.mjs --audit --ci
+
+      - name: Golden frame check (detects visual regressions)
+        run: node presentation/tui.mjs --audit --golden-check
+
+      - name: Export SVG screenshots (for visual review on failure)
+        if: failure()
+        run: node presentation/tui.mjs --audit --svg
+
+      - name: Upload SVG screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tui-screenshots
+          path: .tui-screenshots/
+          retention-days: 14
+
+      - name: Comment on PR with audit summary
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## TUI Audit Failed
+
+            The headless TUI layout audit found HIGH severity issues or golden frame regressions.
+
+            **To investigate locally:**
+            \`\`\`bash
+            node presentation/tui.mjs --audit          # full report
+            node presentation/tui.mjs --audit --svg    # export screenshots
+            \`\`\`
+
+            **To update golden frames after an intentional change:**
+            \`\`\`bash
+            node presentation/tui.mjs --audit --golden-save
+            git add .tui-golden/ && git commit -m "chore: update TUI golden frames"
+            \`\`\`
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });

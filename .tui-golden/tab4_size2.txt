@@ -1,0 +1,6 @@
+
+  Live Watch  all active platforms · all windows
+  ················································································
+
+    no active platforms detected — run some sessions, this picks them up automatically
+

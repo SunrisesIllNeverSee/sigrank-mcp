@@ -1,0 +1,15 @@
+
+  Connect  your account
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  ✓ Signed in as signal-92b4f9f485
+  device 6f52c98b-3ba0-49bb-8a0c-3826512c6de6
+
+  Press [S] from any read tab to submit your runs to the board.
+
+  Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.
+  Signed in on the wrong device, or want a fresh start?
+  [X] signs out — next paste provisions a fresh device.
+    > ▏
+
+  Get a key at signalaf.com → Settings → "New key" (or "Generate connect code").
+

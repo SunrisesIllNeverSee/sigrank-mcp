@@ -82,7 +82,9 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@resvg/resvg-js": "^2.6.2",
     "ccusage": "^20.0.19",
+    "gifenc": "^1.0.3",
     "tokscale": "^4.7.0"
   },
   "overrides": {

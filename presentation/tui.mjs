@@ -22,6 +22,7 @@ import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import os from "os";
 import path from "path";
+import { pathToFileURL } from "node:url";
 import { pkgVersion } from "../lib/pkg-version.mjs";
 import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 
@@ -49,24 +50,20 @@ export function dashboardEnabledPlatforms({
 }
 
 // ── ANSI ───────────────────────────────────────────────────────────────────
+// Theme system: colors are centralized in tui-themes.mjs (tokscale-inspired).
+// The `c` object is a live proxy to the current theme — changing the theme
+// via setTheme() updates all colors. Supports dark/light/high-contrast/monochrome.
+import * as _themeMod from "./tui-themes.mjs";
 const ESC = "\x1b[";
-const c = {
-  reset: `${ESC}0m`,
-  bold: `${ESC}1m`,
-  dim: `${ESC}2m`,
-  gold: `${ESC}33m`,
-  boldGold: `${ESC}1;33m`,
-  cyan: `${ESC}36m`,
-  boldCyan: `${ESC}1;36m`,
-  green: `${ESC}32m`,
-  red: `${ESC}31m`,
-  white: `${ESC}97m`,
-  boldWhite: `${ESC}1;97m`,
-  magenta: `${ESC}35m`,
-  blue: `${ESC}34m`,
-  bgDim: `${ESC}48;5;236m`, // dark grey bg for active tab
-  bgCyan: `${ESC}48;5;23m`, // dark teal bg for active tab
-};
+// `c` is a live proxy — reads currentTheme at access time so theme switches
+// take effect immediately. The helper functions below (paint/bold/dim/etc.)
+// read from `c` at call time, so they always use the active theme's colors.
+const c = new Proxy({}, {
+  get(_target, prop) {
+    return _themeMod.currentTheme[prop];
+  },
+});
+const setTheme = _themeMod.setTheme;
 const paint = (col, s) => `${col}${s}${c.reset}`;
 const bold = (s) => paint(c.bold, s);
 const dim = (s) => paint(c.dim, s);
@@ -177,7 +174,7 @@ function ansiTrunc(s, w) {
     vis++;
     i++;
   }
-  return out + "\x1b[0m"; // reset so a cut mid-color doesn't bleed into next line
+  return out + c.reset; // reset so a cut mid-color doesn't bleed into next line
 }
 function padEnd(s, w) {
   const v = stripAnsi(s).length;
@@ -644,8 +641,14 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // Responsive: the full 12-col table is ~124 wide. On terminals narrower than
   // that, drop the two derived columns (Vel, 10x) and tighten the inter-column
   // gap from 2 spaces to 1, so the core pillars + Υ/SNR/Lev/Class still fit.
+  // On very narrow terminals (<100), also hide Class and shorten cache headers
+  // to CW/CR so the core pillars + Υ/SNR/Lev still fit at 80 cols.
   const narrow = w < 124;
+  const veryNarrow = w < 100;
+  const ultraNarrow = w < 90;
   const gap = narrow ? " " : "  ";
+  const cwLabel = veryNarrow ? "CW" : "CacheW";
+  const crLabel = veryNarrow ? "CR" : "CacheR";
   const renderRow = (label, colorFn, winKey, p, est = false) => {
     const cas = cascadeFrom(p);
     if (!cas) return;
@@ -665,15 +668,15 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       ),
       padStart((p.cacheRead ?? 0) > 0 ? fmtTok(p.cacheRead) : dim("—"), 9),
       padStart(cas.yield > 10000 ? gold(fmtY(cas.yield)) : fmtY(cas.yield), 9),
-      padStart(fmtSNR(cas.snr), 7),
-      padStart(fmtLev(cas.leverage) + "×", 7),
+      ...(ultraNarrow ? [] : [padStart(fmtSNR(cas.snr), 7)]),
+      ...(ultraNarrow ? [] : [padStart(fmtLev(cas.leverage) + "×", 7)]),
       ...(narrow
         ? []
         : [
             padStart(cas.velocity?.toFixed(2) ?? "—", 6),
             padStart(cas.dev10x?.toFixed(2) ?? "—", 6),
           ]),
-      padEnd(clsFn(cas.class), 13),
+      ...(veryNarrow ? [] : [padEnd(clsFn(cas.class), 13)]),
     ];
     emit(`    ${cols.join(gap)}`);
   };
@@ -689,16 +692,16 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     padEnd(hdr("Win"), 5),
     padStart(hdr("Input"), 8),
     padStart(hdr("Output"), 8),
-    padStart(hdr("CacheW"), 8),
-    padStart(hdr("CacheR"), 9),
+    padStart(hdr(cwLabel), 8),
+    padStart(hdr(crLabel), 9),
     padStart(hdr("Υ Yield"), 9),
-    padStart(hdr("SNR"), 7),
-    padStart(hdr("Lev"), 7),
+    ...(ultraNarrow ? [] : [padStart(hdr("SNR"), 7)]),
+    ...(ultraNarrow ? [] : [padStart(hdr("Lev"), 7)]),
     ...(narrow ? [] : [padStart(hdr("Vel"), 6), padStart(hdr("10x"), 6)]),
-    padEnd(hdr("Class"), 13),
+    ...(veryNarrow ? [] : [padEnd(hdr("Class"), 13)]),
   ];
   emit(`    ${CH.join(gap)}`);
-  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? 96 : 114))))}`);
+  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? (ultraNarrow ? 70 : veryNarrow ? 80 : 96) : 114))))}`);
 
   if (active.length === 0) {
     // Count is derived from the registry — a hardcoded number drifts every time an
@@ -1215,8 +1218,12 @@ function renderCompare(data) {
   ].filter((s) => Object.keys(s.pillars).length > 0);
 
   emit();
+  // Shorten the source list on narrow terminals to avoid header overflow.
+  const sourceList = w < 90
+    ? `${SOURCES.length} sources`
+    : "tokenpull vs ccusage vs token-dash vs tokscale";
   emit(
-    `  ${bold("Source Comparison")}  ${dim(`platform: ${platform}`)}  ${dim("·  tokenpull vs ccusage vs token-dash vs tokscale")}`,
+    `  ${bold("Source Comparison")}  ${dim(`platform: ${platform}`)}  ${dim(`·  ${sourceList}`)}`,
   );
 
   if (!tpData) {
@@ -1305,6 +1312,28 @@ function renderCompare(data) {
     emit();
   }
 
+  // Fill the dead-space between the source table and cascade metrics with a
+  // log-scale Υ Yield comparison bar — owner wants more mini-graphs, and this
+  // gap was flagged as dead-space by the audit.
+  if (used < budget - 6 && SOURCES.length > 0) {
+    const yields = SOURCES.map((s) => {
+      const p = s.pillars["all"];
+      const cas = p ? cascadeFrom(p) : null;
+      return { name: s.name, color: s.color, yield: cas?.yield ?? 0 };
+    }).filter((y) => y.yield > 0);
+    if (yields.length > 0) {
+      const maxYield = Math.max(...yields.map((y) => y.yield));
+      const maxLog = Math.log10(maxYield) || 1;
+      const barW = Math.min(Math.max(w - 40, 15), 30);
+      emit(`  ${dim("Υ Yield comparison (log scale)")}`);
+      for (const y of yields) {
+        const { bar } = logBar(y.yield, maxLog, barW, c.cyan);
+        emit(`  ${padEnd(y.color(y.name), 12)} ${bar} ${fmtY(y.yield)}`);
+      }
+      emit();
+    }
+  }
+
   if (used < budget - 4) {
     emit(`  ${hr()}`);
     emit(
@@ -1387,8 +1416,12 @@ function renderSubmissions(
       ? `${dim(" · you highlighted")}`
       : "";
   emit();
+  // Shorten the header on narrow terminals to avoid overflow.
+  const boardHeader = w < 90
+    ? `window: ${window}  ·  ranked by Υ Yield`
+    : `window: ${window}  ·  all submissions ranked by Υ Yield  ·  signalaf.com`;
   emit(
-    `  ${bold("Submissions")}  ${dim(`window: ${window}  ·  all submissions ranked by Υ Yield  ·  signalaf.com`)}${modeLabel}`,
+    `  ${bold("Submissions")}  ${dim(boardHeader)}${modeLabel}`,
   );
   emit();
 
@@ -1419,15 +1452,26 @@ function renderSubmissions(
           ? v.toFixed(2)
           : String(v);
 
+  // Responsive column hiding — the full table is 106 cols wide. Hide columns
+  // at narrower terminals so rows never overflow/wrap/garble.
+  //   w >= 120: all columns (106 cols fits)
+  //   w < 120:  hide Tokens (saves 11) → 95 cols
+  //   w < 100:  hide Tokens + Class (saves 14) → 81 cols
+  //   w < 90:   hide Tokens + Class + Op Ratio, shorten Codename 20→16 → 61 cols
+  const showTokens = w >= 120;
+  const showClass = w >= 100;
+  const showOpRatio = w >= 90;
+  const nameWidth = w < 90 ? 16 : 20;
+
   const SH = [
     padStart(hdr("#"), 4),
-    padEnd(hdr("Codename"), 20),
+    padEnd(hdr("Codename"), nameWidth),
     padEnd(hdr("Platform"), 10),
     padEnd(hdr("Win"), 6),
     padStart(hdr("Υ Yield"), 9),
-    padEnd(hdr("Op Ratio"), 18),
-    padEnd(hdr("Class"), 12),
-    padStart(hdr("Tokens"), 9),
+    ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 18)] : []),
+    ...(showClass ? [padEnd(hdr("Class"), 12)] : []),
+    ...(showTokens ? [padStart(hdr("Tokens"), 9)] : []),
   ];
   emit(`    ${SH.join("  ")}`);
   emit(`  ${dim("·".repeat(Math.min(w - 4, 100)))}`);
@@ -1445,10 +1489,10 @@ function renderSubmissions(
         : idx < 3
           ? cyan(`#${idx + 1}`)
           : `#${idx + 1}`;
-    const nmRaw = trunc(gName(e), 20);
+    const nmRaw = trunc(gName(e), nameWidth);
     const nm = isYou
-      ? `${c.bgCyan}${c.boldCyan}${padEnd(` ${trunc(gName(e), 18)} `, 20)}${c.reset}`
-      : padEnd(nmRaw, 20);
+      ? `${c.bgCyan}${c.boldCyan}${padEnd(` ${trunc(gName(e), nameWidth - 2)} `, nameWidth)}${c.reset}`
+      : padEnd(nmRaw, nameWidth);
     const yv = gYield(e);
     const yld = padStart(
       yv != null ? (yv > 10000 ? gold(fmtY(yv)) : fmtY(yv)) : "—",
@@ -1457,9 +1501,17 @@ function renderSubmissions(
     const cls = padEnd(colorCls(gClass(e)), 12);
     const tk = gTokens(e);
     const youMark = isYou ? ` ${c.bgCyan}${c.boldCyan}YOU${c.reset}` : "";
-    emit(
-      `    ${padStart(rk, 4)}  ${nm}  ${padEnd(cyan(trunc(gPlat(e), 10)), 10)}  ${padEnd(dim(trunc(gWin(e), 6)), 6)}  ${yld}  ${padEnd(dim(fmtOp(gOpRatio(e))), 18)}  ${cls}  ${padStart(tk != null ? fmtTok(tk) : "—", 9)}${youMark}`,
-    );
+    const cells = [
+      padStart(rk, 4),
+      nm,
+      padEnd(cyan(trunc(gPlat(e), 10)), 10),
+      padEnd(dim(trunc(gWin(e), 6)), 6),
+      yld,
+      ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 18)] : []),
+      ...(showClass ? [cls] : []),
+      ...(showTokens ? [padStart(tk != null ? fmtTok(tk) : "—", 9)] : []),
+    ];
+    emit(`    ${cells.join("  ")}${youMark}`);
     shown++;
   }
   // A3-style: if the height budget dropped rows, say so instead of silently truncating.
@@ -1547,10 +1599,16 @@ function renderBoard(
     d10: top3((e) => e.dev10x),
   };
   // Wrap a padded cell in a medal bg-tint (dark fg on the medal color) when its value places top-3.
+  // Theme-aware: monochrome uses bold instead of color backgrounds.
   const medal = (map, val, padded) => {
     const place = val == null ? null : map.get(val);
     if (!place) return padded;
-    return `${ESC}48;5;${MEDAL_BG[place]}m${ESC}38;5;232m${padded}${c.reset}`;
+    const bgCode = c.medalBg?.[place];
+    if (bgCode != null) {
+      return `${ESC}48;5;${bgCode}m${c.medalFg}${padded}${c.reset}`;
+    }
+    // Monochrome / no medal bg — use bold
+    return `${c.bold}${padded}${c.reset}`;
   };
 
   const BH = [
@@ -1695,11 +1753,22 @@ function renderConnect(id, codeBuf = "", msg = "") {
     );
     writeln();
     writeln(
-      `  ${dim('Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.')}`,
+      `  ${dim(W() < 90 ? 'Need a new key? signalaf.com → Settings → "New key", then paste here.' : 'Need a new key? Click "New key" at signalaf.com → Settings, then paste it here.')}`,
     );
-    writeln(
-      `  ${dim("Signed in on the wrong device, or want a fresh start?")} ${bold("[X]")} ${dim("signs out — next paste provisions a fresh device.")}`,
-    );
+    // Wrap the sign-out help across 2 lines on narrow terminals (the full
+    // sentence is 108 cols — overflows 100-col terminals by 8).
+    if (W() >= 110) {
+      writeln(
+        `  ${dim("Signed in on the wrong device, or want a fresh start?")} ${bold("[X]")} ${dim("signs out — next paste provisions a fresh device.")}`,
+      );
+    } else {
+      writeln(
+        `  ${dim("Signed in on the wrong device, or want a fresh start?")}`,
+      );
+      writeln(
+        `  ${bold("[X]")} ${dim("signs out — next paste provisions a fresh device.")}`,
+      );
+    }
   } else {
     writeln(`  ${bold("Log in to submit to board")}`);
     writeln(`  ${hr()}`);
@@ -1723,7 +1792,13 @@ function renderConnect(id, codeBuf = "", msg = "") {
 // watch grid), instead of a single platform/window. `platform`/`win` are OPTIONAL focus filters —
 // null/'all'/'all-windows' means "everything". Each row is a (platform, window) cascade cell:
 // Υ Yield + SNR/Lev/Vel/class. Iterates active platforms (input+output > 0 in any window).
-async function renderWatch(platform = "all", win = "all-windows") {
+// Load Watch data once — scan all candidate platforms for active sessions.
+// Separated from rendering (renderWatchData) so the headless audit can load
+// once and render across many sizes/themes without re-scanning the filesystem
+// each frame (each full scan is ~8s across 16 platforms; 16 frames × 8s would
+// be ~130s of pure re-scan otherwise). Mirrors how Dashboard/Compare/Board
+// already separate load from render.
+async function loadWatchData(platform = "all", win = "all-windows") {
   // ../tokenpull.mjs — this file lives in presentation/, so "./tokenpull.mjs" resolved
   // to presentation/tokenpull.mjs (nonexistent) and threw ERR_MODULE_NOT_FOUND for
   // every row. Matches the static `../tokenpull.mjs` import at the top of this file.
@@ -1748,17 +1823,6 @@ async function renderWatch(platform = "all", win = "all-windows") {
   ];
   const platFilter = platform && platform !== "all" ? platform : null;
   const winFilter = win && win !== "all-windows" ? win : null;
-  const WINS = winFilter ? [winFilter] : ["7d", "30d", "90d", "all"];
-  const w = W();
-  const budget = H() - 4;
-  let used = 0;
-  const emit = (s = "") => {
-    if (used < budget) {
-      writeln(s);
-      used++;
-    }
-  };
-
   // Detect active platforms (any window with input+output > 0), respecting an optional [P] focus.
   const candidates = platFilter ? [platFilter] : ALL_PLATFORMS;
   const settled = await Promise.allSettled(
@@ -1778,6 +1842,23 @@ async function renderWatch(platform = "all", win = "all-windows") {
     (a, b) =>
       ALL_PLATFORMS.indexOf(a.platform) - ALL_PLATFORMS.indexOf(b.platform),
   );
+  return { active, platFilter, winFilter };
+}
+
+// Render the Watch tab from pre-loaded data. Sync — no scanning, safe to call
+// once per terminal size/theme in the audit.
+function renderWatchData(data) {
+  const { active, platFilter, winFilter } = data;
+  const WINS = winFilter ? [winFilter] : ["7d", "30d", "90d", "all"];
+  const w = W();
+  const budget = H() - 4;
+  let used = 0;
+  const emit = (s = "") => {
+    if (used < budget) {
+      writeln(s);
+      used++;
+    }
+  };
 
   const scopeLabel =
     (platFilter || "all active platforms") +
@@ -1819,6 +1900,13 @@ async function renderWatch(platform = "all", win = "all-windows") {
       );
     }
   }
+}
+
+// Convenience: scan + render in one call (used by --render and --record, which
+// only render once). The audit uses loadWatchData + renderWatchData separately
+// to avoid re-scanning across its 16 frames.
+async function renderWatch(platform = "all", win = "all-windows") {
+  renderWatchData(await loadWatchData(platform, win));
 }
 
 // ── SUBMIT PREVIEW (FIX I1 / FIX E) — see→confirm→send ───────────────────────
@@ -2043,6 +2131,12 @@ export async function runTui({
   platform: initPlatform = "claude",
   window: win = "7d",
 } = {}) {
+  // Theme selection — --theme <name> sets the color palette (dark/light/high-contrast/monochrome)
+  const themeIdx = process.argv.indexOf("--theme");
+  if (themeIdx !== -1 && process.argv[themeIdx + 1]) {
+    setTheme(process.argv[themeIdx + 1]);
+  }
+
   // FIX J: platform is mutable — [P] cycles it on Compare + Watch tabs. Was a const
   // param (permanently locked to 'claude'); now a let so the user can switch + [S]
   // submits the selected platform (needed for Phase 4 multi-platform submit).
@@ -2052,6 +2146,37 @@ export async function runTui({
   if (ri !== -1) {
     const tab = parseInt(process.argv[ri + 1] ?? "0", 10) || 0;
     await renderOnce(tab);
+    return;
+  }
+
+  // Audit mode — headless review of every tab × every terminal size. Checks
+  // overflow, truncation, dead space, budget, color health, sparkline integrity,
+  // responsive design, visual weight. Supports golden frame snapshots
+  // (--golden-save / --golden-check), SVG export (--svg), and CI mode (--ci
+  // exits non-zero on HIGH severity issues).
+  const ai = process.argv.indexOf("--audit");
+  if (ai !== -1) {
+    const { runAudit, formatAuditReport } = await import("./tui-audit.mjs");
+    const auditData = await runAudit({
+      goldenSave: process.argv.includes("--golden-save"),
+      goldenCheck: process.argv.includes("--golden-check"),
+      svg: process.argv.includes("--svg"),
+      png: process.argv.includes("--png"),
+      ci: process.argv.includes("--ci"),
+    });
+    process.stdout.write(formatAuditReport(auditData) + "\n");
+    // Always exit in audit mode — a data load that timed out may still have a
+    // pending background promise (network fetch / local scan) that would keep
+    // the event loop alive after runTui returns. The audit is headless and must
+    // terminate; unconditional exit guarantees that regardless of ciExitCode.
+    process.exit(auditData.ciExitCode);
+  }
+
+  // Record mode — capture a TUI session as an animated GIF (headless, no TTY needed)
+  const recIdx = process.argv.indexOf("--record");
+  if (recIdx !== -1) {
+    const { recordCli } = await import("./tui-record.mjs");
+    await recordCli(process.argv);
     return;
   }
 
@@ -2905,8 +3030,41 @@ export async function runTui({
   writeln();
 }
 
+// ── Exports for the headless audit system (tui-audit.mjs) ──────────────────
+// These expose the render functions + buffer state so the audit module can
+// render tabs in-process (fast) instead of spawning child processes.
+export {
+  renderDashboard,
+  renderTrends,
+  renderCompare,
+  renderBoard,
+  renderConnect,
+  renderWatch,
+  renderWatchData,
+  loadWatchData,
+  loadDashboardData,
+  loadCompareData,
+  loadBoardData,
+  startBuffer,
+  stripAnsi,
+};
+// _screenBuf is a `let` — exporting it snapshots the value, not the binding.
+// Expose getter/setter so the audit module can read the live buffer after
+// startBuffer() + render() populate it, and reset it after capturing.
+export function _getScreenBuf() {
+  return _screenBuf;
+}
+export function _resetBuf() {
+  _screenBuf = null;
+  _footerBuf = null;
+}
+
 // Direct-run entry (e.g. `node tui.mjs --render 0`). Normal launch is via cli.mjs.
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL resolves relative argv[1] (e.g. `presentation/tui.mjs`) to the
+// same absolute file:// URL that import.meta.url always carries — without it,
+// `node presentation/tui.mjs --audit` never matched the guard and runTui never
+// ran (silent no-op). This is the standard Node ESM main-module detection.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   runTui().catch((e) => {
     console.error(e);
     process.exit(1);
