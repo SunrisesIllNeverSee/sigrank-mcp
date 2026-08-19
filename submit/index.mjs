@@ -223,8 +223,8 @@ export async function submitSignedWindow(
         detail: `Submission would be REJECTED by the server: ${pre.summary}. Fix the issue or re-run with skipPreflight.`,
       };
     }
-    // Flags downgrade verified → flagged (not ranked). Warn but don't block
-    // unless the caller explicitly asked for strict mode.
+    // Flags are internal signals on the server — they no longer block ranking.
+    // Warn the operator but don't block unless strict mode is explicitly set.
     if (opts.strictPreflight) {
       return {
         status: "preflight_flagged",
