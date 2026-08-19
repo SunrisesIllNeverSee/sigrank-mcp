@@ -341,6 +341,21 @@ async function loadDashboardData({ includeOmp = false } = {}) {
     new Promise((r) => setTimeout(() => r(null), 5000)),
   ]);
 
+  // Batched windows: fetch the signed-in operator's rolled-forward totals
+  // (never decrease when platforms delete old logs). Only fetched when signed in.
+  const id = loadIdentity();
+  const batchedPromise = (id && isSignedIn(id))
+    ? Promise.race([
+        fetch(`${DEFAULT_API_BASE}/api/v1/operators/${encodeURIComponent(id.codename)}`, {
+          headers: { accept: "application/json" },
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => d?.batched ?? null)
+          .catch(() => null),
+        new Promise((r) => setTimeout(() => r(null), 5000)),
+      ])
+    : Promise.resolve(null);
+
   // FIX 0 + unify (0.14): progressive load via the SHARED loader (pullActivePlatforms) — paint the
   // primary platform (claude) FAST, then fill the rest in fillDashboardRest. This is the SAME loader
   // `me` and `watch` use, so the three views can't drift apart. (Verifier comparison still runs
@@ -350,11 +365,13 @@ async function loadDashboardData({ includeOmp = false } = {}) {
   );
 
   const boardData = await boardPromise;
+  const batchedData = await batchedPromise;
   return {
     active,
     verifierMap: {},
     tdPillars: null,
     boardData,
+    batchedData,
     _loading: true,
     _remaining: dashboardEnabledPlatforms({
       includeManual: includeOmp,
@@ -743,8 +760,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
   const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
-  // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
-  const boardLines = 20;
+  // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + Lifetime Tokens (blank+hr+header+platforms+combined+note = ~7) + status
+  const boardLines = 24;
   const sectionsBelow = barLines + boardLines;
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow);
 
@@ -1055,6 +1072,49 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     emit(
       `    ${dim("reference values until live user volume calibrates HCM · Power · Top")}`,
     );
+  }
+
+  // ── Lifetime Tokens — submission-based rolled-forward totals (never decrease)
+  // Shows when the operator is signed in and has submission history. The batched
+  // data comes from the server (computeBatchedWindows over snapshot_submissions).
+  const batched = data?.batchedData;
+  if (batched && used < budget - 4) {
+    const fmtT = (n) => {
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+      return String(n);
+    };
+    const total = (p) => (p?.input ?? 0) + (p?.output ?? 0) + (p?.cacheCreate ?? 0) + (p?.cacheRead ?? 0);
+    emit();
+    emit(`  ${hr()}`);
+    emit(`  ${bold("Lifetime Tokens")}  ${dim("archived submissions · never decreases")}`);
+    const platforms = Object.entries(batched.per_platform ?? {});
+    for (const [plat, pw] of platforms) {
+      if (used >= budget - 2) break;
+      const pc = platformColor(plat);
+      const allT = total(pw.all);
+      const d90T = total(pw["90d"]);
+      emit(
+        `    ${padEnd(pc(plat), 10)}  ${padStart(fmtT(allT), 8)} total  ${dim("·")}  ${padStart(fmtT(d90T), 8)} in last 90d`,
+      );
+    }
+    if (platforms.length > 1) {
+      const cAll = total(batched.combined?.all);
+      const c90 = total(batched.combined?.["90d"]);
+      emit(
+        `    ${padEnd(bold("combined"), 10)}  ${padStart(bold(fmtT(cAll)), 8)} total  ${dim("·")}  ${padStart(bold(fmtT(c90)), 8)} in last 90d`,
+      );
+    }
+    // Find the earliest baseline date across platforms
+    const baselineDates = platforms.map(([, pw]) => pw.baseline_date).filter(Boolean).sort();
+    const subCounts = platforms.map(([, pw]) => pw.submission_count ?? 0);
+    const totalSubs = subCounts.reduce((a, b) => a + b, 0);
+    if (baselineDates.length > 0) {
+      emit(
+        `    ${dim(`${totalSubs} submission${totalSubs !== 1 ? "s" : ""} archived · baseline ${baselineDates[0].slice(0, 10)}`)}`,
+      );
+    }
   }
 
   if (status && used < budget) emit(`  ${dim(status)}`);

@@ -118,6 +118,74 @@ export const OPERATOR_OUTPUT = {
         },
       },
     },
+    batched: {
+      type: "object",
+      description:
+        "Submission-based rolled-forward totals (never decrease when platforms delete old logs). Present when the operator has submission history.",
+      properties: {
+        per_platform: {
+          type: "object",
+          description: "Per-platform batched windows",
+          additionalProperties: {
+            type: "object",
+            properties: {
+              "90d": {
+                type: "object",
+                description: "Rolled-forward 90d pillars (sum of batches <=90 days old)",
+                properties: {
+                  input: { type: "integer" },
+                  output: { type: "integer" },
+                  cacheCreate: { type: "integer" },
+                  cacheRead: { type: "integer" },
+                },
+              },
+              all: {
+                type: "object",
+                description: "All-time pillars (baseline + all deltas — never decreases)",
+                properties: {
+                  input: { type: "integer" },
+                  output: { type: "integer" },
+                  cacheCreate: { type: "integer" },
+                  cacheRead: { type: "integer" },
+                },
+              },
+              submission_count: {
+                type: "integer",
+                description: "Number of archived submissions for this platform",
+              },
+              baseline_date: {
+                type: "string",
+                description: "ISO date of the first (baseline) submission",
+              },
+            },
+          },
+        },
+        combined: {
+          type: "object",
+          description: "Combined batched windows across all platforms",
+          properties: {
+            "90d": {
+              type: "object",
+              properties: {
+                input: { type: "integer" },
+                output: { type: "integer" },
+                cacheCreate: { type: "integer" },
+                cacheRead: { type: "integer" },
+              },
+            },
+            all: {
+              type: "object",
+              properties: {
+                input: { type: "integer" },
+                output: { type: "integer" },
+                cacheCreate: { type: "integer" },
+                cacheRead: { type: "integer" },
+              },
+            },
+          },
+        },
+      },
+    },
   },
 };
 
