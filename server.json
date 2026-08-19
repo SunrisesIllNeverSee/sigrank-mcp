@@ -3,14 +3,14 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "AI operator leaderboard ranking users by token cascade efficiency. 23 tools, TUI, signed submit.",
   "title": "SigRank \u2014 Token Efficiency Leaderboard",
-  "version": "0.0.221",
+  "version": "0.0.222",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "0.0.221",
+      "version": "0.0.222",
       "transport": {
         "type": "stdio"
       },
