@@ -31,7 +31,7 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setTheme, getThemeNames } from "./tui-themes.mjs";
+import { setTheme, getThemeNames } from "../presentation/tui-themes.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_DIR = join(__dirname, "..", ".tui-golden");
@@ -911,7 +911,7 @@ export async function runAudit(opts = {}) {
   const themeResults = []; // per-theme summary for the report
 
   // Import the render functions from tui.mjs — in-process, no child processes.
-  const tui = await import("./tui.mjs");
+  const tui = await import("../presentation/tui.mjs");
   const {
     renderDashboard,
     renderTrends,

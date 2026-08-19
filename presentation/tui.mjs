@@ -2156,7 +2156,14 @@ export async function runTui({
   // exits non-zero on HIGH severity issues).
   const ai = process.argv.indexOf("--audit");
   if (ai !== -1) {
-    const { runAudit, formatAuditReport } = await import("./tui-audit.mjs");
+    let runAudit, formatAuditReport;
+    try {
+      ({ runAudit, formatAuditReport } = await import("../dev/tui-audit.mjs"));
+    } catch {
+      console.error("--audit is a development tool, not available in the npm package.");
+      console.error("Clone the repo to use it: https://github.com/SunrisesIllNeverSee/sigrank-mcp");
+      process.exit(1);
+    }
     const auditData = await runAudit({
       goldenSave: process.argv.includes("--golden-save"),
       goldenCheck: process.argv.includes("--golden-check"),
@@ -2175,7 +2182,14 @@ export async function runTui({
   // Record mode — capture a TUI session as an animated GIF (headless, no TTY needed)
   const recIdx = process.argv.indexOf("--record");
   if (recIdx !== -1) {
-    const { recordCli } = await import("./tui-record.mjs");
+    let recordCli;
+    try {
+      ({ recordCli } = await import("../dev/tui-record.mjs"));
+    } catch {
+      console.error("--record is a development tool, not available in the npm package.");
+      console.error("Clone the repo to use it: https://github.com/SunrisesIllNeverSee/sigrank-mcp");
+      process.exit(1);
+    }
     await recordCli(process.argv);
     return;
   }

@@ -158,7 +158,7 @@ export async function encodeGif(frames, fps = 10) {
 export async function recordSession(outputPath, opts = {}) {
   const { fps = 10, cols = 100, rows = 30, holdPerTab = 1 } = opts;
 
-  const tui = await import("./tui.mjs");
+  const tui = await import("../presentation/tui.mjs");
   const { startBuffer, _getScreenBuf, _resetBuf } = tui;
   const { loadIdentity } = await import("../keystore.mjs");
 
