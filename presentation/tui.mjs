@@ -187,6 +187,27 @@ function padStart(s, w) {
 function trunc(s, w) {
   return stripAnsi(s).length <= w ? s : s.slice(0, w - 1) + "…";
 }
+// Wrap a plain-text string into dim'd lines that fit within `maxW` columns.
+// Used for no-data/empty-state messages that can be long on narrow terminals.
+// Returns an array of strings (each already dim'd + indented) for emit().
+function wrapDim(text, indent = "  ", maxW) {
+  const w = maxW || W();
+  const avail = w - 2 - indent.length; // 2 = leading "  " from emit caller
+  if (avail < 20) return [`${indent}${dim(text)}`]; // too narrow to wrap — let it be
+  const words = text.split(" ");
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    if ((line + " " + word).trim().length > avail) {
+      if (line) lines.push(`${indent}${dim(line.trim())}`);
+      line = word;
+    } else {
+      line = (line + " " + word).trim();
+    }
+  }
+  if (line) lines.push(`${indent}${dim(line.trim())}`);
+  return lines;
+}
 function hr(ch = "─") {
   return dim(ch.repeat(Math.max(0, W() - 4)));
 }
@@ -1246,16 +1267,17 @@ function renderCompare(data) {
   if (!td) missing.push("token-dashboard (~/.claude/token-dashboard.db)");
   if (!ts) missing.push("tokscale (npm i -g tokscale)");
   if (missing.length)
-    emit(`  ${dim(`  no data from: ${missing.join(" · ")}`)}`);
+    for (const ln of wrapDim(`no data from: ${missing.join(" · ")}`)) emit(ln);
   emit();
 
   // FIX (2026-08-18): if ALL sources are empty (tokenpull has no windows AND all
   // verifiers are null), show a clear empty-state message instead of bare headers
   // with zero data rows.
   if (SOURCES.length === 0) {
-    emit(
-      `  ${dim("  no source data available for this platform — install a verifier or check ~/.claude/projects/")}`,
-    );
+    for (const ln of wrapDim(
+      "no source data available for this platform — install a verifier or check ~/.claude/projects/",
+    ))
+      emit(ln);
     return;
   }
 
@@ -1870,9 +1892,10 @@ function renderWatchData(data) {
 
   if (active.length === 0) {
     emit();
-    emit(
-      `  ${dim("  no active platforms detected — run some sessions, this picks them up automatically")}`,
-    );
+    for (const ln of wrapDim(
+      "no active platforms detected — run some sessions, this picks them up automatically",
+    ))
+      emit(ln);
     return;
   }
 

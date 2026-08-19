@@ -453,28 +453,49 @@ function checkResponsive(frames, tabLabel) {
 }
 
 // ── Color contrast checking (WCAG AA) ───────────────────────────────────────
-// Computes contrast ratios for the TUI's ANSI color palette against both
-// dark and light terminal backgrounds. Flags colors that fail WCAG AA:
+// Computes contrast ratios for each theme's color palette against its intended
+// terminal background. Flags colors that fail WCAG AA:
 //   - 4.5:1 for normal text
 //   - 3:1 for large text (used for dim/secondary info)
+//
+// Each theme has its own color set — the dark theme uses standard ANSI codes
+// (33, 36, 32, etc.) tuned for dark backgrounds, while the light theme uses
+// 256-color codes (38;5;N) with darker shades that pass on white backgrounds.
 
-const ANSI_COLORS = [
-  { name: "gold (33)",      ansi: 33,  hex: "#f0c862", usage: "MOSES, top yield, medals" },
-  { name: "boldGold (1;33)", ansi: "1;33", hex: "#ffd700", usage: "highlighted gold" },
-  { name: "cyan (36)",      ansi: 36,  hex: "#56b4b4", usage: "codename, platform" },
-  { name: "boldCyan (1;36)", ansi: "1;36", hex: "#7fd4d4", usage: "highlighted cyan" },
-  { name: "green (32)",     ansi: 32,  hex: "#5a8a5a", usage: "verified, positive deltas" },
-  { name: "red (31)",       ansi: 31,  hex: "#cc6666", usage: "errors, negative deltas" },
-  { name: "white (97)",     ansi: 97,  hex: "#e0e0e0", usage: "bright text" },
-  { name: "magenta (35)",   ansi: 35,  hex: "#b294bb", usage: "token-dash source" },
-  { name: "blue (34)",      ansi: 34,  hex: "#81a2be", usage: "cache write, tokscale" },
-  { name: "dim (2)",        ansi: 2,   hex: "#6e8a6e", usage: "secondary/labels" },
-];
-
-const TERMINAL_BGS = [
-  { name: "dark",  hex: "#1d1f21" },  // common dark terminal (Atom Dark)
-  { name: "light", hex: "#ffffff" },  // white terminal
-];
+// Color palette per theme: each entry maps a semantic color name to the hex
+// value it renders as on a typical terminal.
+const THEME_PALETTES = {
+  dark: {
+    bg: "#1d1f21",
+    colors: [
+      { name: "gold",       hex: "#f0c862", usage: "MOSES, top yield, medals" },
+      { name: "boldGold",   hex: "#ffd700", usage: "highlighted gold" },
+      { name: "cyan",       hex: "#56b4b4", usage: "codename, platform" },
+      { name: "boldCyan",   hex: "#7fd4d4", usage: "highlighted cyan" },
+      { name: "green",      hex: "#5fd75f", usage: "verified, positive deltas" },
+      { name: "red",        hex: "#ff5f5f", usage: "errors, negative deltas" },
+      { name: "white",      hex: "#e0e0e0", usage: "bright text" },
+      { name: "magenta",    hex: "#b294bb", usage: "token-dash source" },
+      { name: "blue",       hex: "#81a2be", usage: "cache write, tokscale" },
+      { name: "dim",        hex: "#6e8a6e", usage: "secondary/labels" },
+    ],
+  },
+  light: {
+    bg: "#ffffff",
+    colors: [
+      { name: "gold",       hex: "#af5f00", usage: "MOSES, top yield, medals" },
+      { name: "boldGold",   hex: "#af5f00", usage: "highlighted gold" },
+      { name: "cyan",       hex: "#005f87", usage: "codename, platform" },
+      { name: "boldCyan",   hex: "#005f87", usage: "highlighted cyan" },
+      { name: "green",      hex: "#008700", usage: "verified, positive deltas" },
+      { name: "red",        hex: "#af0000", usage: "errors, negative deltas" },
+      { name: "white",      hex: "#000000", usage: "black text on light bg" },
+      { name: "magenta",    hex: "#870087", usage: "token-dash source" },
+      { name: "blue",       hex: "#0000af", usage: "cache write, tokscale" },
+      { name: "dim",        hex: "#767676", usage: "secondary/labels" },
+    ],
+  },
+};
 
 function hexToRgb(hex) {
   const m = hex.replace("#", "");
@@ -505,45 +526,38 @@ function checkColorContrast() {
   const AA_NORMAL = 4.5;
   const AA_LARGE = 3.0;
 
-  lines.push("  ANSI color     hex       dark-bg  light-bg  usage");
-  lines.push("  ─────────────  ────────  ───────  ────────  ──────────────────────");
+  for (const [themeName, palette] of Object.entries(THEME_PALETTES)) {
+    lines.push(`  ── ${themeName} theme (bg: ${palette.bg}) ──`);
+    lines.push("  color          hex       ratio   threshold  usage");
+    lines.push("  ─────────────  ────────  ──────  ─────────  ──────────────────────");
 
-  for (const color of ANSI_COLORS) {
-    const darkRatio = contrastRatio(color.hex, TERMINAL_BGS[0].hex);
-    const lightRatio = contrastRatio(color.hex, TERMINAL_BGS[1].hex);
-    const isDim = color.name.startsWith("dim");
-    const threshold = isDim ? AA_LARGE : AA_NORMAL; // dim = secondary info = large-text threshold
+    for (const color of palette.colors) {
+      const ratio = contrastRatio(color.hex, palette.bg);
+      const isDim = color.name === "dim";
+      const threshold = isDim ? AA_LARGE : AA_NORMAL;
+      const pass = ratio >= threshold;
 
-    const darkPass = darkRatio >= threshold;
-    const lightPass = lightRatio >= threshold;
+      const ratioStr = `${ratio.toFixed(1)}${pass ? " ✓" : " ✗"}`;
+      const threshStr = `${threshold}:1`;
 
-    const darkStr = `${darkRatio.toFixed(1)}${darkPass ? "" : " ✗"}`;
-    const lightStr = `${lightRatio.toFixed(1)}${lightPass ? "" : " ✗"}`;
+      lines.push(
+        `  ${color.name.padEnd(14)}  ${color.hex}  ${ratioStr.padEnd(8)}  ${threshStr.padEnd(10)}  ${color.usage}`,
+      );
 
-    lines.push(
-      `  ${color.name.padEnd(14)}  ${color.hex}  ${darkStr.padEnd(8)}  ${lightStr.padEnd(8)}  ${color.usage}`,
-    );
-
-    if (!darkPass) {
-      issues.push({
-        severity: "low",
-        category: "contrast",
-        msg: `${color.name} fails WCAG AA on dark bg (${darkRatio.toFixed(1)}:${threshold} needed) — ${color.usage}`,
-      });
+      if (!pass) {
+        issues.push({
+          severity: "low",
+          category: "contrast",
+          msg: `${themeName}/${color.name} fails WCAG AA on ${themeName} bg (${ratio.toFixed(1)}:${threshold} needed) — ${color.usage}`,
+        });
+      }
     }
-    if (!lightPass) {
-      issues.push({
-        severity: "low",
-        category: "contrast",
-        msg: `${color.name} fails WCAG AA on light bg (${lightRatio.toFixed(1)}:${threshold} needed) — ${color.usage}`,
-      });
-    }
+    lines.push("");
   }
 
-  lines.push("");
   lines.push(`  Threshold: ${AA_NORMAL}:1 (normal text) · ${AA_LARGE}:1 (dim/large text)`);
   if (issues.length === 0) {
-    lines.push("  ✅ All colors pass WCAG AA on both dark and light backgrounds.");
+    lines.push("  ✅ All colors pass WCAG AA on their intended backgrounds.");
   } else {
     lines.push(`  ⚠ ${issues.length} color(s) fail WCAG AA — see flags above.`);
   }
