@@ -743,8 +743,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
   const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
-  // Your Read (hr+header+~3 wins+1 gap = 6) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
-  const boardLines = 17;
+  // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + status
+  const boardLines = 20;
   const sectionsBelow = barLines + boardLines;
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow);
 
@@ -923,24 +923,38 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     if (you) {
       const wins = [],
         gaps = [];
-      const chk = (label, val, fieldAvg, top, fmt, tip) => {
+      let aboveHcm = 0,
+        abovePower = 0,
+        totalMetrics = 0;
+      // Three-tier comparison: HCM (field median) → Power (top-100 median) → Top (best operator)
+      const chk = (label, val, hcm, power, top, fmt, tip) => {
         if (val == null) return;
-        if (val >= top * 0.9)
+        totalMetrics++;
+        if (val >= top * 0.9) {
           wins.push(`${label} ${fmt(val)} — ${gold("top tier")}`);
-        else if (val >= fieldAvg)
-          wins.push(`${label} ${fmt(val)} — above field avg`);
-        else
+          aboveHcm++;
+          abovePower++;
+        } else if (val >= power) {
+          wins.push(`${label} ${fmt(val)} — ${paint(c.boldCyan, "power-user tier")}`);
+          aboveHcm++;
+          abovePower++;
+        } else if (val >= hcm) {
+          wins.push(`${label} ${fmt(val)} — above field, ${dim("approaching power-user")}`);
+          aboveHcm++;
+        } else {
           gaps.push({
             label,
-            txt: `${label} ${fmt(val)} — below field (${fmt(fieldAvg)}): ${tip}`,
+            txt: `${label} ${fmt(val)} — below field (${fmt(hcm)}): ${tip}`,
             val,
-            fieldAvg,
+            hcm,
           });
+        }
       };
       chk(
         "Υ Yield",
         you.yield,
         TD.hcm.yield,
+        TD.power.yield,
         TD.top.yield,
         fmtY,
         "compound more — reuse cache, raise output",
@@ -949,6 +963,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         "SNR",
         you.snr,
         TD.hcm.snr,
+        TD.power.snr,
         TD.top.snr,
         fmtSNR,
         "tighten prompts — less input per unit output",
@@ -957,6 +972,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         "Leverage",
         you.leverage,
         TD.hcm.lev,
+        TD.power.lev,
         TD.top.lev,
         (v) => fmtLev(v) + "×",
         "lean on cache-read — amplify prior context",
@@ -965,17 +981,39 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         "Velocity",
         you.velocity,
         TD.hcm.vel,
+        TD.power.vel,
         TD.top.vel,
         (v) => v.toFixed(2),
         "more output per input token",
       );
-      for (const w of wins.slice(0, 3)) emit(`    ${paint(c.green, "▲")} ${w}`);
-      // weakest gap gets the prescriptive tip
-      const weakest = gaps.sort(
-        (a, b) => a.val / a.fieldAvg - b.val / b.fieldAvg,
-      )[0];
-      if (weakest) emit(`    ${paint(c.magenta, "▽")} ${dim(weakest.txt)}`);
-      if (!wins.length && !weakest) emit(`    ${dim("  building your read…")}`);
+      chk(
+        "10xDEV",
+        you.dev10x,
+        TD.hcm.d10,
+        TD.power.d10,
+        TD.top.d10,
+        (v) => v.toFixed(2),
+        "raise leverage — every 10× lev adds 1 to 10xDEV",
+      );
+      for (const w of wins.slice(0, 4)) emit(`    ${paint(c.green, "▲")} ${w}`);
+      // all gaps shown; weakest gets the prescriptive tip
+      const sortedGaps = gaps.sort(
+        (a, b) => a.val / a.hcm - b.val / b.hcm,
+      );
+      for (let i = 0; i < sortedGaps.length; i++) {
+        const g = sortedGaps[i];
+        if (i === 0) emit(`    ${paint(c.magenta, "▽")} ${dim(g.txt)}`);
+        else emit(`    ${paint(c.magenta, "▽")} ${dim(g.label + " below field")}`);
+      }
+      if (!wins.length && !sortedGaps.length) emit(`    ${dim("  building your read…")}`);
+      // summary line — where you sit across all metrics
+      if (totalMetrics > 0) {
+        const hcmStr = `${aboveHcm}/${totalMetrics}`;
+        const pwrStr = `${abovePower}/${totalMetrics}`;
+        emit(
+          `    ${dim(`above HCM on ${bold(hcmStr)} · above Power on ${bold(pwrStr)}`)}`,
+        );
+      }
     } else {
       emit(`    ${dim("  reading your cascade… (press [R] to refresh)")}`);
     }
