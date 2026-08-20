@@ -29,6 +29,7 @@ import { TOOL_DEF as simulateChangeTool, handleSimulateChange } from "./simulate
 import { TOOL_DEF as diagnoseCascadeTool, handleDiagnoseCascade } from "./diagnose-cascade.mjs";
 import { TOOL_DEF as suggestImprovementsTool, handleSuggestImprovements } from "./suggest-improvements.mjs";
 import { TOOL_DEF as selfImproveTool, handleSelfImprove } from "./self-improve.mjs";
+import { TOOL_DEF as discoverPeersTool, handleDiscoverPeers } from "./discover-peers.mjs";
 // NOTE: get_best_operator, compare_self, compare_operators, describe_power_user,
 // and optimize_efficiency were moved to bestuser-router-mcp (the marketing layer).
 // They are duplicated there with richer params (metric sorting, platform filters,
@@ -61,6 +62,7 @@ export const TOOLS = [
   diagnoseCascadeTool,
   suggestImprovementsTool,
   selfImproveTool,
+  discoverPeersTool,
   // get_best_operator, compare_self, compare_operators, describe_power_user,
   // optimize_efficiency → moved to bestuser-router-mcp
   tokscaleBreakdownTool,
@@ -201,6 +203,8 @@ export async function callTool(name, args, opts = {}) {
       return handleSuggestImprovements(args);
     case "self_improve":
       return handleSelfImprove(args, ctx);
+    case "discover_peers":
+      return handleDiscoverPeers(args, ctx);
     // get_best_operator, compare_self, compare_operators, describe_power_user,
     // optimize_efficiency → moved to bestuser-router-mcp
     case "tokscale_breakdown":
