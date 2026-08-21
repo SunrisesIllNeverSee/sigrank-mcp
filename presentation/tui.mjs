@@ -2955,7 +2955,27 @@ export async function runTui({
       if (switched && activeTab === 2 && !compareData) {
         submitMsg = "";
         await redraw(); // show the spinner line before the (slow) fresh pull
+        // Animated spinner with elapsed timer — the fresh verifier pull takes
+        // 5-20s (ccusage CLI scans 1,700+ JSONL files). Without animation the
+        // user sees a frozen "pulling fresh sources…" line and thinks it hung.
+        const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
+        const pullStart = Date.now();
+        let spinIdx = 0;
+        const spinTimer = setInterval(() => {
+          if (activeTab !== 2) return; // user switched away — don't repaint
+          const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
+          const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
+          const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
+          spinIdx++;
+          // Repaint just the spinner line in-place (line 4 of the frame)
+          process.stdout.write(
+            GOTO(4, 1) + ERLINE +
+            `  ${gold(spin)} ${dim(`pulling fresh sources…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
+          );
+        }, 200);
         const result = await loadCompareData(platform).catch(() => null);
+        clearInterval(spinTimer);
         if (activeTab === 2) {
           // still on Compare? render the result
           compareData = result;
@@ -3012,8 +3032,25 @@ export async function runTui({
           compareData = null;
           status = `loading ${platform}…`;
           await redraw();
+          // Animated spinner (same as the initial Compare load — see above)
+          const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+          const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
+          const pullStart = Date.now();
+          let spinIdx = 0;
+          const spinTimer = setInterval(() => {
+            if (activeTab !== 2) return;
+            const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
+            const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
+            const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
+            spinIdx++;
+            process.stdout.write(
+              GOTO(4, 1) + ERLINE +
+              `  ${gold(spin)} ${dim(`pulling ${platform}…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
+            );
+          }, 200);
           // ASYNC FIX: guard — only render if still on Compare (user may have switched away)
           const result = await loadCompareData(platform).catch(() => null);
+          clearInterval(spinTimer);
           if (activeTab === 2) {
             compareData = result;
             status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
