@@ -1040,7 +1040,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     emit();
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Four Degrees")}  ${dim("AA baseline · Human Center of Mass · Power users · Top Evals — signalaf.com/wiki")}`,
+      `  ${bold("Four Degrees")}  ${dim("AA · HCM · Power · Top Evals — signalaf.com/wiki")}`,
     );
     const tdHead = [
       padEnd(hdr("Metric"), 10),
@@ -1309,7 +1309,10 @@ function renderCompare(data) {
   const platform = data?.platform ?? "claude";
   const WINS = ["7d", "30d", "90d", "all"];
   const w = W();
-  const budget = H() - 4;
+  // Compare tab needs more vertical space — 4 sources × 4 pillars = 16 rows
+  // + headers + cascade metrics. Use full terminal height (not H()-4) and
+  // fall back to a generous fixed minimum when rows is undefined (--render mode).
+  const budget = Math.max(H() - 2, 40);
   let used = 0;
   const emit = (s = "") => {
     if (used < budget) {
