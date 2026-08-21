@@ -3008,6 +3008,7 @@ export async function runTui({
       const CYCLE_PLATFORMS = [
         "claude",
         "codex",
+        "devin",
         "amp",
         "gemini",
         "kimi",
