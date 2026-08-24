@@ -2492,7 +2492,23 @@ export async function runTui({
     // A2 (2026-06-27): paint the frame + a clear "reading your cascade…" status IMMEDIATELY,
     // BEFORE the await — so the very first thing on screen is the table header + a live status,
     // not a blank "loading dashboard…". renderDashboard tolerates this empty dashData (guarded).
-    status = "reading your cascade…";
+    // Animated signal pulse during initial load — shows the system is alive.
+    const INIT_PULSE = [
+      "▁▁▁▁▁", "▂▁▁▁▁", "▃▂▁▁▁", "▄▃▂▁▁", "▅▄▃▂▁",
+      "▆▅▄▃▂", "▇▆▅▄▃", "█▇▆▅▄", "▇█▇▆▅", "▆▇█▇▆",
+      "▅▆▇█▇", "▄▅▆▇█", "▃▄▅▆▇", "▂▃▄▅▆", "▁▂▃▄▅",
+      "▁▁▂▃▄", "▁▁▁▂▃", "▁▁▁▁▂",
+    ];
+    const initStart = Date.now();
+    let initIdx = 0;
+    const initTimer = setInterval(() => {
+      const elapsed = ((Date.now() - initStart) / 1000).toFixed(1);
+      const pulse = INIT_PULSE[initIdx % INIT_PULSE.length];
+      initIdx++;
+      status = `${gold(pulse)} reading your cascade… ${bold(`${elapsed}s`)}`;
+      redraw();
+    }, 150);
+    status = `${gold("▁▁▁▁▁")} reading your cascade…`;
     dashData = { active: [], _loading: true };
     await redraw();
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
@@ -2502,6 +2518,7 @@ export async function runTui({
       status = `dashboard error: ${e.message}`;
       return null;
     });
+    clearInterval(initTimer);
     status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
     await redraw();
     // Keep a "filling other platforms…" status visible while fillDashboardRest runs.
@@ -2513,6 +2530,39 @@ export async function runTui({
       status = "claude ready · filling other platforms…";
       await redraw();
     }
+    // Animated signal pulse while the platform fill runs — shows the system
+    // is alive, not frozen. Uses a rotating signal-bar animation + elapsed timer.
+    const PULSE_FRAMES = [
+      "▁▁▁▁▁",
+      "▂▁▁▁▁",
+      "▃▂▁▁▁",
+      "▄▃▂▁▁",
+      "▅▄▃▂▁",
+      "▆▅▄▃▂",
+      "▇▆▅▄▃",
+      "█▇▆▅▄",
+      "▇█▇▆▅",
+      "▆▇█▇▆",
+      "▅▆▇█▇",
+      "▄▅▆▇█",
+      "▃▄▅▆▇",
+      "▂▃▄▅▆",
+      "▁▂▃▄▅",
+      "▁▁▂▃▄",
+      "▁▁▁▂▃",
+      "▁▁▁▁▂",
+    ];
+    const fillStart = Date.now();
+    let pulseIdx = 0;
+    const pulseTimer = setInterval(() => {
+      if (!dashData?._loading) return;
+      const elapsed = ((Date.now() - fillStart) / 1000).toFixed(1);
+      const pulse = PULSE_FRAMES[pulseIdx % PULSE_FRAMES.length];
+      pulseIdx++;
+      const platCount = dashData.active.length;
+      status = `${gold(pulse)} scanning platforms… ${bold(`${elapsed}s`)} ${dim(`· ${platCount} found`)}`;
+      redraw();
+    }, 150);
     [, boardData] = await Promise.all([
       dashData?._remaining
         ? fillDashboardRest(dashData, {
@@ -2552,6 +2602,7 @@ export async function runTui({
         : Promise.resolve(false),
       loadBoardData(boardWindow).catch(() => null),
     ]);
+    clearInterval(pulseTimer);
     status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
     await redraw();
   };
