@@ -413,15 +413,19 @@ async function fillDashboardRest(
   { shouldLoadPlatform, onPlatformStarted, onPlatformLoaded } = {},
 ) {
   if (!dashData?._remaining) return false;
-  // Pull one platform at a time. Some adapters scan large session trees, so
-  // waiting for the entire batch would prevent the dashboard from updating
-  // while the slowest platform is still being read.
-  for (const platform of dashData._remaining) {
-    if (shouldLoadPlatform && !shouldLoadPlatform(platform)) continue;
-    await onPlatformStarted?.(platform);
-    const result = await pullDashboardPlatform(dashData, platform);
-    await onPlatformLoaded?.(platform, result);
-  }
+  // Pull all remaining platforms IN PARALLEL. The old sequential approach took
+  // 25s+ (18 platforms × ~1.5s each, most returning nothing). Parallel cuts
+  // total wait to the slowest single platform (~2-3s).
+  const toLoad = dashData._remaining.filter(
+    (p) => !shouldLoadPlatform || shouldLoadPlatform(p),
+  );
+  await Promise.all(
+    toLoad.map(async (platform) => {
+      await onPlatformStarted?.(platform);
+      const result = await pullDashboardPlatform(dashData, platform);
+      await onPlatformLoaded?.(platform, result);
+    }),
+  );
   dashData._loading = false;
   dashData._remaining = null;
   return true;
