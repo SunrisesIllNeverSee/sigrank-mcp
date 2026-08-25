@@ -1,6 +1,6 @@
 # SigRank MCP Server
 
-> Operator leaderboard measuring users, not models — 15 tools, TUI, signed submit, privacy-first.
+> Operator leaderboard measuring users, not models — 24 tools, TUI, signed submit, privacy-first.
 
 SigRank is the first leaderboard that ranks **AI operators** — the humans — by token cascade efficiency, not the models. The yield metric (Υ = cache_read × output / input²) turns raw token telemetry into a competitive ranking on [signalaf.com](https://signalaf.com).
 
@@ -64,41 +64,72 @@ npx sigrank diagnose            # Diagnose cascade inefficiencies
 npx sigrank improve             # Get improvement suggestions
 ```
 
-## The 20 MCP Tools
+## The 24 MCP Tools
 
-### Read-only (no auth required)
+### Read-only — pure math (no auth, no filesystem)
 
 | # | Tool | What it does |
 |---|------|-------------|
 | 1 | `rank_paste` | Paste token counts, get projected SigRank rank instantly. Computes the full yield cascade locally (Υ, SNR, Leverage, Velocity, 10xDEV, class tier). No network calls. |
-| 2 | `get_leaderboard` | Fetch the live public leaderboard from signalaf.com. Returns all ranked operators sorted by yield, with codename, Υ, leverage, velocity, class, and rank position. |
-| 3 | `get_operator` | Get any operator's full profile by codename. Returns detailed metrics + per-window breakdowns (7d/30d/90d/all-time) with the four token pillars per window. |
-| 4 | `tokenpull` | Pull your LOCAL token usage from session logs and rank it across all four windows — zero paste. Reads token counts, not message content. Numbers stay on your machine. |
-| 5 | `rank_windows` | Rank all four time windows (7d/30d/90d/all-time) in one call from a dashboard paste. Paste the full table from ccusage, tokscale, or Claude Max dashboard. |
-| 6 | `tokenpull_compare` | Pull token usage from ALL four local sources in parallel (JSONL canon, ccusage CLI, token-dashboard SQLite, tokscale) and compare side-by-side with delta % vs baseline. |
-| 7 | `simulate_change` | "What if I changed my token mix?" — takes your current pillars + proposed changes, runs the cascade on both, returns exact Υ delta, class change, and per-metric diffs. Pure local math. |
-| 8 | `diagnose_cascade` | Analyzes your token cascade and diagnoses where you're leaking efficiency. Returns ranked list of leaks with severity, findings, recommendations, and estimated Υ impact per fix. |
-| 9 | `suggest_improvements` | Generates ranked, simulated improvement suggestions. Tests multiple strategies (increase cache reads, reduce input, increase output, optimize cache creation), simulates each, returns ranked by Υ impact. |
-| 10 | `self_improve` | One-click optimize — runs the full cycle in one call: tokenpull → diagnose → suggest → simulate. Returns diagnosis + suggestions + simulated impact of the best change. Supports scope modes (daily/weekly/trend). |
-| 11 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
-| 12 | `get_best_operator` | Top N operators with behavioral framing in power-user language. **Intent:** "who is the best AI user?" / "show me the AI user leaderboard". Wraps `get_leaderboard` with plain-language interpretation of each operator's cascade. |
-| 13 | `compare_self` | Your metrics vs board averages + power-user assessment + percentile + actionable suggestion. **Intent:** "how do I measure up to other AI users?" / "am I a power user?" Accepts codename (from board) or raw token pillars (local). |
-| 14 | `compare_operators` | Side-by-side comparison of two operators with behavioral verdict. **Intent:** "compare operator X vs Y" / "who is more efficient". Returns both operators' metrics + verdict in power-user language. |
-| 15 | `describe_power_user` | Static explanation of what makes an AI power user, with metrics explained and class tier meanings. **Intent:** "what is an AI power user?" / "what makes a good AI user?" |
-| 16 | `optimize_efficiency` | Ranked efficiency suggestions tied to your current cascade shape. **Intent:** "how can I use AI more efficiently?" / "reduce token burn" / "stop tokenmaxxing". Accepts codename or raw token pillars. |
+| 2 | `rank_windows` | Rank all four time windows (7d/30d/90d/all-time) in one call from a dashboard paste. Paste the full table from ccusage, tokscale, or Claude Max dashboard. |
+| 3 | `simulate_change` | "What if I changed my token mix?" — takes your current pillars + proposed changes, runs the cascade on both, returns exact Υ delta, class change, and per-metric diffs. Pure local math. |
+| 4 | `diagnose_cascade` | Analyzes your token cascade and diagnoses where you're leaking efficiency. Returns ranked list of leaks with severity, findings, recommendations, and estimated Υ impact per fix. |
+| 5 | `suggest_improvements` | Generates ranked, simulated improvement suggestions. Tests multiple strategies (increase cache reads, reduce input, increase output, optimize cache creation), simulates each, returns ranked by Υ impact. |
+| 6 | `self_improve` | One-click optimize — runs the full cycle in one call: tokenpull → diagnose → suggest → simulate. Returns diagnosis + suggestions + simulated impact of the best change. Supports scope modes (daily/weekly/trend). |
 
-### Write (submit to board)
+### Read-only — calls signalaf.com API (no auth)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 17 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
-| 18 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
-| 19 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
-| 20 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+| 7 | `get_leaderboard` | Fetch the live public leaderboard from signalaf.com. Returns all ranked operators sorted by yield, with codename, Υ, leverage, velocity, class, and rank position. |
+| 8 | `get_operator` | Get any operator's full profile by codename. Returns detailed metrics + per-window breakdowns (7d/30d/90d/all-time) with the four token pillars per window. |
+| 9 | `discover_peers` | Find mentors, peers, and complementary operators for your operator on the leaderboard. |
+
+### Read-only — local filesystem (no auth, no network)
+
+| # | Tool | What it does |
+|---|------|-------------|
+| 10 | `tokenpull` | Pull your LOCAL token usage from session logs and rank it across all four windows — zero paste. Reads token counts, not message content. Numbers stay on your machine. 17 platform adapters. |
+| 11 | `tokenpull_compare` | Pull token usage from ALL four local sources in parallel (JSONL canon, ccusage CLI, token-dashboard SQLite, tokscale) and compare side-by-side with delta % vs baseline. |
+| 12 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
+
+### Write — submit to board (needs enrolled identity)
+
+| # | Tool | What it does |
+|---|------|-------------|
+| 13 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
+| 14 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
+| 15 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
+| 16 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+
+### Tokscale analytics — local tokscale data (no auth, no network)
+
+| # | Tool | What it does |
+|---|------|-------------|
+| 17 | `tokscale_breakdown` | Per-model token breakdown across platforms (models under threshold → "other"). |
+| 18 | `tokscale_market_share` | AI tool market share: each tool's % of tokens/cost/messages, ranked. From local tokscale data. |
+| 19 | `tokscale_developer_profile` | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspaces. Paths redacted. |
+| 20 | `tokscale_model_trends` | Model adoption over time: per-model first/last seen, active days, month-by-month adoption curve. |
+| 21 | `tokscale_cost_analysis` | Cost per developer per model: cost_per_million_tokens, cost_per_message, share_cost, client rollup. |
+| 22 | `tokscale_device_profile` | Device fingerprinting: installed tools, session counts, active days, day-of-week distribution, concurrency. Paths redacted. |
+| 23 | `tokscale_mcp_usage` | MCP server usage: detected servers, detection window, active days. |
+| 24 | `tokscale_competitive_intel` | Competitive intelligence for any AI tool: rank, model mix, cost efficiency, share vs all competitors. |
+
+### Moved to bestuser-router-mcp (5 intent tools)
+
+The following 5 tools were moved to [bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp) to keep sigrank-mcp focused as a measurement instrument. They are available as a separate npm package (`npx bestuser-router-mcp`):
+
+| Tool | Intent | Trigger |
+|------|--------|---------|
+| `get_best_operator` | BEST_OPERATOR | "who is the best AI user?" |
+| `compare_self` | COMPARE_SELF | "how do I measure up?" |
+| `compare_operators` | COMPARE_OPERATORS | "compare X vs Y" |
+| `describe_power_user` | DESCRIBE_POWER_USER | "what is a power user?" |
+| `optimize_efficiency` | OPTIMIZE_EFFICIENCY | "how can I use AI more efficiently?" |
 
 ## Intent Taxonomy
 
-The intent-based tools (12-16) are designed to map natural-language queries to the right MCP call. Calling agents and LLMs can use these intent mappings to route user questions:
+The intent-based tools (in bestuser-router-mcp) are designed to map natural-language queries to the right MCP call. Calling agents and LLMs can use these intent mappings to route user questions:
 
 | Intent | Trigger phrases | Tool |
 |--------|----------------|------|
@@ -129,7 +160,7 @@ The intent-based tools (12-16) are designed to map natural-language queries to t
 | Transport | stdio |
 | Platform | Cross-platform (Node.js) |
 | Language | JavaScript |
-| Tools | 20 |
+| Tools | 24 |
 | Auth | None for reads; Supabase anon key for submits |
 | Category | Developer Tools |
 
