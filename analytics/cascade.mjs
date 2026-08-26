@@ -1,10 +1,25 @@
 /**
- * cascade.mjs — pure SigRank yield cascade (no deps, no transport).
- * Mirrors sigrank-app/lib/ingest/bridge.ts computeCascadeMetrics() so rank_paste
- * reproduces the canonical MO§ES Υ 18436.98 from its 4 raw token pillars.
- * Paper-and-pencil math, open by design; proprietary threshold cuts stay server-side.
+ * cascade.mjs — SigRank yield cascade facade.
  *
- * Degenerate-input policy (hardened):
+ * The canonical cascade math (Υ Yield, SNR, Leverage, Velocity, 10xDEV, and the
+ * 24-stage RS05 class taxonomy) now lives in the `@sigrank/cascade` package.
+ * This file re-exports the canonical functions and adds local-only helpers that
+ * are presentation/MCP-specific and intentionally NOT part of the canonical
+ * math package:
+ *   - CLASS_TIERS, SIGNAL_CLASSES, UNCLASSED  (display taxonomy)
+ *   - tierOf(), stageOf()                      (display helpers)
+ *   - detectMode(), MODE_EXPECTED_YIELD, qualityScore()  (mode/quality layer)
+ *   - parsePillars()                           (text → 4 pillars extractor)
+ *
+ * The cascade() wrapper preserves the object-signature
+ * ({ input, output, cacheCreate, cacheRead }) used throughout this repo and
+ * re-attaches the `mode` field (detectMode) that the canonical package
+ * intentionally omits (mode is a presentation-layer concern, not canonical
+ * math).
+ *
+ * Canonical reference: MO§ES Υ 18436.98 from (1251211, 11296121, 128196310, 2555179769).
+ *
+ * Degenerate-input policy (inherited from the canonical package):
  *   - Any pillar that collapses a denominator (i=0, o=0, cw=0, cr=0) returns null for
  *     the affected metrics rather than Infinity/NaN.
  *   - A `warnings[]` array is attached when any metric is null so callers can surface the
@@ -13,60 +28,47 @@
  *     Callers that require a fully-formed result should check `warnings.length === 0`.
  */
 
-export const round = (n, d) =>
-  Number.isFinite(n) ? Number(n.toFixed(d)) : null;
+// ─── Canonical math (from @sigrank/cascade) ─────────────────────────────────
+import {
+  cascade as cascadeCanonical,
+  round,
+  classify,
+  RS05_CLASS_THRESHOLDS,
+  fieldStats,
+  percentileOf,
+  rankOf,
+  operatorSignature,
+  evaluateOperator,
+} from "@sigrank/cascade";
 
-/** The four raw token pillars → the cascade. */
+// Re-export the canonical functions so existing import paths keep working.
+export {
+  round,
+  classify,
+  RS05_CLASS_THRESHOLDS,
+  fieldStats,
+  percentileOf,
+  rankOf,
+  operatorSignature,
+  evaluateOperator,
+};
+
+/**
+ * The four raw token pillars → the cascade.
+ *
+ * Object-signature wrapper around the canonical `@sigrank/cascade` cascade()
+ * (which takes positional args). Re-attaches the `mode` field via detectMode()
+ * so the 20+ call sites in this repo that read `result.mode` keep working.
+ */
 export function cascade({ input, output, cacheCreate, cacheRead }) {
-  const i = Number(input),
-    o = Number(output),
-    cw = Number(cacheCreate),
-    cr = Number(cacheRead);
-  const total = i + o + cw + cr;
-  const warnings = [];
-
-  // SNR: undefined when both i and o are 0 (empty session)
-  const snrDenom = i + o;
-  const snr = snrDenom > 0 ? o / snrDenom : null;
-  if (snr === null) warnings.push("snr_undefined: input+output=0");
-
-  // velocity: undefined when i=0 (no fresh input — pure cache-only session)
-  const velocity = i > 0 ? o / i : null;
-  if (velocity === null) warnings.push("velocity_undefined: input=0");
-
-  // leverage: undefined when i=0
-  const leverage = i > 0 ? cr / i : null;
-  if (leverage === null) warnings.push("leverage_undefined: input=0");
-
-  // Υ = leverage × velocity = (Cr·O)/I² — null when either component is null
-  const yield_ =
-    leverage !== null && velocity !== null ? leverage * velocity : null;
-  if (yield_ === null && !warnings.some((w) => w.startsWith("yield")))
-    warnings.push("yield_undefined: requires input>0");
-
-  // dev10x = log10(Cr/I) — collapses when cw=0 (no cache commits) or i=0 or cr=0.
-  // narrate.mjs already has a nonCompounding branch for this case; we return null
-  // explicitly so the branch triggers correctly (vs -Infinity on log10(0)).
-  let dev10x = null;
-  if (i > 0 && o > 0 && cw > 0 && cr > 0) {
-    dev10x = Math.log10((o / i) * (cw / o) * (cr / cw)); // = log10(Cr/I)
-  } else {
-    warnings.push("dev10x_undefined: requires all four pillars > 0");
-  }
-
-  const result = {
-    pillars: { input: i, output: o, cacheCreate: cw, cacheRead: cr, total },
-    yield: round(yield_, 2),
-    snr: round(snr, 4),
-    leverage: round(leverage, 1),
-    velocity: round(velocity, 3),
-    dev10x: round(dev10x, 2),
-    class: classify(total),
-    mode: detectMode({ input: i, output: o, cacheCreate: cw, cacheRead: cr }),
-  };
-  if (warnings.length > 0) result.warnings = warnings;
+  const result = cascadeCanonical(input, output, cacheCreate, cacheRead);
+  // Re-attach mode — the canonical package intentionally omits it (mode is a
+  // presentation-layer concern, not canonical math).
+  result.mode = detectMode({ input, output, cacheCreate, cacheRead });
   return result;
 }
+
+// ─── Local-only display taxonomy (not in @sigrank/cascade) ───────────────────
 
 /**
  * CLASS_TIERS — the 8 base tier names (K.01–K.08) for display: glyph, color,
@@ -74,15 +76,16 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
  *
  * The permanent class is an EXPERIENCE ladder keyed on TOTAL TOKENS. Each tier
  * has 3 sub-stages (I/II/III) — 24 stages total. The 24 thresholds live in
- * RS05_CLASS_THRESHOLDS below. classify() returns the full sub-stage string
- * (e.g. "REFINER II"). Use tierOf() to extract the base tier name.
+ * RS05_CLASS_THRESHOLDS (re-exported from @sigrank/cascade above). classify()
+ * returns the full sub-stage string (e.g. "REFINER II"). Use tierOf() to
+ * extract the base tier name.
  *
  * TRANSMITTER is NOT on this ladder — it is a temporary peak badge (RS.08).
  * The client does not evaluate the badge (owner is still calibrating it);
  * the server does it on read.
  *
- * Mirrors the server's canon-ids.ts CLASS_TIERS (display) + ruleset.ts
- * RS05_CLASS_THRESHOLDS (thresholds). Order is descending (ARCH+ → IGNITER).
+ * Mirrors the server's canon-ids.ts CLASS_TIERS (display). Order is descending
+ * (ARCH+ → IGNITER).
  */
 export const CLASS_TIERS = [
   "ARCH+",
@@ -112,42 +115,6 @@ export const SIGNAL_CLASSES = [
   "IGNITER I", "IGNITER II", "IGNITER III",
 ];
 
-/**
- * RS05_CLASS_THRESHOLDS — 24 total-token breakpoints (8 tiers × 3 sub-stages).
- * Mirrors the server's lib/analytics/ruleset.ts RS05_CLASS_THRESHOLDS exactly.
- * Calibrated from the HCM cut (1,626 operators) using target distribution
- * (Option C): IGNITER 10%, BEARER 12.5%, REFINER 15%, SEEKER 22.5%, BASE 20%,
- * POWER 15%, ARCH 5%, ARCH+ 0% (aspirational). Each tier split into 3
- * equal-population sub-stages. Update this one constant to stay in parity
- * when the owner tweaks server-side.
- */
-export const RS05_CLASS_THRESHOLDS = [
-  { class: "ARCH+ I", totalMin: 7068201104627 },
-  { class: "ARCH+ II", totalMin: 3000000000000 },
-  { class: "ARCH+ III", totalMin: 1000000000000 },
-  { class: "ARCH I", totalMin: 186207267611 },
-  { class: "ARCH II", totalMin: 98543134083 },
-  { class: "ARCH III", totalMin: 68766193943 },
-  { class: "POWER I", totalMin: 39958782379 },
-  { class: "POWER II", totalMin: 26955905621 },
-  { class: "POWER III", totalMin: 19141226889 },
-  { class: "BASE I", totalMin: 13960345961 },
-  { class: "BASE II", totalMin: 10189224970 },
-  { class: "BASE III", totalMin: 7747041813 },
-  { class: "SEEKER I", totalMin: 5446673659 },
-  { class: "SEEKER II", totalMin: 4014577247 },
-  { class: "SEEKER III", totalMin: 2961798768 },
-  { class: "REFINER I", totalMin: 2358346840 },
-  { class: "REFINER II", totalMin: 1845750357 },
-  { class: "REFINER III", totalMin: 1334876308 },
-  { class: "BEARER I", totalMin: 984078167 },
-  { class: "BEARER II", totalMin: 714619043 },
-  { class: "BEARER III", totalMin: 431702990 },
-  { class: "IGNITER I", totalMin: 216393332 },
-  { class: "IGNITER II", totalMin: 88999166 },
-  { class: "IGNITER III", totalMin: 0 },
-];
-
 /** The degenerate-case class returned when totalTokens is null/undefined
  *  (all-zero / empty session). Distinct from IGNITER III (which is a real
  *  low-experience tier) so callers can tell "no data" from "bottom tier". */
@@ -174,17 +141,7 @@ export function stageOf(cls) {
   return stage === "I" || stage === "II" || stage === "III" ? stage : null;
 }
 
-/** Classify an operator's experience stage from total tokens (input + output +
- *  cacheCreate + cacheRead). Descending first-match-wins scan over
- *  RS05_CLASS_THRESHOLDS — mirrors the server's assignClass(totalTokens).
- *  Returns a full sub-stage string (e.g. "REFINER II") or UNCLASSED. */
-export function classify(totalTokens) {
-  if (totalTokens == null || !Number.isFinite(totalTokens)) return UNCLASSED;
-  for (const t of RS05_CLASS_THRESHOLDS) {
-    if (totalTokens >= t.totalMin) return t.class;
-  }
-  return "IGNITER III";
-}
+// ─── Mode / quality layer (not in @sigrank/cascade) ──────────────────────────
 
 /**
  * detectMode — classify an operator's current working mode from 4 token pillars.
@@ -261,6 +218,8 @@ export function qualityScore(actualYield, mode) {
   if (expected === 0) return actualYield === 0 ? 1.0 : 0;
   return actualYield / expected;
 }
+
+// ─── Text parsing (not in @sigrank/cascade) ──────────────────────────────────
 
 /**
  * Extract the 4 pillars from pasted text: JSON object OR 4 whitespace numbers.
