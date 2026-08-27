@@ -15,6 +15,7 @@ import {
 } from "../lib/constants.mjs";
 
 import { TOOL_DEF as rankPasteTool, handleRankPaste } from "./rank-paste.mjs";
+import { TOOL_DEF as standardRecordTool, handleGetSigRankStandardRecord } from "./standard-record.mjs";
 import { TOOL_DEF as getLeaderboardTool, handleGetLeaderboard } from "./get-leaderboard.mjs";
 import { TOOL_DEF as getOperatorTool, handleGetOperator } from "./get-operator.mjs";
 import { TOOL_DEF as submitPasteTool, handleSubmitPaste } from "./submit-paste.mjs";
@@ -48,6 +49,7 @@ export { DEFAULT_API_BASE, DEFAULT_FETCH_TIMEOUT };
 
 export const TOOLS = [
   rankPasteTool,
+  standardRecordTool,
   getLeaderboardTool,
   getOperatorTool,
   submitPasteTool,
@@ -175,6 +177,8 @@ export async function callTool(name, args, opts = {}) {
   switch (name) {
     case "rank_paste":
       return handleRankPaste(args);
+    case "get_sigrank_standard_record":
+      return handleGetSigRankStandardRecord(args);
     case "get_leaderboard":
       return handleGetLeaderboard(args, ctx);
     case "get_operator":

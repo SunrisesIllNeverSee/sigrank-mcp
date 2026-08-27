@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "SigRank MCP server — AI operator evaluation and token cascade efficiency tools. The yield cascade + live leaderboard as MCP tools any agent can call.",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
@@ -15,8 +15,8 @@
     "url": "https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues"
   },
   "bin": {
-    "sigrank": "index.mjs",
-    "sigrank-mcp": "index.mjs"
+    "sigrank": "bin/sigrank.mjs",
+    "sigrank-mcp": "bin/sigrank.mjs"
   },
   "main": "index.mjs",
   "engines": {
@@ -24,13 +24,14 @@
   },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node test.mjs && node __tests__/sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs",
+    "test": "node test.mjs && node __tests__/sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs __tests__/standard-record.test.mjs __tests__/standard-cli.test.mjs",
     "sync:platforms": "node scripts/sync-platforms.mjs",
     "sync:spine": "node scripts/sync-spine.mjs",
     "spine:check": "node scripts/sync-spine.mjs --check",
     "spine:diff": "node scripts/sync-spine.mjs --dry-run"
   },
   "files": [
+    "bin/",
     "index.mjs",
     "proxy.mjs",
     "lib/",
