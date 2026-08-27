@@ -69,9 +69,13 @@ async function exportStandardRecord() {
   const platform = flag("platform", "claude");
   const window = flag("window", "30d");
 
-  const explicit = ["input", "output", "cache-write", "cache-read"].every(
-    (name) => flag(name) !== undefined,
-  );
+  const explicitFlags = ["input", "output", "cache-write", "cache-read"];
+  const hasExplicit = explicitFlags.some((name) => flag(name) !== undefined);
+  const explicit = ["input", "output"].every((name) => flag(name) !== undefined);
+
+  if (hasExplicit && !explicit) {
+    throw new Error("Explicit Standard export requires both --input and --output.");
+  }
 
   let pillars;
   let sourcePlatform = platform;
@@ -80,8 +84,8 @@ async function exportStandardRecord() {
     pillars = {
       input: Number(flag("input")),
       output: Number(flag("output")),
-      cache_write: Number(flag("cache-write")),
-      cache_read: Number(flag("cache-read")),
+      cache_write: flag("cache-write") === undefined ? null : Number(flag("cache-write")),
+      cache_read: flag("cache-read") === undefined ? null : Number(flag("cache-read")),
     };
   } else {
     const pulled = await callTool("tokenpull", { platform });
@@ -97,14 +101,14 @@ async function exportStandardRecord() {
     pillars = {
       input: selected.pillars.input,
       output: selected.pillars.output,
-      cache_write: selected.pillars.cacheCreate,
-      cache_read: selected.pillars.cacheRead,
+      cache_write: selected.pillars.cacheCreate ?? null,
+      cache_read: selected.pillars.cacheRead ?? null,
     };
   }
 
   for (const [key, value] of Object.entries(pillars)) {
-    if (!Number.isFinite(value) || value < 0) {
-      throw new Error(`${key} must be a non-negative finite number.`);
+    if (value !== null && (!Number.isFinite(value) || !Number.isInteger(value) || value < 0)) {
+      throw new Error(`${key} must be a non-negative integer token count or null.`);
     }
   }
 

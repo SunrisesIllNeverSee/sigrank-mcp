@@ -6,7 +6,7 @@ export const SIGRANK_STANDARD_VERSION = "sigrank/0.1-draft";
 export const TOOL_DEF = {
   name: "get_sigrank_standard_record",
   description:
-    "Build a SigRank Standard v0.1-draft portable operator record from four token pillars. Computes the canonical cascade locally through @sigrank/cascade and returns versioned telemetry plus the normative core metrics: Yield, Leverage, Velocity, SNR, and 10xDEV. No data is submitted or persisted. The core record contains token telemetry only and does not require prompt text, code, or response content.",
+    "Build a SigRank Standard v0.1-draft portable operator record from available token telemetry. Input and output are required; unavailable cache telemetry remains null. Computes the canonical cascade locally through @sigrank/cascade and returns the normative core metrics: Yield, Leverage, Velocity, SNR, and 10xDEV. No data is submitted or persisted.",
   annotations: {
     title: "Export SigRank standard record",
     ...ANNOTATIONS.readOnlyHint,
@@ -17,26 +17,29 @@ export const TOOL_DEF = {
   inputSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["input", "output", "cache_write", "cache_read"],
+    required: ["input", "output"],
     properties: {
-      input: { type: "number", minimum: 0, description: "Fresh input tokens." },
-      output: { type: "number", minimum: 0, description: "Output tokens." },
-      cache_write: { type: "number", minimum: 0, description: "Cache-write / cache-creation tokens." },
-      cache_read: { type: "number", minimum: 0, description: "Cache-read tokens." },
+      input: { type: "integer", minimum: 0, description: "Fresh input tokens." },
+      output: { type: "integer", minimum: 0, description: "Output tokens." },
+      cache_write: { type: ["integer", "null"], minimum: 0, description: "Cache-write / cache-creation tokens, or null when unavailable." },
+      cache_read: { type: ["integer", "null"], minimum: 0, description: "Cache-read tokens, or null when unavailable." },
       provider: { type: "string", description: "Optional provider identifier." },
       model: { type: "string", description: "Optional model identifier." },
       tool: { type: "string", description: "Optional tool/client identifier." },
-      timestamp: { type: "string", description: "Optional ISO-8601 timestamp. Defaults to the current time." }
+      timestamp: { type: "string", format: "date-time", description: "Optional ISO-8601 timestamp. Defaults to the current time." }
     }
   },
   outputSchema: {
     type: "object",
-    required: ["spec", "timestamp", "source", "telemetry", "metrics"],
+    additionalProperties: false,
+    required: ["spec", "timestamp", "source", "telemetry", "metrics", "warnings"],
     properties: {
-      spec: { type: "string", description: "SigRank specification version." },
-      timestamp: { type: "string", description: "ISO-8601 record timestamp." },
+      spec: { const: SIGRANK_STANDARD_VERSION, description: "SigRank specification version." },
+      timestamp: { type: "string", format: "date-time", description: "ISO-8601 record timestamp." },
       source: {
         type: "object",
+        additionalProperties: false,
+        required: ["provider", "model", "tool"],
         properties: {
           provider: { type: "string" },
           model: { type: "string" },
@@ -45,15 +48,19 @@ export const TOOL_DEF = {
       },
       telemetry: {
         type: "object",
+        additionalProperties: false,
+        required: ["input", "output", "cache_write", "cache_read"],
         properties: {
-          input: { type: "number" },
-          output: { type: "number" },
-          cache_write: { type: "number" },
-          cache_read: { type: "number" }
+          input: { type: "integer", minimum: 0 },
+          output: { type: "integer", minimum: 0 },
+          cache_write: { type: ["integer", "null"], minimum: 0 },
+          cache_read: { type: ["integer", "null"], minimum: 0 }
         }
       },
       metrics: {
         type: "object",
+        additionalProperties: false,
+        required: ["yield", "leverage", "velocity", "snr", "dev10x"],
         properties: {
           yield: { type: ["number", "null"] },
           leverage: { type: ["number", "null"] },
@@ -67,24 +74,48 @@ export const TOOL_DEF = {
   }
 };
 
+const ISO_DATE_TIME =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function tokenCount(value, name, required) {
+  if (value === null || value === undefined) {
+    if (required) throw new Error(`${name} is required.`);
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new Error(`${name} must be a non-negative integer token count.`);
+  }
+  if (value < 0) throw new Error(`${name} must be a non-negative integer token count.`);
+  return value;
+}
+
+function recordTimestamp(value) {
+  if (value === undefined) return new Date().toISOString();
+  if (typeof value !== "string" || !ISO_DATE_TIME.test(value) || !Number.isFinite(Date.parse(value))) {
+    throw new Error("timestamp must be a valid ISO-8601 date-time.");
+  }
+  return value;
+}
+
 export async function handleGetSigRankStandardRecord(args) {
-  const input = Number(args?.input);
-  const output = Number(args?.output);
-  const cacheWrite = Number(args?.cache_write);
-  const cacheRead = Number(args?.cache_read);
+  const input = tokenCount(args?.input, "input", true);
+  const output = tokenCount(args?.output, "output", true);
+  const cacheWrite = tokenCount(args?.cache_write, "cache_write", false);
+  const cacheRead = tokenCount(args?.cache_read, "cache_read", false);
 
-  if (![input, output, cacheWrite, cacheRead].every(Number.isFinite)) {
-    throw new Error("get_sigrank_standard_record requires four finite numeric token pillars.");
-  }
-  if ([input, output, cacheWrite, cacheRead].some((v) => v < 0)) {
-    throw new Error("get_sigrank_standard_record requires non-negative token pillars.");
-  }
-
-  const c = cascade({ input, output, cacheCreate: cacheWrite, cacheRead });
+  const c = cascade({
+    input,
+    output,
+    cacheCreate: cacheWrite ?? 0,
+    cacheRead: cacheRead ?? 0,
+  });
+  const warnings = [...(c.warnings || [])];
+  if (cacheWrite === null) warnings.push("cache_write is unavailable; 10xDEV is undefined.");
+  if (cacheRead === null) warnings.push("cache_read is unavailable; Yield, Leverage, and 10xDEV are undefined.");
 
   return {
     spec: SIGRANK_STANDARD_VERSION,
-    timestamp: args?.timestamp || new Date().toISOString(),
+    timestamp: recordTimestamp(args?.timestamp),
     source: {
       provider: args?.provider || "unknown",
       model: args?.model || "unknown",
@@ -97,12 +128,12 @@ export async function handleGetSigRankStandardRecord(args) {
       cache_read: cacheRead,
     },
     metrics: {
-      yield: c.yield,
-      leverage: c.leverage,
+      yield: cacheRead === null ? null : c.yield,
+      leverage: cacheRead === null ? null : c.leverage,
       velocity: c.velocity,
       snr: c.snr,
-      dev10x: c.dev10x,
+      dev10x: cacheWrite === null || cacheRead === null ? null : c.dev10x,
     },
-    warnings: c.warnings || [],
+    warnings,
   };
 }

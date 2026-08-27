@@ -59,3 +59,24 @@ test("sigrank export --standard emits canonical portable record", () => {
   assert.equal(out.context.window, "30d");
   assert.equal(out.context.source_platform, "claude");
 });
+
+test("sigrank export --standard preserves unavailable cache telemetry", () => {
+  const out = JSON.parse(
+    run([
+      "export",
+      "--standard",
+      "--input",
+      "100",
+      "--output",
+      "50",
+    ]),
+  );
+
+  assert.equal(out.telemetry.cache_write, null);
+  assert.equal(out.telemetry.cache_read, null);
+  assert.equal(out.metrics.yield, null);
+  assert.equal(out.metrics.leverage, null);
+  assert.equal(out.metrics.velocity, 0.5);
+  assert.equal(out.metrics.snr, 0.3333);
+  assert.equal(out.metrics.dev10x, null);
+});
