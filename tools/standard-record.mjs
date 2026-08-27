@@ -59,8 +59,7 @@ export const TOOL_DEF = {
           leverage: { type: ["number", "null"] },
           velocity: { type: ["number", "null"] },
           snr: { type: ["number", "null"] },
-          dev10x: { type: ["number", "null"] },
-          construction: { type: ["number", "null"] }
+          dev10x: { type: ["number", "null"] }
         }
       },
       warnings: { type: "array", items: { type: "string" } }
@@ -82,7 +81,6 @@ export async function handleGetSigRankStandardRecord(args) {
   }
 
   const c = cascade({ input, output, cacheCreate: cacheWrite, cacheRead });
-  const construction = output > 0 ? cacheWrite / output : null;
 
   return {
     spec: SIGRANK_STANDARD_VERSION,
@@ -104,7 +102,6 @@ export async function handleGetSigRankStandardRecord(args) {
       velocity: c.velocity,
       snr: c.snr,
       dev10x: c.dev10x,
-      construction: construction === null ? null : Number(construction.toFixed(4)),
     },
     warnings: c.warnings || [],
   };
