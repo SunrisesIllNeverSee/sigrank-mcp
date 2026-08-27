@@ -57,20 +57,8 @@ jobs:
       - name: Version format check
         run: node scripts/check-version.mjs
 
-      - name: Pack check (no test fixtures / secrets leak)
-        run: |
-          set -e
-          TARBALL=$(npm pack --dry-run 2>&1)
-          echo "$TARBALL"
-          if echo "$TARBALL" | grep -iE "test|fixture|\.env|canon_parity|\.key"; then
-            echo "✗ FAIL: test fixture or sensitive file found in tarball"
-            exit 1
-          fi
-          if ! echo "$TARBALL" | grep -q "connect.mjs"; then
-            echo "✗ FAIL: connect.mjs missing from tarball"
-            exit 1
-          fi
-          echo "✓ Tarball is clean"
+      - name: Install and exercise the packed artifact
+        run: npm run test:packaged
 
       # ── Bump patch version (in working tree, not committed yet) ──
       - name: Bump patch version
