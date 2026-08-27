@@ -15,8 +15,8 @@
     "url": "https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues"
   },
   "bin": {
-    "sigrank": "index.mjs",
-    "sigrank-mcp": "index.mjs"
+    "sigrank": "bin/sigrank.mjs",
+    "sigrank-mcp": "bin/sigrank.mjs"
   },
   "main": "index.mjs",
   "engines": {
@@ -31,6 +31,7 @@
     "spine:diff": "node scripts/sync-spine.mjs --dry-run"
   },
   "files": [
+    "bin/",
     "index.mjs",
     "proxy.mjs",
     "lib/",
