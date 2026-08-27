@@ -112,19 +112,5 @@ jobs:
 
       - run: npm ci
 
-      - name: Verify tarball contents (no test fixtures / secrets leak)
-        run: |
-          set -e
-          TARBALL=$(npm pack --dry-run 2>&1)
-          echo "$TARBALL"
-          # Fail if any test fixture or .env file appears in the tarball
-          if echo "$TARBALL" | grep -iE "test|fixture|\.env|canon_parity|\.key"; then
-            echo "✗ FAIL: test fixture or sensitive file found in tarball"
-            exit 1
-          fi
-          # Verify connect.mjs is present (the 0.11.5 hotfix)
-          if ! echo "$TARBALL" | grep -q "connect.mjs"; then
-            echo "✗ FAIL: connect.mjs missing from tarball (0.11.5 regression)"
-            exit 1
-          fi
-          echo "✓ Tarball is clean"
+      - name: Install and exercise the packed artifact
+        run: npm run test:packaged
