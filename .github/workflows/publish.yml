@@ -1,12 +1,14 @@
-name: Publish to npm
+name: Publish to npm + MCP Registry
 
 # Auto-publish flow: when tests pass on push to main, bump the patch version,
-# publish to npm, push the version commit back to main, and dispatch a version-sync
-# event to sigrank-app so it updates its MCP_VERSION constant (→ Vercel auto-deploys).
+# publish to npm, publish to the MCP Registry, push the version commit back to
+# main, and the app auto-syncs its MCP_VERSION constant (→ Vercel auto-deploys).
 #
 # Requires secrets:
 #   NPM_TOKEN         — npm publish token (automation token recommended)
-#   CROSS_REPO_PAT    — GitHub PAT with repo scope on SunrisesIllNeverSee/sigrank-app
+#
+# MCP Registry authentication uses GitHub OIDC (no secret needed for
+# io.github.SunrisesIllNeverSee/* namespace). Requires id-token: write.
 #
 # The workflow waits for CI (ci.yml) to pass before publishing. If CI fails,
 # no publish happens.
@@ -18,6 +20,7 @@ on:
 
 permissions:
   contents: write # needed to push the version bump commit back to main
+  id-token: write # needed for mcp-publisher github-oidc authentication
 
 jobs:
   # Gate: only run publish if CI would pass. We skip the publish job if the
@@ -51,7 +54,7 @@ jobs:
       - name: TUI startup input regression
         run: node --test __tests__/tui-input.test.mjs
 
-      - name: Version format check (3-digit ruleset)
+      - name: Version format check
         run: node scripts/check-version.mjs
 
       - name: Pack check (no test fixtures / secrets leak)
@@ -104,6 +107,24 @@ jobs:
             sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" manifest.json
           fi
           echo "✓ Synced server.json + manifest.json to $NEW_VERSION"
+
+      # ── Publish to MCP Registry (after server.json is synced to new version) ──
+      # Uses GitHub OIDC authentication — no secret needed for io.github.* namespace.
+      # The server.json name (io.github.SunrisesIllNeverSee/sigrank-mcp) must match
+      # the mcpName in package.json and the GitHub repo owner.
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate server.json
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish server.json
 
       - name: Commit version bump
         run: |

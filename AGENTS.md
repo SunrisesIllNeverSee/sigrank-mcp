@@ -37,8 +37,12 @@ version in `package.json`, commit, push, and the workflow will handle the rest.
 **Do NOT add `npm publish` or `npm version` to commit messages or scripts.**
 The workflow does this automatically. Manual publishes create duplicate versions.
 
-**Version scheme: `0.0.x` only.** Never use 2-digit versions (0.18.x, 0.19.x).
-They pollute the npm version history and break the monotonic sequence.
+**Version scheme: `1.0.x` (graduated from `0.0.x` on 2026-08-27).** The patch
+(third decimal) increments on every release: `1.0.0` → `1.0.1` → `1.0.2` → ...
+Never use minor bumps (1.1.x, 1.2.x) or major jumps (2.0.x). The `0.0.x` format
+was retired because legacy `0.17.x`/`0.18.x`/`0.19.x` versions sorted higher in
+semver (`0.17.2 > 0.0.232`), causing the MCP Registry to show a stale version
+as "latest." Graduating to `1.0.x` fixes this (`1.0.0 > 0.19.0 > 0.17.2`).
 
 **Required secret (GitHub repo settings → Secrets → Actions):**
 - `NPM_TOKEN` — npm automation token (npmjs.com → Access Tokens → Automation)
