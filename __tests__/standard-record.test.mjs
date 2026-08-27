@@ -20,12 +20,18 @@ assert.deepEqual(record.telemetry, {
   cache_write: 128_196_310,
   cache_read: 2_555_179_769,
 });
+assert.deepEqual(Object.keys(record.metrics).sort(), [
+  "dev10x",
+  "leverage",
+  "snr",
+  "velocity",
+  "yield",
+]);
 assert.equal(record.metrics.yield, 18436.98);
 assert.equal(record.metrics.leverage, 2042.2);
 assert.equal(record.metrics.velocity, 9.028);
 assert.equal(record.metrics.snr, 0.9003);
 assert.equal(record.metrics.dev10x, 3.31);
-assert.equal(record.metrics.construction, 11.3487);
 assert.deepEqual(record.warnings, []);
 
 const degenerate = await handleGetSigRankStandardRecord({
@@ -39,7 +45,6 @@ assert.equal(degenerate.metrics.leverage, null);
 assert.equal(degenerate.metrics.velocity, null);
 assert.equal(degenerate.metrics.snr, null);
 assert.equal(degenerate.metrics.dev10x, null);
-assert.equal(degenerate.metrics.construction, null);
 assert.ok(degenerate.warnings.length > 0);
 
 await assert.rejects(
