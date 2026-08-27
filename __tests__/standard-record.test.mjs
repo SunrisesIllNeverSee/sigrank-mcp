@@ -47,9 +47,37 @@ assert.equal(degenerate.metrics.snr, null);
 assert.equal(degenerate.metrics.dev10x, null);
 assert.ok(degenerate.warnings.length > 0);
 
+const partial = await handleGetSigRankStandardRecord({
+  input: 100,
+  output: 50,
+  cache_write: null,
+  cache_read: null,
+});
+assert.deepEqual(partial.telemetry, {
+  input: 100,
+  output: 50,
+  cache_write: null,
+  cache_read: null,
+});
+assert.equal(partial.metrics.yield, null);
+assert.equal(partial.metrics.leverage, null);
+assert.equal(partial.metrics.velocity, 0.5);
+assert.equal(partial.metrics.snr, 0.3333);
+assert.equal(partial.metrics.dev10x, null);
+assert.match(partial.warnings.join(" "), /cache_read is unavailable/);
+
 await assert.rejects(
   () => handleGetSigRankStandardRecord({ input: -1, output: 1, cache_write: 1, cache_read: 1 }),
-  /non-negative token pillars/,
+  /non-negative integer token count/,
+);
+
+await assert.rejects(
+  () => handleGetSigRankStandardRecord({ input: 1.5, output: 1 }),
+  /non-negative integer token count/,
+);
+await assert.rejects(
+  () => handleGetSigRankStandardRecord({ input: 1, output: 1, timestamp: "not-a-date" }),
+  /valid ISO-8601 date-time/,
 );
 
 console.log("standard-record.test.mjs: ok");
