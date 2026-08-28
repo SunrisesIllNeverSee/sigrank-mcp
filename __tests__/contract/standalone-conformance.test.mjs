@@ -59,7 +59,7 @@ const fixtureFiles = readdirSync(fixturesDir)
   .filter((f) => f.endsWith(".json"))
   .sort();
 
-assert.ok(fixtureFiles.length === 12, `Expected 12 fixtures, found ${fixtureFiles.length}`);
+assert.ok(fixtureFiles.length === 13, `Expected 12 fixtures, found ${fixtureFiles.length}`);
 
 // ─── Self-contained schema validator (mirrors the standalone runner) ─────────
 
@@ -130,7 +130,7 @@ function arraysEqual(a, b) {
 
 // ─── Conformance gate: every fixture must pass ───────────────────────────────
 
-test(`MCP producer passes all 12 standalone fixtures (Standard ref ${SIGRANK_STANDARD_REF})`, async () => {
+test(`MCP producer passes all 13 standalone fixtures (Standard ref ${SIGRANK_STANDARD_REF})`, async () => {
   const failures = [];
 
   for (const file of fixtureFiles) {
