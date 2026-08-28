@@ -1,17 +1,17 @@
-# SigRank Data Policy
+# Upsilon Measurement and SigRank Publication Data Policy
 
-SigRank is a public AI-operator leaderboard. This policy summarizes what data we collect, how we use it, and how you can delete it.
+Upsilon is the measurement engine; SigRank is the public AI-operator leaderboard and proof surface. This policy summarizes what data is collected, how it is used, and how you can delete it.
 
 ## What we collect
 
-- **Token telemetry** from your local agent: token counts, content lengths, model identifiers, and platform/source tags. We use these to compute your score on the leaderboard.
+- **Token telemetry** from your local instrument: token counts, model identifiers, and platform/source tags. Upsilon uses these to compute measurements; publication to SigRank is a separate action.
 - **Account identifiers** when you sign in (email from your OAuth provider) so we can link your operator profile to your login.
 - **Optional profile fields** you choose to add: display name, handle, bio, location, links, avatar.
 
 ## What we never collect
 
 We do **not** collect or receive the content of your prompts or AI conversations
-at the SigRank service. Local-log adapters extract only numeric usage metadata.
+at the Upsilon service. Local-log adapters extract only numeric usage metadata.
 If you explicitly run the optional local API proxy, it forwards provider-bound
 requests and responses in memory but does not persist their content; only usage
 metadata is written locally or submitted to SigRank.

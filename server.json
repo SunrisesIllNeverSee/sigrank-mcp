@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "AI operator leaderboard ranking users by token cascade efficiency. 25 tools, TUI, signed submit.",
-  "title": "SigRank \u2014 Token Efficiency Leaderboard",
+  "description": "Upsilon privacy-preserving measurement engine with 25 local tools; SigRank leaderboard and proof-surface access; distributed as sigrank for compatibility.",
+  "title": "Upsilon \u2014 AI Operator Measurement Engine",
   "version": "1.0.5",
   "websiteUrl": "https://signalaf.com",
   "packages": [

@@ -102,7 +102,7 @@ async function startMcpServer() {
     {
       name: "check-my-efficiency",
       description:
-        "Pull your local token usage, compute your SigRank yield, and compare your efficiency against the leaderboard. Shows your class tier (ARCH+ to IGNITER) and where you rank.",
+        "Use Upsilon to pull local token telemetry and compute Yield, then compare the result against the SigRank public leaderboard. Shows your class tier (ARCH+ to IGNITER) and where you rank.",
       arguments: [],
     },
     {
@@ -189,7 +189,7 @@ async function startMcpServer() {
   const RESOURCES = [
     {
       uri: "sigrank://scoring-formula",
-      name: "SigRank Scoring Formula",
+      name: "Upsilon Measurement Formula",
       description:
         "The yield cascade formula and all derived metrics: Υ (Yield = Cache Reads × Output / Input²), SNR (signal-to-noise), Leverage (Cr/I), Velocity (O/I), 10xDEV score, and class tier thresholds (8-tier experience ladder, see class-tiers.md).",
       mimeType: "text/markdown",
@@ -210,16 +210,16 @@ async function startMcpServer() {
     },
     {
       uri: "sigrank://privacy-model",
-      name: "Privacy Model",
+      name: "Upsilon Privacy Model",
       description:
-        "How SigRank protects user privacy: runs locally, only four token counts (input, output, cacheCreate, cacheRead) leave the machine, ed25519-signed submissions, no prompt content ever transmitted.",
+        "How Upsilon protects user privacy: runs locally, only four token counts (input, output, cacheCreate, cacheRead) leave the machine, ed25519-signed submissions, no prompt content ever transmitted.",
       mimeType: "text/markdown",
     },
     {
       uri: "sigrank://data-policy",
       name: "Data Policy",
       description:
-        "Summary of SigRank data governance: what we collect, what we do not collect, consent requirements, and how to pause, delete, or export your data.",
+        "Summary of Upsilon measurement-data governance: what is collected, what is not collected, consent requirements, and how to pause, delete, or export data.",
       mimeType: "text/markdown",
     },
   ];

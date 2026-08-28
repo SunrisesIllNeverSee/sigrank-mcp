@@ -30,6 +30,12 @@ function printStandard() {
   const payload = {
     spec: SPEC,
     status: "proposed_open_standard",
+    architecture: {
+      brand: "SignalAF",
+      governance: "MO§ES™",
+      product: "Upsilon",
+      leaderboard: "SigRank",
+    },
     scope: "human operation of generative AI systems",
     telemetry: ["input", "output", "cache_write", "cache_read"],
     metrics: {
@@ -42,7 +48,7 @@ function printStandard() {
     privacy:
       "Core metrics do not require prompt text, response text, source code, or repository contents.",
     reference_math: "@sigrank/cascade",
-    reference_platform: "SignalAF",
+    reference_platform: "Upsilon on SignalAF",
     standard_url: STANDARD_URL,
     schema_url: SCHEMA_URL,
   };
@@ -52,13 +58,13 @@ function printStandard() {
     return;
   }
 
-  process.stdout.write(`SigRank Standard ${SPEC}\n`);
-  process.stdout.write(`The new standard in operator metrics.\n\n`);
+  process.stdout.write(`Upsilon measurement engine · compatibility spec ${SPEC}\n`);
+  process.stdout.write(`Upsilon measures. SigRank is the public proof surface.\n\n`);
   process.stdout.write(`Scope: ${payload.scope}\n`);
   process.stdout.write(`Primitives: input / output / cache_write / cache_read\n`);
   process.stdout.write(`Core metrics: Yield / Leverage / Velocity / SNR / 10xDEV\n`);
   process.stdout.write(`Reference math: @sigrank/cascade\n`);
-  process.stdout.write(`Reference platform: SignalAF\n`);
+  process.stdout.write(`Reference platform: Upsilon on SignalAF\n`);
   process.stdout.write(`Spec: ${STANDARD_URL}\n`);
   process.stdout.write(`Schema: ${SCHEMA_URL}\n`);
 }

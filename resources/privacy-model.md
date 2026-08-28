@@ -1,4 +1,4 @@
-# SigRank Privacy Model
+# Upsilon Privacy Model
 
 ## What leaves your machine
 
@@ -10,8 +10,8 @@
 
 That's the entire payload — no prompts, no code, no file contents, no conversation text. The MCP parses your input locally and sends only the four token counts to the server, which re-parses and re-scores them authoritatively.
 
-The optional `sigrank proxy` is a local transport path to Anthropic/OpenAI, not a
-submission path to SigRank. When explicitly enabled, it necessarily receives and
+The optional `sigrank proxy` is a local Upsilon transport path to Anthropic/OpenAI, not a
+submission path to the SigRank leaderboard. When explicitly enabled, it necessarily receives and
 forwards provider-bound API keys, prompts, tool calls, and responses in memory.
 It does not persist that content or send it to the SigRank service; it appends
 only provider-reported token counts, model/backend metadata, and timestamps to
@@ -22,12 +22,12 @@ only provider-reported token counts, model/backend metadata, and timestamps to
 
 ## How it works
 
-1. **Local-first:** All token pulling happens on your machine. SigRank reads session logs from ~/.claude, ~/.codex, ~/.local/share/amp, etc. The optional proxy also runs only on loopback and only when manually started.
+1. **Local-first:** All token pulling happens on your machine. Upsilon reads usage metadata from session logs in ~/.claude, ~/.codex, ~/.local/share/amp, etc. The optional proxy also runs only on loopback and only when manually started.
 2. **Token-only persistence:** Local-log adapters extract integer counts from log metadata without reading conversation content. The optional proxy forwards request/response bytes transiently but persists only usage metadata. On the paste path, the MCP parses the paste locally and sends only the four extracted numbers — the raw paste text stays on your machine.
 3. **Signed submission:** Ranked submissions (`submit_verified`, `watch_tokenpull` with `submit:true`) are ed25519-signed with a device-bound key generated locally at enrollment. The board verifies the signature without seeing your data. Paste submissions (`submit_paste`, `tokenpull_submit`) are unsigned and go through the web-paste endpoint with a codename only — but still send only the four token counts, not the raw paste.
 4. **Read tools need no auth:** No API keys, no OAuth, no account needed to read the leaderboard or operator profiles. **Enrollment requires a connect code** from signalaf.com → Settings → New key (the code binds your device's public key to your operator server-side); a codename alone is not enough for the signed/ranked path.
 
-## What the SigRank service can NOT see
+## What the Upsilon service can NOT see
 
 - Your prompts or messages
 - Your code or file contents
@@ -35,7 +35,7 @@ only provider-reported token counts, model/backend metadata, and timestamps to
 - Which AI platform you use (beyond token counts)
 - Your identity (only your chosen codename)
 
-The local proxy process is different from the SigRank service: if you opt in, it
+The local proxy process is different from the Upsilon service: if you opt in, it
 handles your provider traffic in memory solely to forward it to Anthropic or
 OpenAI. That content is never stored in the proxy JSONL file.
 

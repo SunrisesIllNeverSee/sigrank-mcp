@@ -1,17 +1,16 @@
-# SigRank SignalAF MCP
+# Upsilon Measurement Engine — `sigrank` CLI/MCP
 
-> **🏆 SigRank SignalAF is live: [signalaf.com](https://signalaf.com)** — the AI operator
-> evaluation leaderboard. Ranks how efficiently you use AI by token cascade
-> efficiency (Υ = cache_read × output / input²), not how much. Run `npx sigrank`
-> to see your cascade now. _Token counts only. Never your prompts._
+> **Upsilon** is SignalAF's measurement engine. **SigRank** is the public leaderboard
+> and proof surface. The existing `sigrank` package name and `sigrank/0.1-draft`
+> record remain stable for compatibility. _Four token counts only. Never prompts or code._
 
 <div align="center">
 
 <p><img src="./.github/assets/og-card.png" alt="SigRank SignalAF — AI operator evaluation and token cascade efficiency leaderboard" width="800"></p>
 
-**The yield cascade + live leaderboard as MCP tools any agent can call.**
+**Upsilon measures. SigRank proves. MO§ES™ governs. SignalAF is the brand.**
 
-SigRank evaluates the human using the AI — not the AI model itself.
+Upsilon describes observable AI operator token-processing patterns—not AI model quality, cognition, work quality, employee productivity, or business value.
 
 [![npm version](https://img.shields.io/npm/v/sigrank.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank)
 [![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
@@ -32,7 +31,7 @@ SigRank evaluates the human using the AI — not the AI model itself.
 
 ## Table of Contents
 
-- [The SigRank SignalAF ecosystem](#the-sigrank-signalaf-ecosystem)
+- [SignalAF product architecture](#signalaf-product-architecture)
 - [Quickstart](#quickstart--3-steps-to-the-board)
 - [Install from GitHub](#install-from-github)
 - [Install via Smithery](#install-via-smithery)
@@ -57,12 +56,16 @@ SigRank evaluates the human using the AI — not the AI model itself.
 
 ---
 
-## The SigRank SignalAF ecosystem
+## SignalAF product architecture
+
+```text
+MO§ES™ governance → Upsilon measurement engine → SigRank public proof
+```
 
 | Repo | What it is | Install |
 |------|-----------|---------|
-| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | The instrument — extracts 4 token pillars, computes the cascade, submits to the leaderboard. MCP server + TUI dashboard. | `npx sigrank` |
-| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | The leaderboard — signalaf.com. Privacy-preserving operator profiles, class tiers, board rankings. | [signalaf.com](https://signalaf.com) |
+| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | Upsilon's compatibility instrument—extracts four token pillars, computes locally, and optionally submits to SigRank. | `npx sigrank` |
+| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | Upsilon web implementation plus the SigRank leaderboard/proof surface. | [signalaf.com](https://signalaf.com) |
 | **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank SignalAF's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
 | **[sigarena](https://github.com/SunrisesIllNeverSee/sigarena)** | The satellite — public LLM operator evals at sigeconomy.com. Read-only leaderboard, SEO/AEO surface. | [sigeconomy.com](https://sigeconomy.com) |
 | **[signaf](https://github.com/SunrisesIllNeverSee/signa)** | The coach — reads your session logs, builds a taste profile, measures ASI, coaches you on token efficiency. | `npx @burnmydays/signaf` |
@@ -74,7 +77,7 @@ SigRank evaluates the human using the AI — not the AI model itself.
 | Site | What it is |
 | ---- | ---------- |
 | **[SIGNOMY](https://signomy.xyz)** | Governed AI agent marketplace where ranked agents form teams, fill slots, run missions, and earn revenue under constitutional protocol. Agents are free. Operators pay. |
-| **[MO§ES](https://mos2es.com)** | The governance framework that underpins SigRank SignalAF, SIGNOMY, and all governed agent operations. Structural accountability for agentic systems. |
+| **[MO§ES](https://mos2es.com)** | Constitutional governance and methodology—the law governing Upsilon and other governed systems. |
 
 ## Quickstart — 3 steps to the board
 
