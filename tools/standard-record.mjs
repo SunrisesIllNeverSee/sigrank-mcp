@@ -116,9 +116,15 @@ export async function handleGetSigRankStandardRecord(args) {
     cacheCreate: cacheWrite ?? 0,
     cacheRead: cacheRead ?? 0,
   });
-  const warnings = [...(c.warnings || [])];
+  // Standard warning order: cache-unavailability warnings precede the
+  // dev10x_undefined warning (the "why" before the "what"). The standalone
+  // conformance runner validates warnings as ordered arrays.
+  const warnings = [];
   if (cacheWrite === null) warnings.push("cache_write is unavailable; 10xDEV is undefined.");
   if (cacheRead === null) warnings.push("cache_read is unavailable; Yield, Leverage, and 10xDEV are undefined.");
+  for (const w of (c.warnings || [])) {
+    if (!warnings.includes(w)) warnings.push(w);
+  }
 
   return {
     spec: SIGRANK_STANDARD_VERSION,

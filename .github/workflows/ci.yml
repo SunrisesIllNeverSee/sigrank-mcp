@@ -98,6 +98,22 @@ jobs:
       - name: Cross-repo leaderboard-metric contract test
         run: node __tests__/contract/leaderboard-metric-contract.test.mjs ${{ github.workspace }}/_sigrank-app
 
+      # Standalone Standard conformance gate — validates the MCP producer
+      # against the authoritative fixture pack from sigrank-standard. The
+      # Standard ref is pinned via SIGRANK_STANDARD_REF so upstream changes
+      # cannot silently alter consumer builds.
+      - name: Checkout sigrank-standard (authoritative fixture pack)
+        uses: actions/checkout@v7
+        with:
+          repository: SunrisesIllNeverSee/sigrank-standard
+          path: _sigrank-standard
+          ref: ${{ vars.SIGRANK_STANDARD_REF || '224505a' }}
+
+      - name: Standalone Standard conformance gate
+        env:
+          SIGRANK_STANDARD_REF: ${{ vars.SIGRANK_STANDARD_REF || '224505a' }}
+        run: node __tests__/contract/standalone-conformance.test.mjs ${{ github.workspace }}/_sigrank-standard
+
   # Verify the published tarball doesn't leak test fixtures or sensitive files.
   # The files[] whitelist in package.json controls what ships; this job is
   # defense-in-depth in case the whitelist is ever accidentally widened.
