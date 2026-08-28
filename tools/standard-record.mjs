@@ -2,13 +2,20 @@ import { cascade } from "../analytics/cascade.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const SIGRANK_STANDARD_VERSION = "sigrank/0.1-draft";
+export const PRODUCT_ARCHITECTURE = Object.freeze({
+  brand: "SignalAF",
+  governance: "MO§ES™",
+  product: "Upsilon",
+  leaderboard: "SigRank",
+  wire_spec: SIGRANK_STANDARD_VERSION,
+});
 
 export const TOOL_DEF = {
   name: "get_sigrank_standard_record",
   description:
-    "Build a SigRank Standard v0.1-draft portable operator record from available token telemetry. Input and output are required; unavailable cache telemetry remains null. Computes the canonical cascade locally through @sigrank/cascade and returns the normative core metrics: Yield, Leverage, Velocity, SNR, and 10xDEV. No data is submitted or persisted.",
+    "Build Upsilon's portable sigrank/0.1-draft compatibility record from available token telemetry. Input and output are required; unavailable cache telemetry remains null. Computes the canonical cascade locally through @sigrank/cascade and returns Yield, Leverage, Velocity, SNR, and 10xDEV. Upsilon is the measurement product; SigRank is the public leaderboard. No data is submitted or persisted.",
   annotations: {
-    title: "Export SigRank standard record",
+    title: "Export Upsilon measurement record",
     ...ANNOTATIONS.readOnlyHint,
     ...ANNOTATIONS.destructiveHint,
     ...ANNOTATIONS.idempotentHint,
