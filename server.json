@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "Upsilon privacy-preserving measurement engine with 25 local tools; SigRank leaderboard and proof-surface access; distributed as sigrank for compatibility.",
+  "description": "Upsilon measurement engine with 25 local tools and SigRank proof access via the sigrank package.",
   "title": "Upsilon \u2014 AI Operator Measurement Engine",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "transport": {
         "type": "stdio"
       },
