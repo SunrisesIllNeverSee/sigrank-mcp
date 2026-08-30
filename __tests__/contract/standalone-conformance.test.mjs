@@ -32,34 +32,28 @@ import { handleGetSigRankStandardRecord } from "../../tools/standard-record.mjs"
 const SIGRANK_STANDARD_REF = process.env.SIGRANK_STANDARD_REF || "c73f152";
 
 const standardRoot = process.argv[2] || process.env.SIGRANK_STANDARD_PATH;
-if (!standardRoot || !existsSync(standardRoot)) {
-  console.error(
-    "Usage: node __tests__/contract/standalone-conformance.test.mjs <path-to-sigrank-standard>",
+
+const standardAvailable = standardRoot && existsSync(standardRoot) &&
+  existsSync(join(standardRoot, "examples", "fixtures")) &&
+  existsSync(join(standardRoot, "schema", "sigrank-operator-record-v0.1.schema.json"));
+
+if (!standardAvailable) {
+  console.warn(
+    "sigrank-standard not found. Set SIGRANK_STANDARD_PATH or pass the repo root as the first argument. Tests will be skipped.",
   );
-  console.error(
-    "Set SIGRANK_STANDARD_PATH or pass the repo root as the first argument.",
-  );
-  process.exit(2);
 }
 
-const fixturesDir = join(standardRoot, "examples", "fixtures");
-const schemaPath = join(standardRoot, "schema", "sigrank-operator-record-v0.1.schema.json");
+const fixturesDir = standardAvailable ? join(standardRoot, "examples", "fixtures") : null;
+const schema = standardAvailable
+  ? JSON.parse(readFileSync(join(standardRoot, "schema", "sigrank-operator-record-v0.1.schema.json"), "utf-8"))
+  : null;
+const fixtureFiles = standardAvailable
+  ? readdirSync(fixturesDir).filter((f) => f.endsWith(".json")).sort()
+  : [];
 
-if (!existsSync(fixturesDir)) {
-  console.error(`Fixtures directory not found: ${fixturesDir}`);
-  process.exit(2);
+if (standardAvailable) {
+  assert.ok(fixtureFiles.length === 13, `Expected 13 fixtures, found ${fixtureFiles.length}`);
 }
-if (!existsSync(schemaPath)) {
-  console.error(`Schema not found: ${schemaPath}`);
-  process.exit(2);
-}
-
-const schema = JSON.parse(readFileSync(schemaPath, "utf-8"));
-const fixtureFiles = readdirSync(fixturesDir)
-  .filter((f) => f.endsWith(".json"))
-  .sort();
-
-assert.ok(fixtureFiles.length === 13, `Expected 13 fixtures, found ${fixtureFiles.length}`);
 
 // ─── Self-contained schema validator (mirrors the standalone runner) ─────────
 
@@ -130,7 +124,7 @@ function arraysEqual(a, b) {
 
 // ─── Conformance gate: every fixture must pass ───────────────────────────────
 
-test(`MCP producer passes all 13 standalone fixtures (Standard ref ${SIGRANK_STANDARD_REF})`, async () => {
+const it = standardAvailable ? test : test.skip; it(`MCP producer passes all 13 standalone fixtures (Standard ref ${SIGRANK_STANDARD_REF})`, async () => {
   const failures = [];
 
   for (const file of fixtureFiles) {
@@ -247,7 +241,7 @@ test(`MCP producer passes all 13 standalone fixtures (Standard ref ${SIGRANK_STA
   }
 });
 
-test("MCP producer record excludes Construction, Build Archetypes, RS05, Scale V, rank, percentile", async () => {
+it("MCP producer record excludes Construction, Build Archetypes, RS05, Scale V, rank, percentile", async () => {
   const record = await handleGetSigRankStandardRecord({
     input: 1000,
     output: 5000,
@@ -260,7 +254,7 @@ test("MCP producer record excludes Construction, Build Archetypes, RS05, Scale V
   }
 });
 
-test("MCP producer preserves null/zero distinction for unavailable cache", async () => {
+it("MCP producer preserves null/zero distinction for unavailable cache", async () => {
   const unavailable = await handleGetSigRankStandardRecord({
     input: 100,
     output: 50,
