@@ -3,14 +3,14 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "Upsilon measurement engine with 25 local tools and SigRank proof access via the sigrank package.",
   "title": "Upsilon \u2014 AI Operator Measurement Engine",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "1.0.7",
+      "version": "1.0.8",
       "transport": {
         "type": "stdio"
       },
