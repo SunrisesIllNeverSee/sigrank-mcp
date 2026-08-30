@@ -10,7 +10,7 @@
  * fixtures the standalone conformance runner enforces.
  *
  * Pin: the Standard commit is pinned via the SIGRANK_STANDARD_REF env var
- * (default: the merged baseline `224505a`). Upstream changes to the Standard
+ * (default: the merged baseline `c73f152`). Upstream changes to the Standard
  * cannot silently alter consumer builds — a bump requires updating this pin
  * in a reviewable commit.
  *
@@ -29,7 +29,7 @@ import { handleGetSigRankStandardRecord } from "../../tools/standard-record.mjs"
 
 // Pinned Standard ref. Bumping this is a reviewable change that signals
 // "we are consuming a new version of the fixture pack."
-const SIGRANK_STANDARD_REF = process.env.SIGRANK_STANDARD_REF || "224505a";
+const SIGRANK_STANDARD_REF = process.env.SIGRANK_STANDARD_REF || "c73f152";
 
 const standardRoot = process.argv[2] || process.env.SIGRANK_STANDARD_PATH;
 if (!standardRoot || !existsSync(standardRoot)) {
