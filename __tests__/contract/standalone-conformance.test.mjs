@@ -59,7 +59,7 @@ const fixtureFiles = readdirSync(fixturesDir)
   .filter((f) => f.endsWith(".json"))
   .sort();
 
-assert.ok(fixtureFiles.length === 13, `Expected 12 fixtures, found ${fixtureFiles.length}`);
+assert.ok(fixtureFiles.length === 13, `Expected 13 fixtures, found ${fixtureFiles.length}`);
 
 // ─── Self-contained schema validator (mirrors the standalone runner) ─────────
 
