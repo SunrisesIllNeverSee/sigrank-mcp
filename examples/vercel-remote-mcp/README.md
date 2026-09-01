@@ -10,13 +10,17 @@ Your deployment exposes:
 
 ```text
 https://YOUR-PROJECT.vercel.app/api/mcp
+https://YOUR-PROJECT.vercel.app/.well-known/mcp.json
+https://YOUR-PROJECT.vercel.app/llms.txt
 ```
 
-That endpoint forwards Streamable HTTP MCP requests to the canonical server:
+The MCP endpoint forwards Streamable HTTP requests to the canonical server:
 
 ```text
 https://signalaf.com/api/mcp
 ```
+
+The server card and `llms.txt` advertise the project-owned endpoint to agents while pointing back to the canonical SigRank documentation and upstream implementation.
 
 This architecture is deliberate: the Vercel deployment gives you a project-owned endpoint while keeping SigRank scoring, tools, and benchmark behavior on one canonical implementation instead of duplicating metric logic.
 
