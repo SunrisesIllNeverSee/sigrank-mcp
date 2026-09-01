@@ -117,6 +117,7 @@ async function* _walkJsonl(dir, _counter = { n: 0 }) {
  */
 export const claudeAdapter = {
   platform: "claude",
+  globalMessageIdDedup: true,
   defaultRoot: () => join(homedir(), ".claude", "projects"),
   async *messages(root) {
     for await (const path of _walkJsonl(root)) {
@@ -166,16 +167,21 @@ export async function tokenpull({ adapter = claudeAdapter, root, now } = {}) {
   const nowMs =
     now == null ? Date.now() : typeof now === "number" ? now : Date.parse(now);
 
-  // Dedup by (session_id, message_id), keeping the FINAL snapshot — matches
-  // token-dashboard: Claude Code writes 2-3 partial→final lines per response with
-  // the same message.id; only the final tally matches billing. No-id records each
-  // get a unique synthetic key so they always count.
+  // Dedup by message ID for adapters whose logs can copy one API message into
+  // forked sessions; otherwise use (session_id, message_id) to preserve the
+  // adapter's native session semantics. Keep the FINAL snapshot: Claude Code
+  // writes 2-3 partial→final lines per response with the same message.id, and
+  // only the final tally matches billing. No-id records each get a unique key.
   const seen = new Map();
   const files = new Set();
   let noId = 0;
   for await (const msg of adapter.messages(r)) {
     const key =
-      msg.sid && msg.id ? `${msg.sid}|${msg.id}` : msg.id || `__noid_${noId++}`;
+      msg.id && adapter.globalMessageIdDedup
+        ? msg.id
+        : msg.sid && msg.id
+          ? `${msg.sid}|${msg.id}`
+          : msg.id || `__noid_${noId++}`;
     seen.set(key, msg); // keep-last (final snapshot wins)
     if (msg.file) files.add(msg.file);
   }

@@ -234,6 +234,47 @@ assert.strictEqual(
   "all cacheRead = 400+40+4",
 );
 
+// --- 5b. Claude forked transcripts: identical message IDs count once ---
+const forkedAdapter = {
+  platform: "claude",
+  defaultRoot: () => "/mock",
+  globalMessageIdDedup: true,
+  async *messages() {
+    yield {
+      id: "forked-message",
+      sid: "original-session",
+      ts: "2026-06-18T00:00:00Z",
+      input: 2,
+      output: 100,
+      cacheCreate: 300,
+      cacheRead: 4000,
+      file: "projects/original.jsonl",
+    };
+    yield {
+      id: "forked-message",
+      sid: "resumed-session",
+      ts: "2026-06-18T00:00:00Z",
+      input: 2,
+      output: 100,
+      cacheCreate: 300,
+      cacheRead: 4000,
+      file: "projects/resumed.jsonl",
+    };
+  },
+};
+const forkedPull = await tokenpull({ adapter: forkedAdapter, now: NOW });
+const forked7d = forkedPull.windows.find((w) => w.window === "7d");
+assert.strictEqual(
+  forkedPull.totalMessages,
+  1,
+  "same Claude message ID across forked sessions counts once",
+);
+assert.deepStrictEqual(
+  forked7d.pillars,
+  { input: 2, output: 100, cacheCreate: 300, cacheRead: 4000 },
+  "forked transcript duplicate does not inflate any pillar",
+);
+
 // --- 6. tokenpull_submit: pull local → POST canonical pillars per window (mock adapter + injected fetch, NO live write) ---
 const posts = [];
 const subFetch = async (url, init) => {
