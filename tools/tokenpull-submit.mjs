@@ -7,19 +7,15 @@ import { narrate } from "../presentation/narrate.mjs";
 import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { SUBMIT_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import {
-  MAX_INPUT,
   pullByPlatform,
-  uploadStamp,
-  WINDOW_TYPE,
 } from "./_helpers.mjs";
-import { TERMS_VERSION, PRIVACY_VERSION, isRankedAck } from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "tokenpull_submit",
   description:
-    "Pull your LOCAL token usage from session logs AND publish it to the SigRank board in one call — the zero-paste flow. Reads the four canonical pillars (input, output, cacheCreate, cacheRead) per window from your local logs, computes the cascade, and submits each window to the board where it is re-scored server-side and tagged with the source platform. Requires a codename to publish; omit for a local preview only. Token-only — no prompt content is read or transmitted.",
+    "Pull your LOCAL token usage from session logs and compute the cascade per window — the zero-paste preview flow. Reads the four canonical pillars (input, output, cacheCreate, cacheRead) per window from your local logs and computes yield, leverage, velocity, class, and card. This is a PREVIEW-ONLY tool — it does not publish to the board. The board's /api/v1/ingest-paste endpoint now requires an authenticated Supabase session, which MCP tools do not carry. To publish to the leaderboard, use submit_verified (which signs and posts to /api/v1/snapshots via the enrolled-device path) or submit directly through the signalaf.com web UI. Token-only — no prompt content is read or transmitted.",
   annotations: {
-    title: "Pull and submit tokens",
+    title: "Pull and preview tokens",
     ...ANNOTATIONS.destructiveHint,
     ...ANNOTATIONS.idempotentHint,
     ...ANNOTATIONS.openWorldHint,
@@ -30,13 +26,13 @@ export const TOOL_DEF = {
       codename: {
         type: "string",
         description:
-          'Operator codename to publish under on the leaderboard (e.g. "Iron Lotus"). Required to submit — omit for local preview only.',
+          'Operator codename for the ranking card display (e.g. "Iron Lotus"). Optional — used only for the local preview card, not for board submission.',
       },
       window: {
         type: "string",
         enum: ["7d", "30d", "90d", "all"],
         description:
-          'Submit only this time window (default: all 4 windows). Use "7d" for recent activity or "all" for all-time ranking.',
+          'Preview only this time window (default: all 4 windows). Use "7d" for recent activity or "all" for all-time ranking.',
       },
       platform: {
         type: "string",
@@ -49,15 +45,16 @@ export const TOOL_DEF = {
 };
 
 export async function handleTokenpullSubmit(args, ctx) {
-  // Pull local usage, then publish each window's CANONICAL pillars to the board
-  // (server re-scores). The board stays platform-agnostic via the 4 pillars; the
-  // source platform rides along as a tag. Conversion already happened in the adapter.
+  // Pull local usage and compute the cascade per window. This tool is
+  // preview-only — the board's /api/v1/ingest-paste endpoint now requires
+  // an authenticated Supabase session, which MCP tools do not carry. Use
+  // submit_verified for authenticated board submission.
   const codename = String(args?.codename || "").trim();
   const platform = args?.platform || "claude";
 
   // MULTI: same combined cross-platform cascade as submit_verified. Includes Devin
   // (cloud, via tokscale). Aggregate every locally-detected platform's pillars per
-  // window and publish as platform='multi'.
+  // window.
   if (platform === "multi") {
     const detected = [];
     for (const p of ALL_PLATFORMS) {
@@ -102,58 +99,17 @@ export async function handleTokenpullSubmit(args, ctx) {
         continue;
       const c = cascade(sum);
       const card = narrate(c, `${wk} multi`);
-      if (!codename) {
-        out.push({
-          window: wk,
-          pillars: sum,
-          cascade: c,
-          card,
-          submission: { status: "not_submitted", reason: "codename_required" },
-        });
-        continue;
-      }
-      const rawPaste = `${sum.input} ${sum.output} ${sum.cacheCreate} ${sum.cacheRead}`;
-      const windowType = WINDOW_TYPE[wk] || wk;
-      const stamp = uploadStamp({
-        codename,
-        window: windowType,
-        pillars: sum,
-        platform: "multi",
-      });
-      const res = await ctx.doFetch(`${ctx.apiBase}/api/v1/ingest-paste`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-        },
-        body: JSON.stringify({
-          codename,
-          raw_paste: rawPaste,
-          window_type: windowType,
-          telemetry: { platform: { primary: "multi" } },
-          consent_acknowledged: true,
-          terms_version: TERMS_VERSION,
-          privacy_version: PRIVACY_VERSION,
-          ...stamp,
-        }),
-      });
-      let ack;
-      try {
-        ack = await res.json();
-      } catch {
-        ack = { status: "parse_error", httpStatus: res.status };
-      }
-      // Fix 4: was `ack?.ranked ?? ack?.accepted ?? false` — a looser predicate
-      // than the single-platform branch below, which would mark a non-persisted
-      // 202 as ranked. Now both branches use the shared isRankedAck() so every
-      // submit path agrees on what "ranked" means.
-      const ranked = isRankedAck(res, ack);
       out.push({
         window: wk,
         pillars: sum,
         cascade: c,
         card,
-        submission: { ...stamp, httpStatus: res.status, ranked, ...ack },
+        submission: {
+          status: "not_submitted",
+          reason: "preview_only",
+          detail:
+            "tokenpull_submit is preview-only. Use submit_verified (enrolled device) or the signalaf.com web UI to publish.",
+        },
       });
     }
     return {
@@ -172,58 +128,17 @@ export async function handleTokenpullSubmit(args, ctx) {
   for (const w of targets) {
     const c = cascade(w.pillars);
     const card = narrate(c, `${w.window} window`);
-    if (!codename) {
-      out.push({
-        window: w.window,
-        pillars: w.pillars,
-        cascade: c,
-        card,
-        submission: { status: "not_submitted", reason: "codename_required" },
-      });
-      continue;
-    }
-    // canonical pillars → "input output cacheCreate cacheRead" (the parser's 4-bare-number form)
-    const rawPaste = `${w.pillars.input} ${w.pillars.output} ${w.pillars.cacheCreate} ${w.pillars.cacheRead}`;
-    const windowType = WINDOW_TYPE[w.window] || w.window;
-    const stamp = uploadStamp({
-      codename,
-      window: windowType,
-      pillars: w.pillars,
-      platform: pulled.platform,
-    });
-    const res = await ctx.doFetch(`${ctx.apiBase}/api/v1/ingest-paste`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify({
-        codename,
-        raw_paste: rawPaste,
-        window_type: windowType,
-        telemetry: { platform: { primary: pulled.platform } },
-        consent_acknowledged: true,
-        terms_version: TERMS_VERSION,
-        privacy_version: PRIVACY_VERSION,
-        ...stamp,
-      }),
-    });
-    let ack;
-    try {
-      ack = await res.json();
-    } catch {
-      ack = { status: "error", detail: `HTTP ${res.status} (non-JSON)` };
-    }
-    // ranked = actually on the board (verified + persisted), not just received — parity
-    // with submit_verified (submit/index.mjs). An unenrolled/revoked device gets 202 but is NEVER ranked.
-    const ranked = isRankedAck(res, ack);
     out.push({
       window: w.window,
       pillars: w.pillars,
       cascade: c,
       card,
-      ranked,
-      submission: { ...stamp, httpStatus: res.status, ranked, ...ack },
+      submission: {
+        status: "not_submitted",
+        reason: "preview_only",
+        detail:
+          "tokenpull_submit is preview-only. Use submit_verified (enrolled device) or the signalaf.com web UI to publish.",
+      },
     });
   }
   return {

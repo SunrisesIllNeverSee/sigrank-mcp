@@ -67,96 +67,51 @@ assert.ok(
 );
 console.log("\ncard →", rp.card);
 
-// --- 3. (3b) submit_paste: no codename → local preview, NO submission ---
+// --- 3. submit_paste: preview-only (no board submission) ---
 const noCode = await callTool("submit_paste", { text: MOSES });
 assert.strictEqual(noCode.yield, 18436.98, "submit_paste preview Υ mismatch");
 assert.match(noCode.card, /REFINER/, "preview card present");
 assert.strictEqual(
   noCode.submission.status,
   "not_submitted",
-  "no codename must not submit",
+  "preview-only must not submit",
 );
-assert.strictEqual(noCode.submission.reason, "codename_required");
+assert.strictEqual(noCode.submission.reason, "preview_only");
 
-// --- 4. (3b) submit_paste with codename → POSTs {codename, raw_paste} to ingest-paste.
-//     Verified with an INJECTED fetch — no live call, no write to production. ---
-let captured = null;
-const fakeFetch = async (url, init) => {
-  captured = { url, init };
-  return {
-    ok: true,
-    status: 202,
-    json: async () => ({
-      status: "received",
-      submission_id: "paste_test",
-      signa_rate: 96.4,
-      class_tier: "REFINER I",
-    }),
-  };
-};
+// --- 4. submit_paste with codename → still preview-only (board requires auth) ---
 const sub = await callTool(
   "submit_paste",
   { text: MOSES, codename: "TransVaultOrigin" },
-  { apiBase: "http://test.local", fetchImpl: fakeFetch },
-);
-assert.ok(
-  captured.url.endsWith("/api/v1/ingest-paste"),
-  "submits to /api/v1/ingest-paste",
-);
-assert.strictEqual(captured.init.method, "POST");
-const body = JSON.parse(captured.init.body);
-assert.strictEqual(body.codename, "TransVaultOrigin", "codename forwarded");
-assert.strictEqual(
-  body.raw_paste,
-  MOSES,
-  "canonical 4-number paste forwarded (parsed pillars, not raw user text)",
+  { apiBase: "http://test.local" },
 );
 assert.strictEqual(
   sub.yield,
   18436.98,
-  "local preview Υ still returned alongside submission",
+  "local preview Υ returned",
 );
 assert.strictEqual(
-  sub.submission.httpStatus,
-  202,
-  "server ack status surfaced",
+  sub.submission.status,
+  "not_submitted",
+  "codename no longer triggers submission — board requires auth",
 );
-assert.strictEqual(sub.submission.status, "received", "server ack body merged");
+assert.strictEqual(sub.submission.reason, "preview_only");
 
-// --- 4b. submit_paste PRIVACY: mixed text → only 4 numbers sent, no prose leaks ---
-//     The user pastes text containing prose + 4 numbers. parsePillars extracts the
-//     numbers; raw_paste must be the canonical 4-number form, NOT the original text.
-//     This is the privacy guard: conversation content never reaches the server.
-let mixedCaptured = null;
-const mixedFetch = async (url, init) => {
-  mixedCaptured = { url, init };
-  return {
-    ok: true,
-    status: 202,
-    json: async () => ({ status: "received", submission_id: "pmix" }),
-  };
-};
+// --- 4b. submit_paste PRIVACY: preview-only, no network call at all ---
+//     The tool no longer sends any data to the server. parsePillars still
+//     extracts the numbers locally for the preview, but nothing is transmitted.
 const MIXED = "My session used 1000 input, 500 output, 50 cacheCreate, 80 cacheRead tokens today";
 const mixedSub = await callTool(
   "submit_paste",
   { text: MIXED, codename: "PrivacyTest" },
-  { apiBase: "http://test.local", fetchImpl: mixedFetch },
+  { apiBase: "http://test.local" },
 );
-const mixedBody = JSON.parse(mixedCaptured.init.body);
 assert.strictEqual(
-  mixedBody.raw_paste,
-  "1000 500 50 80",
-  "PRIVACY: raw_paste is canonical 4 numbers, not the raw prose",
+  mixedSub.submission.status,
+  "not_submitted",
+  "mixed text preview-only",
 );
-assert.ok(
-  !mixedBody.raw_paste.includes("session"),
-  "PRIVACY: no prose leaks into raw_paste",
-);
-assert.ok(
-  !mixedBody.raw_paste.includes("tokens today"),
-  "PRIVACY: no conversation text leaks into raw_paste",
-);
-console.log("✓ submit_paste PRIVACY: mixed text → only 4 numbers sent (no prose leak)");
+assert.strictEqual(mixedSub.submission.reason, "preview_only");
+console.log("✓ submit_paste: preview-only (no network call, no prose leak possible)");
 
 // --- 5. tokenpull: dedup by message.id + window slicing (mock adapter, no filesystem) ---
 const NOW = Date.parse("2026-06-19T00:00:00Z");
@@ -275,54 +230,27 @@ assert.deepStrictEqual(
   "forked transcript duplicate does not inflate any pillar",
 );
 
-// --- 6. tokenpull_submit: pull local → POST canonical pillars per window (mock adapter + injected fetch, NO live write) ---
-const posts = [];
-const subFetch = async (url, init) => {
-  posts.push({ url, body: JSON.parse(init.body) });
-  return {
-    ok: true,
-    status: 202,
-    json: async () => ({ status: "received", submission_id: "x" }),
-  };
-};
+// --- 6. tokenpull_submit: preview-only (no board submission, board requires auth) ---
 const submitted = await callTool(
   "tokenpull_submit",
   { codename: "TESTOP" },
-  { apiBase: "http://test.local", fetchImpl: subFetch, adapter: mockAdapter },
+  { apiBase: "http://test.local", adapter: mockAdapter },
 );
-assert.strictEqual(posts.length, 4, "submits all 4 windows");
 assert.ok(
-  posts.every((p) => p.url.endsWith("/api/v1/ingest-paste")),
-  "all POST to ingest-paste",
+  submitted.windows.every((w) => w.submission.status === "not_submitted"),
+  "all windows preview-only",
 );
-const allP = posts.find((p) => p.body.window_type === "all_time");
-assert.strictEqual(
-  allP.body.raw_paste,
-  "111 222 333 444",
-  "all-window canonical pillars as 4 numbers (a+b+c)",
+assert.ok(
+  submitted.windows.every((w) => w.submission.reason === "preview_only"),
+  "all windows report preview_only reason",
 );
-assert.strictEqual(allP.body.codename, "TESTOP", "codename forwarded");
-assert.strictEqual(
-  allP.body.telemetry.platform.primary,
-  "claude",
-  "platform tag rides along",
-);
-assert.match(
-  allP.body.content_hash,
-  /^[0-9a-f]{64}$/,
-  "upload is sha256-hashed",
-);
-assert.match(
-  allP.body.submitted_ddmmyy,
-  /^\d{6}$/,
-  "upload is ddmmyy-timestamped",
-);
-assert.strictEqual(
-  submitted.windows.find((w) => w.window === "all").submission.status,
-  "received",
-  "server ack merged",
-);
-// no codename → preview, no POST
+// Verify cascade is still computed locally
+const allWin = submitted.windows.find((w) => w.window === "all");
+assert.ok(allWin, "all-window present");
+assert.ok(allWin.pillars, "pillars present");
+assert.ok(allWin.cascade, "cascade computed");
+assert.ok(allWin.card, "card generated");
+// no codename → also preview
 const preview = await callTool(
   "tokenpull_submit",
   {},
@@ -1559,8 +1487,8 @@ assert.ok(
 );
 assert.match(
   rwResult.note,
-  /tokenpull_submit/,
-  "rank_windows: note mentions tokenpull_submit",
+  /submit_verified/,
+  "rank_windows: note mentions submit_verified",
 );
 
 // --- 27. rank_windows: throws on empty input ---

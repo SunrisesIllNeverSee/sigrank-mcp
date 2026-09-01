@@ -1,8 +1,9 @@
 name: Publish to npm + MCP Registry
 
-# Auto-publish flow: when tests pass on push to main, bump the patch version,
-# publish to npm, publish to the MCP Registry, push the version commit back to
-# main, and the app auto-syncs its MCP_VERSION constant (→ Vercel auto-deploys).
+# Auto-publish flow: runs ONLY after CI (ci.yml) completes successfully on
+# main. Bumps the patch version, publishes to npm, publishes to the MCP
+# Registry, pushes the version commit back to main, and the app auto-syncs
+# its MCP_VERSION constant (→ Vercel auto-deploys).
 #
 # Requires secrets:
 #   NPM_TOKEN         — npm publish token (automation token recommended)
@@ -10,11 +11,16 @@ name: Publish to npm + MCP Registry
 # MCP Registry authentication uses GitHub OIDC (no secret needed for
 # io.github.SunrisesIllNeverSee/* namespace). Requires id-token: write.
 #
-# The workflow waits for CI (ci.yml) to pass before publishing. If CI fails,
-# no publish happens.
+# SECURITY: This workflow is triggered by workflow_run (CI completion), NOT
+# by push. This ensures publishing can never outrun CI — the publish job
+# only fires after all CI checks pass. The bot's own version-commit push
+# triggers CI but not publish (guarded by actor check), preventing an
+# infinite loop.
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -23,20 +29,27 @@ permissions:
   id-token: write # needed for mcp-publisher github-oidc authentication
 
 jobs:
-  # Gate: only run publish if CI would pass. We skip the publish job if the
-  # push was made by this workflow itself (to avoid an infinite loop).
   publish:
     name: Bump + publish + sync app
     runs-on: ubuntu-latest
-    if: github.actor != 'github-actions[bot]'
+    # Only publish when CI succeeded. Skip if the CI run was triggered by
+    # the bot's own version commit (prevents infinite loop). Allow manual
+    # workflow_dispatch triggers.
+    if: |
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.actor != 'github-actions[bot]') ||
+      github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           # Full history + token so we can push the version commit back
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # For workflow_run, checkout the SHA that CI ran against.
+          ref: ${{ github.event.workflow_run.head_sha || '' }}
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
           cache: npm
@@ -100,9 +113,14 @@ jobs:
       # Uses GitHub OIDC authentication — no secret needed for io.github.* namespace.
       # The server.json name (io.github.SunrisesIllNeverSee/sigrank-mcp) must match
       # the mcpName in package.json and the GitHub repo owner.
-      - name: Install mcp-publisher
+      - name: Install mcp-publisher (pinned v1.8.1 + checksum verified)
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          MCP_PUBLISHER_VERSION="v1.8.1"
+          MCP_PUBLISHER_SHA256="a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+          MCP_PUBLISHER_URL="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
+          curl -L "$MCP_PUBLISHER_URL" -o /tmp/mcp-publisher.tar.gz
+          echo "$MCP_PUBLISHER_SHA256  /tmp/mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf /tmp/mcp-publisher.tar.gz -C . mcp-publisher
           chmod +x mcp-publisher
 
       - name: Authenticate to MCP Registry (GitHub OIDC)

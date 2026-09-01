@@ -10,7 +10,7 @@ import { MAX_INPUT, withParseWarnings } from "./_helpers.mjs";
 export const TOOL_DEF = {
   name: "rank_windows",
   description:
-    "Rank all four time windows (7d/30d/90d/all-time) in one call from a dashboard paste — paste the full table from ccusage, tokscale, or the Claude Max usage dashboard and get the cascade (Υ, SNR, Leverage, Velocity, 10xDEV, class, card) for each window. Each window is parsed and scored independently. Named keys required (input/output/cacheCreate/cacheRead); positional order is NOT safe here (dashboards list cache_read before cache_create — see WINDOWED_PROFILES gotcha). Omit windows you don't have — partial input is allowed (1–4 windows). Does NOT submit to the board; use tokenpull_submit for zero-paste publishing.",
+    "Rank all four time windows (7d/30d/90d/all-time) in one call from a dashboard paste — paste the full table from ccusage, tokscale, or the Claude Max usage dashboard and get the cascade (Υ, SNR, Leverage, Velocity, 10xDEV, class, card) for each window. Each window is parsed and scored independently. Named keys required (input/output/cacheCreate/cacheRead); positional order is NOT safe here (dashboards list cache_read before cache_create — see WINDOWED_PROFILES gotcha). Omit windows you don't have — partial input is allowed (1–4 windows). Does NOT submit to the board; use tokenpull_submit for a local zero-paste preview, or submit_verified to publish via the enrolled-device path.",
   annotations: {
     title: "Rank all time windows",
     ...ANNOTATIONS.readOnlyHint,
@@ -115,6 +115,6 @@ export async function handleRankWindows(args) {
   return {
     windows,
     source_tool: sourceTool,
-    note: "Local preview only — use tokenpull_submit to publish to the board.",
+    note: "Local preview only — use submit_verified to publish to the board.",
   };
 }

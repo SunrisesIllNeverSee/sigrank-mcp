@@ -360,7 +360,16 @@ export async function startProxy({
       return;
     }
 
-    const upstreamUrl = new URL(req.url, upstreamBase);
+    const upstreamUrl = new URL(parsedUrl.pathname + parsedUrl.search, upstreamBase);
+    // Defense-in-depth: verify the constructed URL origin matches the intended
+    // upstream. This prevents an absolute-form request target (e.g.
+    // "http://attacker.example/v1/messages") from overriding upstreamBase via
+    // new URL(req.url, base) — which would forward credentials to an attacker.
+    if (upstreamUrl.origin !== new URL(upstreamBase).origin) {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Refused to proxy to unexpected origin\n");
+      return;
+    }
     const transport = upstreamUrl.protocol === "http:" ? http : https;
     const tracker = createUsageTracker({
       backend: route.backend,
