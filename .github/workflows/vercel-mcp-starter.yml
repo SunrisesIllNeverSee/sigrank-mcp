@@ -1,0 +1,31 @@
+name: Vercel MCP Starter
+
+on:
+  pull_request:
+    paths:
+      - "examples/vercel-remote-mcp/**"
+      - ".github/workflows/vercel-mcp-starter.yml"
+  push:
+    branches: [main]
+    paths:
+      - "examples/vercel-remote-mcp/**"
+      - ".github/workflows/vercel-mcp-starter.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/vercel-remote-mcp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
