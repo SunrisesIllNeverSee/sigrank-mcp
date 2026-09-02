@@ -2335,6 +2335,45 @@ export async function runTui({
     return;
   }
 
+  // ── Terminal size guard ────────────────────────────────────────────────────
+  // The TUI renders a tab bar + content + footer in a locked alternate-screen
+  // frame. If the terminal is too small, the footer smears off the bottom and
+  // content rows get clamped — confusing, not useful. Refuse to render until
+  // there's enough room, matching the PostHog wizard's pattern: show a clear
+  // message with current vs required dimensions, and re-check on resize.
+  const MIN_COLS = 80;
+  const MIN_ROWS = 24;
+  const tooSmall = () =>
+    (process.stdout.columns || 80) < MIN_COLS ||
+    (process.stdout.rows || 24) < MIN_ROWS;
+  if (tooSmall() && process.stdout.isTTY) {
+    const renderSizeMsg = () => {
+      const cols = process.stdout.columns || 80;
+      const rows = process.stdout.rows || 24;
+      process.stdout.write(`${ESC}H${ESC}2J`);
+      process.stdout.write(
+        `\n  SigRank TUI needs more room to display required content.\n` +
+        `  Please make this terminal bigger.\n\n` +
+        `  Currently ${cols}×${rows}, needs at least ${MIN_COLS}×${MIN_ROWS}.\n\n` +
+        `  Waiting for resize… (Ctrl+C to cancel)\n`,
+      );
+    };
+    renderSizeMsg();
+    await new Promise((resolve) => {
+      const onResize = () => {
+        if (!tooSmall()) {
+          process.stdout.off("resize", onResize);
+          resolve();
+        } else {
+          renderSizeMsg();
+        }
+      };
+      process.stdout.on("resize", onResize);
+    });
+    // Clear the size-warning message before entering the alt screen
+    process.stdout.write(`${ESC}H${ESC}2J`);
+  }
+
   write(ENTER_ALT); // switch to alternate screen — original terminal state preserved on exit
   write(CLEAR_SB); // FIXED-WINDOW (2026-06-27): clear scrollback so nothing is above the TUI
   write(HIDE);
