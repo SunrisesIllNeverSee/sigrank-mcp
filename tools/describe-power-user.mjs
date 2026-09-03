@@ -55,7 +55,7 @@ export async function handleDescribePowerUser() {
     metrics_explained: {
       yield_: "Yield (Υ) measures how well you compound signal, not how much you burn. High yield = your cached context is doing work for you.",
       leverage: "Leverage (Cr/I) measures how much you reuse prior work vs starting fresh. High leverage = you're building on cached results, not re-explaining everything.",
-      velocity: "Velocity (O/I) measures how much output you get per token spent. High velocity = you're productive, not just active.",
+      velocity: "Velocity (O/I) measures how much output you get per token spent. High velocity = you're efficient, not just active.",
     },
     // The 8 base tiers + UNCLASSED, in descending cut order (matches
     // analytics/cascade.mjs CLASS_TIERS). Each tier has 3 sub-stages (I/II/III)

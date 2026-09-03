@@ -10,7 +10,7 @@ import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 export const TOOL_DEF = {
   name: "get_best_operator",
   description:
-    "Returns the top N operators on the SigRank leaderboard with behavioral framing in power-user language. Wraps get_leaderboard and adds plain-language interpretation of each top operator's cascade: what their yield, leverage, and velocity mean in terms of AI power-user behavior (cache reuse, input economy, output productivity). Use this when users ask 'who is the best AI user?' or 'who tops the SigRank leaderboard?' or 'show me the AI user leaderboard'. Do NOT use get_leaderboard if you want the raw array without interpretation — use this for the power-user framing. Intent: BEST_OPERATOR.",
+    "Returns the top N operators on the SigRank leaderboard with behavioral framing in operator-language. Wraps get_leaderboard and adds plain-language interpretation of each top operator's cascade: what their yield, leverage, and velocity mean in terms of AI operator behavior (cache reuse, input economy, output efficiency). Use this when users ask 'who is the best AI user?' or 'who tops the SigRank leaderboard?' or 'show me the AI user leaderboard'. Do NOT use get_leaderboard if you want the raw array without interpretation — use this for the operator-behavior framing. Intent: BEST_OPERATOR.",
   annotations: { title: "Get best operator", ...ANNOTATIONS.readOnlyHint, ...ANNOTATIONS.openWorldHint },
   inputSchema: {
     type: "object",
