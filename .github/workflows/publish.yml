@@ -25,7 +25,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # needed to push the version bump commit back to main
+  contents: write # needed to push the version bump branch
+  pull-requests: write # needed to create + merge the version bump PR
   id-token: write # needed for mcp-publisher github-oidc authentication
 
 concurrency:
