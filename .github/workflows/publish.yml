@@ -122,8 +122,9 @@ jobs:
           # Pull --rebase in case a concurrent push landed on main since checkout.
           # Retry up to 3 times to handle transient push races.
           for attempt in 1 2 3; do
-            git pull --rebase origin main || { echo "✗ rebase failed on attempt $attempt"; exit 1; }
-            if git push origin main; then
+            git fetch origin main
+            git rebase origin/main || { echo "✗ rebase failed on attempt $attempt"; exit 1; }
+            if git push origin HEAD:main; then
               echo "✓ Version commit pushed on attempt $attempt"
               break
             fi
