@@ -1,13 +1,21 @@
 /**
  * __tests__/contract/standalone-conformance.test.mjs
  *
- * Cross-repository conformance gate: validates the MCP server's
- * `get_sigrank_standard_record` tool output against the authoritative
- * fixture pack from `SunrisesIllNeverSee/sigrank-standard`.
+ * LEGACY COMPATIBILITY SUITE — validates the MCP server's
+ * `get_sigrank_standard_record` tool output against the legacy fixture pack
+ * from `SunrisesIllNeverSee/sigrank-standard` (sigrank/0.1-draft).
  *
- * The fixture pack is the source of truth for sigrank/0.1-draft conformance.
- * This test ensures the MCP producer emits records that pass the same
- * fixtures the standalone conformance runner enforces.
+ * Classification: LEGACY. This is NOT the primary conformance gate.
+ * The primary TTEOP conformance suite lives in tteop-spec
+ * (conformance/tteop-runner.mjs, 20 SRP areas) and is invoked via
+ * tteop-mcp's `tteop_run_conformance` tool. The drift-detection test
+ * (__tests__/tteop-delegation.test.mjs) verifies that @sigrank/cascade
+ * delegates correctly to tteop-spec. This test only verifies backward
+ * compatibility with the legacy sigrank/0.1-draft wire format.
+ *
+ * The fixture pack is the source of truth for sigrank/0.1-draft LEGACY
+ * COMPATIBILITY. It ensures the MCP producer emits records that pass the
+ * same fixtures the standalone legacy conformance runner enforces.
  *
  * Pin: the Standard commit is pinned via the SIGRANK_STANDARD_REF env var
  * (default: the merged baseline `c73f152`). Upstream changes to the Standard

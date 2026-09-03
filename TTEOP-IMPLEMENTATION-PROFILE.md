@@ -57,17 +57,50 @@ display names.
 
 ## Conformance
 
-- **Primary conformance target:** `tteop-spec@0.1.5-draft` (TTEOP)
-- **Canonical computation path:** `sigrank-mcp` → `@sigrank/cascade@^0.2.0` →
-  `tteop-spec@0.1.5-draft` (delegated `computeMetrics`)
-- **Legacy wire identifier:** `sigrank/0.1-draft` (TTEOP legacy alias, retained
-  for backward compatibility — resolves to `tteop/0.1-draft` semantics)
-- **Cascade tests:** `__tests__/cascade.test.mjs` verifies cascade math
+Conformance is structured in three tiers:
+
+### PRIMARY — TTEOP conformance (MUST PASS)
+- **Suite:** `tteop-spec/conformance/tteop-runner.mjs` (20 SRP areas, including
+  SRP-METRIC-001 through SRP-METRIC-006 for canonical metric semantics)
+- **Invoked via:** `tteop-mcp` `tteop_run_conformance` MCP tool (7 runtime tests
+  covering canonical vector, zero input/output, missing cache, build-validate
+  round-trip, forbidden field detection)
+- **Authority:** `tteop-spec@0.1.5-draft` is the canonical executable/reference
+  implementation. This suite is the primary gate for TTEOP protocol conformance.
+
+### PRODUCT — SigRank cascade/sigrank-mcp tests (MUST PASS)
+- **Drift detection:** `__tests__/tteop-delegation.test.mjs` proves
+  `@sigrank/cascade` delegates correctly to `tteop-spec` (canonical vector
+  equivalence, banker's rounding, null semantics, product extension separation)
+- **Cascade tests:** `__tests__/cascade.test.mjs` verifies cascade math and modes
 - **Standard record test:** `__tests__/standard-record.test.mjs` verifies the
   `sigrank/0.1-draft` compatibility record structure and MO§ES canonical vector
-- **Standalone conformance:** `__tests__/contract/standalone-conformance.test.mjs`
-  validates `get_sigrank_standard_record` output against the `sigrank-standard`
-  fixture pack (13 fixtures, pinned ref `c73f152`)
+- **Architecture test:** `__tests__/product-architecture.test.mjs` verifies
+  product/protocol separation
+
+### LEGACY — sigrank-standard compatibility fixtures (compatibility only)
+- **Suite:** `__tests__/contract/standalone-conformance.test.mjs`
+- **Fixtures:** 13 fixtures from `sigrank-standard` (pinned ref `c73f152`)
+- **Classification:** LEGACY COMPATIBILITY ONLY. This is NOT the primary
+  conformance gate. It verifies backward compatibility with the legacy
+  `sigrank/0.1-draft` wire format. The primary TTEOP conformance suite lives
+  in `tteop-spec` and is invoked via `tteop-mcp`.
+
+### Runtime dependency note
+
+`sigrank-mcp` has a direct `tteop-spec` dependency, but this is TEST-ONLY.
+The only import of `tteop-spec` in non-test code is zero (the comment in
+`analytics/cascade.mjs` references it documentationally). The runtime
+computation path is single:
+
+```
+sigrank-mcp → analytics/cascade.mjs → @sigrank/cascade → tteop-spec
+```
+
+The direct `tteop-spec` dependency exists solely so
+`__tests__/tteop-delegation.test.mjs` can call `computeMetrics` and
+`roundHalfToEven` directly to verify cascade hasn't drifted. There is no
+competing computation path.
 
 ## Product-specific extensions
 
