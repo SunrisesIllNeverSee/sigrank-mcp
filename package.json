@@ -96,9 +96,5 @@
   },
   "overrides": {
     "@hono/node-server": "^2.0.5"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
   }
 }
