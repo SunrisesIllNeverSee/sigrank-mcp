@@ -24,7 +24,7 @@
   },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node test.mjs && node __tests__/sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs __tests__/standard-record.test.mjs __tests__/standard-cli.test.mjs __tests__/product-architecture.test.mjs",
+    "test": "node test.mjs && node __tests__/sign.test.mjs && node --test __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs __tests__/standard-record.test.mjs __tests__/standard-cli.test.mjs __tests__/product-architecture.test.mjs __tests__/tteop-delegation.test.mjs",
     "test:packaged": "node scripts/packed-artifact-smoke.mjs",
     "sync:platforms": "node scripts/sync-platforms.mjs",
     "sync:spine": "node scripts/sync-spine.mjs",
