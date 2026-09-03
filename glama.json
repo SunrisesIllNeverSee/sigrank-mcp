@@ -1,4 +1,13 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["SunrisesIllNeverSee"]
+  "maintainers": ["SunrisesIllNeverSee"],
+  "displayName": "SigRank SignalAF",
+  "description": "SigRank SignalAF on-device scanner and MCP server. Reads local AI session logs, derives the four-token cascade (Yield, Leverage, Velocity, 10xDEV), and publishes to the leaderboard at signalaf.com. 24 local tools plus live board access.",
+  "category": "developer-tools",
+  "npmPackage": "sigrank",
+  "buildSpec": {
+    "type": "npm",
+    "command": "npx",
+    "args": ["-y", "sigrank"]
+  }
 }
