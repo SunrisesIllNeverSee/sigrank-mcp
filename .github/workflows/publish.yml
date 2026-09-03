@@ -5,8 +5,9 @@ name: Publish to npm + MCP Registry
 # Registry, pushes the version commit back to main, and the app auto-syncs
 # its MCP_VERSION constant (→ Vercel auto-deploys).
 #
-# Requires secrets:
-#   NPM_TOKEN         — npm publish token (automation token recommended)
+# npm publishing uses OIDC trusted publishing (no NPM_TOKEN needed).
+# The trusted publisher is configured on npmjs.com for:
+#   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml
 #
 # MCP Registry authentication uses GitHub OIDC (no secret needed for
 # io.github.SunrisesIllNeverSee/* namespace). Requires id-token: write.
@@ -91,10 +92,13 @@ jobs:
 
       # ── Publish to npm FIRST (before git commit, so a failed publish
       #    doesn't leave a version bump in git that npm doesn't have) ──
+      # Uses npm OIDC trusted publishing (no NPM_TOKEN needed).
+      # The trusted publisher is configured on npmjs.com for:
+      #   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml
+      # setup-node with registry-url + id-token:write permission handles
+      # the OIDC token exchange automatically.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish
+        run: npm publish --provenance
 
       # ── Commit the version bump + push (only runs if publish succeeded) ──
       # Rebases on latest main before pushing to avoid non-fast-forward rejection

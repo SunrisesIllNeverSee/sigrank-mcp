@@ -330,14 +330,18 @@ Or if installed globally:
 ## Cascade math
 
 ```
-Υ Yield    = (cache_read × output) / input²
-SNR        = output / (input + output)
-Leverage   = cache_read / input
-Velocity   = output / input
-10xDEV     = log₁₀(leverage)
+Υ Yield    = (cache_read × output) / input²       (TTEOP canonical)
+SNR        = output / (input + output)            (display alias for output_fraction)
+Leverage   = cache_read / input                   (TTEOP canonical)
+Velocity   = output / input                       (TTEOP canonical)
+10xDEV     = log₁₀(leverage)                      (display alias for log_leverage)
 ```
 
-Math is in `cascade.mjs`, dependency-free. Mirrors `sigrank-app/lib/ingest/bridge.ts`.
+Canonical metric computation is delegated to [`tteop-spec`](https://www.npmjs.com/package/tteop-spec)
+via [`@sigrank/cascade`](https://www.npmjs.com/package/@sigrank/cascade). SNR
+and 10xDEV are SigRank display aliases for the TTEOP metrics `output_fraction`
+and `log_leverage` respectively. See `TTEOP-IMPLEMENTATION-PROFILE.md` for the
+full authority chain.
 Canon check: `MO§ES (1251211, 11296121, 128196310, 2555179769) → Υ 18436.98`.
 
 ---
@@ -455,7 +459,7 @@ Tests verify (14 groups, 313 assertions):
 | `proxy.mjs`     | Opt-in loopback Anthropic/OpenAI proxy and usage capture                |
 | `cli.mjs`       | CLI commands: board, compare, watch, enroll, submit, help               |
 | `tui.mjs`       | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
-| `cascade.mjs`   | Pure cascade math (Υ, SNR, leverage, velocity, 10xDEV, class)           |
+| `cascade.mjs`   | Cascade facade — delegates to `@sigrank/cascade` → `tteop-spec` (Υ, SNR, leverage, velocity, 10xDEV, class) |
 | `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform                   |
 | `adapters.mjs`  | Platform adapter registry (16+ platforms)                               |
 | `tools.mjs`     | MCP tool table + dispatcher                                             |
