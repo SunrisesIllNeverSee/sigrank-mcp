@@ -1,16 +1,17 @@
-# Upsilon Measurement Engine — `sigrank` CLI/MCP
+# SigRank SignalAF — `sigrank` CLI/MCP
 
-> **Upsilon** is SignalAF's measurement engine. **SigRank** is the public leaderboard
-> and proof surface. The existing `sigrank` package name and `sigrank/0.1-draft`
-> record remain stable for compatibility. _Four token counts only. Never prompts or code._
+> **SignalAF** is the public brand. **SigRank** is the leaderboard and proof surface.
+> The `sigrank` package reads local AI session logs, derives your token cascade,
+> and publishes to the board at [signalaf.com](https://signalaf.com).
+> _Four token counts only. Never prompts or code._
 
 <div align="center">
 
 <p><img src="./.github/assets/og-card.png" alt="SigRank SignalAF — AI operator evaluation and token cascade efficiency leaderboard" width="800"></p>
 
-**Upsilon measures. SigRank proves. MO§ES™ governs. SignalAF is the brand.**
+**SignalAF is the brand. SigRank proves. MO§ES™ governs.**
 
-Upsilon describes observable AI operator token-processing patterns—not AI model quality, cognition, work quality, employee productivity, or business value.
+SigRank evaluates observable AI operator token-processing patterns—not AI model quality, cognition, work quality, employee productivity, or business value.
 
 [![npm version](https://img.shields.io/npm/v/sigrank.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank)
 [![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
@@ -59,13 +60,13 @@ Upsilon describes observable AI operator token-processing patterns—not AI mode
 ## SignalAF product architecture
 
 ```text
-MO§ES™ governance → Upsilon measurement engine → SigRank public proof
+MO§ES™ governance → SignalAF brand → SigRank leaderboard → Upsilon engine
 ```
 
 | Repo | What it is | Install |
 |------|-----------|---------|
-| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | Upsilon's compatibility instrument—extracts four token pillars, computes locally, and optionally submits to SigRank. | `npx sigrank` |
-| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | Upsilon web implementation plus the SigRank leaderboard/proof surface. | [signalaf.com](https://signalaf.com) |
+| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | SigRank's on-device scanner — extracts four token pillars, computes locally, and optionally submits to the board. | `npx sigrank` |
+| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | SignalAF web app — the SigRank leaderboard, operator profiles, and proof surface. | [signalaf.com](https://signalaf.com) |
 | **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank SignalAF's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
 | **[sigarena](https://github.com/SunrisesIllNeverSee/sigarena)** | The satellite — public LLM operator evals at sigeconomy.com. Read-only leaderboard, SEO/AEO surface. | [sigeconomy.com](https://sigeconomy.com) |
 | **[signaf](https://github.com/SunrisesIllNeverSee/signa)** | The coach — reads your session logs, builds a taste profile, measures ASI, coaches you on token efficiency. | `npx @burnmydays/signaf` |
@@ -77,7 +78,7 @@ MO§ES™ governance → Upsilon measurement engine → SigRank public proof
 | Site | What it is |
 | ---- | ---------- |
 | **[SIGNOMY](https://signomy.xyz)** | Governed AI agent marketplace where ranked agents form teams, fill slots, run missions, and earn revenue under constitutional protocol. Agents are free. Operators pay. |
-| **[MO§ES](https://mos2es.com)** | Constitutional governance and methodology—the law governing Upsilon and other governed systems. |
+| **[MO§ES](https://mos2es.com)** | Constitutional governance and methodology — the law governing SignalAF, SigRank, and the Upsilon measurement engine. |
 
 ## Quickstart — 3 steps to the board
 
