@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
-  "description": "Upsilon measurement engine with 25 local tools and SigRank proof access via the sigrank package.",
-  "title": "Upsilon \u2014 AI Operator Measurement Engine",
+  "description": "SigRank SignalAF on-device scanner — four-token cascade, leaderboard, 24 local tools.",
+  "title": "SigRank SignalAF \u2014 AI Operator Cascade & Leaderboard",
   "version": "1.0.11",
   "websiteUrl": "https://signalaf.com",
   "packages": [
