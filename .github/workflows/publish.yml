@@ -57,12 +57,9 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org
-
-      # npm 11.5.1+ required for OIDC trusted publishing
-      - run: npm install -g npm@latest
 
       - run: npm ci
 
