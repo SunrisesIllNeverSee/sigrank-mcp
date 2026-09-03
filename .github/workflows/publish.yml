@@ -61,10 +61,6 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      # npm 11.5.1+ required for OIDC trusted publishing.
-      # Node 22 ships npm 10.x, so upgrade npm only (don't touch the lockfile).
-      - run: npm install -g npm@11
-
       - run: npm ci
 
       # ── Pre-publish tests (mirror ci.yml test job) ──
@@ -96,16 +92,10 @@ jobs:
 
       # ── Publish to npm FIRST (before git commit, so a failed publish
       #    doesn't leave a version bump in git that npm doesn't have) ──
-      # Uses npm OIDC trusted publishing (no NPM_TOKEN needed).
-      # The trusted publisher is configured on npmjs.com for:
-      #   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml
-      # NPM_CONFIG_PROVENANCE: true triggers OIDC token exchange when no
-      # NODE_AUTH_TOKEN is set. setup-node writes a placeholder _authToken
-      # to .npmrc, so we must NOT set NODE_AUTH_TOKEN env var here.
       - name: Publish to npm
         env:
-          NPM_CONFIG_PROVENANCE: true
-        run: npm publish --access public
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish
 
       # ── Commit the version bump + push (only runs if publish succeeded) ──
       # Rebases on latest main before pushing to avoid non-fast-forward rejection
