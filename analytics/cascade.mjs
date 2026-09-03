@@ -2,14 +2,17 @@
  * cascade.mjs — SigRank yield cascade facade.
  *
  * The canonical cascade math (Υ Yield, SNR, Leverage, Velocity, 10xDEV, and the
- * 24-stage RS05 class taxonomy) now lives in the `@sigrank/cascade` package.
- * This file re-exports the canonical functions and adds local-only helpers that
+ * 24-stage RS05 class taxonomy) lives in the `@sigrank/cascade` package, which
+ * delegates canonical TTEOP metric computation to `tteop-spec`. This file
+ * re-exports the canonical functions and adds local-only helpers that
  * are presentation/MCP-specific and intentionally NOT part of the canonical
  * math package:
  *   - CLASS_TIERS, SIGNAL_CLASSES, UNCLASSED  (display taxonomy)
  *   - tierOf(), stageOf()                      (display helpers)
  *   - detectMode(), MODE_EXPECTED_YIELD, qualityScore()  (mode/quality layer)
  *   - parsePillars()                           (text → 4 pillars extractor)
+ *
+ * Authority chain: sigrank-mcp → @sigrank/cascade → tteop-spec
  *
  * The cascade() wrapper preserves the object-signature
  * ({ input, output, cacheCreate, cacheRead }) used throughout this repo and
@@ -19,7 +22,7 @@
  *
  * Canonical reference: MO§ES Υ 18436.98 from (1251211, 11296121, 128196310, 2555179769).
  *
- * Degenerate-input policy (inherited from the canonical package):
+ * Degenerate-input policy (inherited from tteop-spec via @sigrank/cascade):
  *   - Any pillar that collapses a denominator (i=0, o=0, cw=0, cr=0) returns null for
  *     the affected metrics rather than Infinity/NaN.
  *   - A `warnings[]` array is attached when any metric is null so callers can surface the

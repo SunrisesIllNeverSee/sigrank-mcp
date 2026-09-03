@@ -10,7 +10,7 @@
 |-------|-------|
 | Protocol name | TTEOP (Token Telemetry Evaluation Operator Protocol) |
 | Protocol version | `tteop/0.1-draft` |
-| TTEOP version pin | `tteop-spec@0.1.5-draft` (target — see Known limitations) |
+| TTEOP version pin | `tteop-spec@0.1.5-draft` (via `@sigrank/cascade@^0.2.0`) |
 | GitHub repository | [SunrisesIllNeverSee/otep-spec](https://github.com/SunrisesIllNeverSee/otep-spec) |
 | npm package | [tteop-spec](https://www.npmjs.com/package/tteop-spec) |
 | Version DOI | [10.5281/zenodo.22180349](https://doi.org/10.5281/zenodo.22180349) |
@@ -22,7 +22,8 @@
 
 **sigrank-mcp** is the on-device scanner and MCP tool. It reads local token
 telemetry from AI operator sessions, computes TTEOP-derived metrics via
-`@sigrank/cascade`, and submits signed snapshots to the SignalAF leaderboard.
+`@sigrank/cascade` (which delegates canonical computation to `tteop-spec`),
+and submits signed snapshots to the SignalAF leaderboard.
 
 - **Producer role:** sigrank-mcp reads local token usage (I/O/W/R), builds
   `sigrank/0.1-draft` compatibility records (a TTEOP legacy alias), and
@@ -57,11 +58,16 @@ display names.
 ## Conformance
 
 - **Primary conformance target:** `tteop-spec@0.1.5-draft` (TTEOP)
+- **Canonical computation path:** `sigrank-mcp` → `@sigrank/cascade@^0.2.0` →
+  `tteop-spec@0.1.5-draft` (delegated `computeMetrics`)
 - **Legacy wire identifier:** `sigrank/0.1-draft` (TTEOP legacy alias, retained
   for backward compatibility — resolves to `tteop/0.1-draft` semantics)
 - **Cascade tests:** `__tests__/cascade.test.mjs` verifies cascade math
 - **Standard record test:** `__tests__/standard-record.test.mjs` verifies the
   `sigrank/0.1-draft` compatibility record structure and MO§ES canonical vector
+- **Standalone conformance:** `__tests__/contract/standalone-conformance.test.mjs`
+  validates `get_sigrank_standard_record` output against the `sigrank-standard`
+  fixture pack (13 fixtures, pinned ref `c73f152`)
 
 ## Product-specific extensions
 
@@ -108,10 +114,6 @@ constitute a second active standard.
 
 ## Known limitations
 
-- sigrank-mcp uses `@sigrank/cascade@^0.1.1` for metric computation, which
-  implements TTEOP canonical formulas but is not yet version-pinned to
-  `tteop-spec`. A future release will align the cascade package version with
-  the TTEOP version pin.
 - The wire identifier remains `sigrank/0.1-draft` for compatibility. Migration
   to `tteop/0.1-draft` as the wire identifier is a future product decision.
 - The `sigrank` npm package name and `npx sigrank` CLI command are preserved
@@ -121,8 +123,20 @@ constitute a second active standard.
 ## Authority boundary
 
 ```
-TTEOP (otep-spec)
+TTEOP (protocol specification)
   specifies canonical protocol semantics
+        │
+        ▼
+tteop-spec@0.1.5-draft (canonical executable/reference semantics)
+  computes Yield, Leverage, Velocity, output_fraction, log_leverage
+  with banker's rounding (SRP-METRIC-002) and canonical null semantics
+        │
+        ▼
+@sigrank/cascade@^0.2.0 (SigRank product facade)
+  delegates computeMetrics() to tteop-spec
+  maps output_fraction → snr, log_leverage → dev10x (display aliases)
+  adds RS05 class taxonomy, operator signatures, field ranking
+  translates canonical warning strings to product-facing names
         │
         ▼
 THIS PROFILE (TTEOP-IMPLEMENTATION-PROFILE.md)
