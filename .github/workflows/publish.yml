@@ -28,6 +28,10 @@ permissions:
   contents: write # needed to push the version bump commit back to main
   id-token: write # needed for mcp-publisher github-oidc authentication
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Bump + publish + sync app
