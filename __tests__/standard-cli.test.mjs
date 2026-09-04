@@ -17,7 +17,7 @@ function run(args) {
 test("sigrank standard --json exposes the draft identity", () => {
   const out = JSON.parse(run(["standard", "--json"]));
   assert.equal(out.spec, "sigrank/0.1-draft");
-  assert.equal(out.reference_math, "@sigrank/cascade");
+  assert.equal(out.reference_math, "token-cascade");
   assert.deepEqual(out.telemetry, [
     "input",
     "output",

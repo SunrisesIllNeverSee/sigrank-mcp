@@ -17,7 +17,7 @@ export const PRODUCT_ARCHITECTURE = Object.freeze({
 export const TOOL_DEF = {
   name: "get_sigrank_standard_record",
   description:
-    "Build Upsilon's portable sigrank/0.1-draft compatibility record from available token telemetry. Input and output are required; unavailable cache telemetry remains null. Computes the canonical cascade locally through @sigrank/cascade and returns Yield, Leverage, Velocity, SNR, and 10xDEV. Upsilon is the measurement product; SigRank is the public leaderboard. No data is submitted or persisted.",
+    "Build Upsilon's portable sigrank/0.1-draft compatibility record from available token telemetry. Input and output are required; unavailable cache telemetry remains null. Computes the canonical cascade locally through token-cascade and returns Yield, Leverage, Velocity, SNR, and 10xDEV. Upsilon is the measurement product; SigRank is the public leaderboard. No data is submitted or persisted.",
   annotations: {
     title: "Export Upsilon measurement record",
     ...ANNOTATIONS.readOnlyHint,

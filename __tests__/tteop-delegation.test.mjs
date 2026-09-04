@@ -1,6 +1,6 @@
 /**
  * __tests__/tteop-delegation.test.mjs — Proves sigrank-mcp resolves canonical
- * TTEOP metric computation through @sigrank/cascade → tteop-spec.
+ * TTEOP metric computation through token-cascade → tteop-spec.
  *
  * This test verifies:
  *   1. The cascade() function in analytics/cascade.mjs produces results

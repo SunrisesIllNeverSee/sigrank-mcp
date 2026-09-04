@@ -9,7 +9,7 @@
  * The primary TTEOP conformance suite lives in tteop-spec
  * (conformance/tteop-runner.mjs, 20 SRP areas) and is invoked via
  * tteop-mcp's `tteop_run_conformance` tool. The drift-detection test
- * (__tests__/tteop-delegation.test.mjs) verifies that @sigrank/cascade
+ * (__tests__/tteop-delegation.test.mjs) verifies that token-cascade
  * delegates correctly to tteop-spec. This test only verifies backward
  * compatibility with the legacy sigrank/0.1-draft wire format.
  *

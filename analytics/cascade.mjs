@@ -2,7 +2,7 @@
  * cascade.mjs — SigRank yield cascade facade.
  *
  * The canonical cascade math (Υ Yield, SNR, Leverage, Velocity, 10xDEV, and the
- * 24-stage RS05 class taxonomy) lives in the `@sigrank/cascade` package, which
+ * 24-stage RS05 class taxonomy) lives in the `token-cascade` package, which
  * delegates canonical TTEOP metric computation to `tteop-spec`. This file
  * re-exports the canonical functions and adds local-only helpers that
  * are presentation/MCP-specific and intentionally NOT part of the canonical
@@ -12,7 +12,7 @@
  *   - detectMode(), MODE_EXPECTED_YIELD, qualityScore()  (mode/quality layer)
  *   - parsePillars()                           (text → 4 pillars extractor)
  *
- * Authority chain: sigrank-mcp → @sigrank/cascade → tteop-spec
+ * Authority chain: sigrank-mcp → token-cascade → tteop-spec
  *
  * The cascade() wrapper preserves the object-signature
  * ({ input, output, cacheCreate, cacheRead }) used throughout this repo and
@@ -22,7 +22,7 @@
  *
  * Canonical reference: MO§ES Υ 18436.98 from (1251211, 11296121, 128196310, 2555179769).
  *
- * Degenerate-input policy (inherited from tteop-spec via @sigrank/cascade):
+ * Degenerate-input policy (inherited from tteop-spec via token-cascade):
  *   - Any pillar that collapses a denominator (i=0, o=0, cw=0, cr=0) returns null for
  *     the affected metrics rather than Infinity/NaN.
  *   - A `warnings[]` array is attached when any metric is null so callers can surface the
@@ -31,7 +31,7 @@
  *     Callers that require a fully-formed result should check `warnings.length === 0`.
  */
 
-// ─── Canonical math (from @sigrank/cascade) ─────────────────────────────────
+// ─── Canonical math (from token-cascade) ─────────────────────────────────
 import {
   cascade as cascadeCanonical,
   round,
@@ -42,7 +42,7 @@ import {
   rankOf,
   operatorSignature,
   evaluateOperator,
-} from "@sigrank/cascade";
+} from "token-cascade";
 
 // Re-export the canonical functions so existing import paths keep working.
 export {
@@ -59,7 +59,7 @@ export {
 /**
  * The four raw token pillars → the cascade.
  *
- * Object-signature wrapper around the canonical `@sigrank/cascade` cascade()
+ * Object-signature wrapper around the canonical `token-cascade` cascade()
  * (which takes positional args). Re-attaches the `mode` field via detectMode()
  * so the 20+ call sites in this repo that read `result.mode` keep working.
  */
@@ -71,7 +71,7 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
   return result;
 }
 
-// ─── Local-only display taxonomy (not in @sigrank/cascade) ───────────────────
+// ─── Local-only display taxonomy (not in token-cascade) ───────────────────
 
 /**
  * CLASS_TIERS — the 8 base tier names (K.01–K.08) for display: glyph, color,
@@ -79,7 +79,7 @@ export function cascade({ input, output, cacheCreate, cacheRead }) {
  *
  * The permanent class is an EXPERIENCE ladder keyed on TOTAL TOKENS. Each tier
  * has 3 sub-stages (I/II/III) — 24 stages total. The 24 thresholds live in
- * RS05_CLASS_THRESHOLDS (re-exported from @sigrank/cascade above). classify()
+ * RS05_CLASS_THRESHOLDS (re-exported from token-cascade above). classify()
  * returns the full sub-stage string (e.g. "REFINER II"). Use tierOf() to
  * extract the base tier name.
  *
@@ -144,7 +144,7 @@ export function stageOf(cls) {
   return stage === "I" || stage === "II" || stage === "III" ? stage : null;
 }
 
-// ─── Mode / quality layer (not in @sigrank/cascade) ──────────────────────────
+// ─── Mode / quality layer (not in token-cascade) ──────────────────────────
 
 /**
  * detectMode — classify an operator's current working mode from 4 token pillars.
@@ -222,7 +222,7 @@ export function qualityScore(actualYield, mode) {
   return actualYield / expected;
 }
 
-// ─── Text parsing (not in @sigrank/cascade) ──────────────────────────────────
+// ─── Text parsing (not in token-cascade) ──────────────────────────────────
 
 /**
  * Extract the 4 pillars from pasted text: JSON object OR 4 whitespace numbers.

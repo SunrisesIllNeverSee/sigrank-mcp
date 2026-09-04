@@ -47,7 +47,7 @@ function printStandard() {
     },
     privacy:
       "Core metrics do not require prompt text, response text, source code, or repository contents.",
-    reference_math: "@sigrank/cascade",
+    reference_math: "token-cascade",
     reference_platform: "Upsilon on SignalAF",
     standard_url: STANDARD_URL,
     schema_url: SCHEMA_URL,
@@ -63,7 +63,7 @@ function printStandard() {
   process.stdout.write(`Scope: ${payload.scope}\n`);
   process.stdout.write(`Primitives: input / output / cache_write / cache_read\n`);
   process.stdout.write(`Core metrics: Yield / Leverage / Velocity / SNR / 10xDEV\n`);
-  process.stdout.write(`Reference math: @sigrank/cascade\n`);
+  process.stdout.write(`Reference math: token-cascade\n`);
   process.stdout.write(`Reference platform: Upsilon on SignalAF\n`);
   process.stdout.write(`Spec: ${STANDARD_URL}\n`);
   process.stdout.write(`Schema: ${SCHEMA_URL}\n`);
