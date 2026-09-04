@@ -69,7 +69,6 @@ MO§ES™ governance → SignalAF brand → SigRank leaderboard → Upsilon engi
 | **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | SignalAF web app — the SigRank leaderboard, operator profiles, and proof surface. | [signalaf.com](https://signalaf.com) |
 | **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank SignalAF's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
 | **[sigarena](https://github.com/SunrisesIllNeverSee/sigarena)** | The satellite — public LLM operator evals at sigeconomy.com. Read-only leaderboard, SEO/AEO surface. | [sigeconomy.com](https://sigeconomy.com) |
-| **[signaf](https://github.com/SunrisesIllNeverSee/signa)** | The coach — reads your session logs, builds a taste profile, measures ASI, coaches you on token efficiency. | `npx @burnmydays/signaf` |
 | **[sigrank-vscode](https://github.com/SunrisesIllNeverSee/sigrank-vscode)** | The IDE extension — see your cascade metrics inline in VS Code. | `code --install-extension sigrank.sigrank` |
 | **[fundscore](https://github.com/SunrisesIllNeverSee/fundscore)** | The repo scorer — investor-readiness scoring for GitHub repos. CLI + MCP server. | `npx fundscore` |
 
