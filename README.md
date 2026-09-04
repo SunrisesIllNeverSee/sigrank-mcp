@@ -22,7 +22,7 @@ SigRank evaluates observable AI operator token-processing patterns—not AI mode
 [![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
 [![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
 [![SunrisesIllNeverSee/sigrank-mcp MCP server](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp/badges/score.svg)](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
-[![Smithery](https://smithery.ai/badge/burnmydays/sigrank)](https://smithery.ai/servers/burnmydays/sigrank)
+[![LightNow capabilities](https://lightnow.ai/badge/io.github.SunrisesIllNeverSee/sigrank-mcp)](https://lightnow.ai/servers/io.github.SunrisesIllNeverSee/sigrank-mcp)
 
 </div>
 
