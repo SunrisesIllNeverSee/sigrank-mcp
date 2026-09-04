@@ -114,8 +114,8 @@ test("cascade() null semantics match tteop-spec for zero input", () => {
 });
 
 test("get_sigrank_standard_record null semantics match tteop-spec for missing cache", async () => {
-  // The standard-record tool passes null to tteop-spec (via cascade with 0),
-  // but applies null in the output metrics when cache is unavailable.
+  // The standard-record tool passes null through to cascade → tteop-spec,
+  // so canonical null semantics apply directly (no manual null override).
   const record = await handleGetSigRankStandardRecord({
     input: 100,
     output: 50,

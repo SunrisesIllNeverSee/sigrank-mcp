@@ -11,6 +11,8 @@ test("product roles are explicit while the wire identifier remains stable", () =
     product: "Upsilon",
     leaderboard: "SigRank",
     wire_spec: "sigrank/0.1-draft",
+    protocol: "tteop/0.1-draft",
+    protocol_authority: "tteop-spec@0.1.5-draft",
   });
   assert.equal(SIGRANK_STANDARD_VERSION, "sigrank/0.1-draft");
 });

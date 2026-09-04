@@ -10,7 +10,7 @@
 |-------|-------|
 | Protocol name | TTEOP (Token Telemetry Evaluation Operator Protocol) |
 | Protocol version | `tteop/0.1-draft` |
-| TTEOP version pin | `tteop-spec@0.1.5-draft` (via `@sigrank/cascade@0.2.0`, exact pin) |
+| TTEOP version pin | `tteop-spec@0.1.5-draft` (via `@sigrank/cascade@0.2.1`, exact pin) |
 | GitHub repository | [SunrisesIllNeverSee/otep-spec](https://github.com/SunrisesIllNeverSee/otep-spec) |
 | npm package | [tteop-spec](https://www.npmjs.com/package/tteop-spec) |
 | Version DOI | [10.5281/zenodo.22180349](https://doi.org/10.5281/zenodo.22180349) |
@@ -108,7 +108,7 @@ sigrank-mcp adds the following product-specific extensions that are NOT part of
 TTEOP and must not be described as TTEOP semantics:
 
 - **Mode detection** (`detectMode`, `qualityScore`) — classifies operator
-  behavior into modes (IDLE, CONVERGE, KINETIC, AMPLIFY, CONTEXT) based on
+  behavior into modes (IDLE, MAINTAIN, DEBUG, EDIT, BUILD) based on
   pillar ratios. Product extension, not TTEOP.
 - **Class tiers** (8-tier experience ladder: ARCH+ to IGNITER) — sigrank-mcp
   product taxonomy, not TTEOP.
@@ -185,8 +185,9 @@ tteop-spec@0.1.5-draft (canonical executable/reference semantics)
   with banker's rounding (SRP-METRIC-002) and canonical null semantics
         │
         ▼
-@sigrank/cascade@0.2.0 (SigRank product facade)
+@sigrank/cascade@0.2.1 (SigRank product facade)
   delegates computeMetrics() to tteop-spec
+  passes null cache through to tteop-spec for canonical null semantics
   maps output_fraction → snr, log_leverage → dev10x (display aliases)
   adds RS05 class taxonomy, operator signatures, field ranking
   translates canonical warning strings to product-facing names
