@@ -99,3 +99,89 @@ test("cascade() includes product extensions (mode, class) not in TTEOP", () => {
   assert.ok(result.class, "class field present");
   assert.equal(typeof result.class, "string");
 });
+
+// ─── 5. Null semantics match tteop-spec ─────────────────────────────────────
+
+test("cascade() null semantics match tteop-spec for zero input", () => {
+  const tteopResult = computeMetrics({ input: 0, output: 0, cache_write: 0, cache_read: 0 });
+  const cascadeResult = cascade({ input: 0, output: 0, cacheCreate: 0, cacheRead: 0 });
+
+  assert.equal(cascadeResult.yield, tteopResult.metrics.yield);
+  assert.equal(cascadeResult.leverage, tteopResult.metrics.leverage);
+  assert.equal(cascadeResult.velocity, tteopResult.metrics.velocity);
+  assert.equal(cascadeResult.snr, tteopResult.metrics.output_fraction);
+  assert.equal(cascadeResult.dev10x, tteopResult.metrics.log_leverage);
+});
+
+test("get_sigrank_standard_record null semantics match tteop-spec for missing cache", async () => {
+  // The standard-record tool passes null to tteop-spec (via cascade with 0),
+  // but applies null in the output metrics when cache is unavailable.
+  const record = await handleGetSigRankStandardRecord({
+    input: 100,
+    output: 50,
+    cache_write: null,
+    cache_read: null,
+  });
+
+  const tteopResult = computeMetrics({ input: 100, output: 50 });
+
+  // yield, leverage, dev10x are null when cache is unavailable
+  assert.equal(record.metrics.yield, null);
+  assert.equal(record.metrics.leverage, null);
+  assert.equal(record.metrics.dev10x, null);
+  // velocity and snr are always available
+  assert.equal(record.metrics.velocity, tteopResult.metrics.velocity);
+  assert.equal(record.metrics.snr, tteopResult.metrics.output_fraction);
+});
+
+// ─── 6. Legacy compatibility: sigrank/0.1-draft resolves to TTEOP ───────────
+
+test("get_sigrank_standard_record marks sigrank/0.1-draft as legacy_alias", async () => {
+  const record = await handleGetSigRankStandardRecord({
+    input: 100,
+    output: 50,
+  });
+
+  // The wire identifier is the legacy alias
+  assert.equal(record.spec, "sigrank/0.1-draft");
+  assert.equal(record.spec_status, "legacy_alias");
+
+  // The protocol block makes the authority transition unambiguous
+  assert.equal(record.protocol.name, "TTEOP");
+  assert.equal(record.protocol.version, "tteop/0.1-draft");
+  assert.equal(record.protocol.authority, "tteop-spec@0.1.5-draft");
+
+  // An agent consuming this response must not conclude sigrank/0.1-draft
+  // is the active interoperability standard
+  assert.notEqual(record.spec, record.protocol.version);
+});
+
+// ─── 7. Display aliases are labeled, not independent metrics ────────────────
+
+test("SNR and 10xDEV are display aliases for TTEOP metrics, not separate metrics", () => {
+  const telemetry = {
+    input: 1251211,
+    output: 11296121,
+    cache_write: 128196310,
+    cache_read: 2555179769,
+  };
+  const tteopResult = computeMetrics(telemetry);
+  const cascadeResult = cascade({
+    input: telemetry.input,
+    output: telemetry.output,
+    cacheCreate: telemetry.cache_write,
+    cacheRead: telemetry.cache_read,
+  });
+
+  // SNR = output_fraction (display alias, not independent metric)
+  assert.equal(cascadeResult.snr, tteopResult.metrics.output_fraction,
+    "SNR must equal TTEOP output_fraction");
+  assert.ok(!("output_fraction" in cascadeResult),
+    "cascade result must use display alias 'snr', not canonical 'output_fraction'");
+
+  // 10xDEV = log_leverage (display alias, not independent metric)
+  assert.equal(cascadeResult.dev10x, tteopResult.metrics.log_leverage,
+    "10xDEV must equal TTEOP log_leverage");
+  assert.ok(!("log_leverage" in cascadeResult),
+    "cascade result must use display alias 'dev10x', not canonical 'log_leverage'");
+});

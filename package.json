@@ -85,10 +85,10 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "@sigrank/cascade": "^0.2.0",
+    "@sigrank/cascade": "0.2.0",
     "ccusage": "^20.0.19",
     "tokscale": "^4.7.0",
-    "tteop-spec": "^0.1.5-draft"
+    "tteop-spec": "0.1.5-draft"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
