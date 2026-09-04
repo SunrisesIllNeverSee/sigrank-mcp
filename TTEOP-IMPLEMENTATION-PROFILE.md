@@ -10,7 +10,7 @@
 |-------|-------|
 | Protocol name | TTEOP (Token Telemetry Evaluation Operator Protocol) |
 | Protocol version | `tteop/0.1-draft` |
-| TTEOP version pin | `tteop-spec@0.1.5-draft` (via `@sigrank/cascade@^0.2.0`) |
+| TTEOP version pin | `tteop-spec@0.1.5-draft` (via `@sigrank/cascade@0.2.0`, exact pin) |
 | GitHub repository | [SunrisesIllNeverSee/otep-spec](https://github.com/SunrisesIllNeverSee/otep-spec) |
 | npm package | [tteop-spec](https://www.npmjs.com/package/tteop-spec) |
 | Version DOI | [10.5281/zenodo.22180349](https://doi.org/10.5281/zenodo.22180349) |
@@ -145,6 +145,26 @@ The `sigrank/0.1-draft` wire identifier is deliberately retained in
 with existing clients. It resolves to current TTEOP semantics and does NOT
 constitute a second active standard.
 
+The `get_sigrank_standard_record` tool output now includes explicit
+authority transition metadata:
+
+```json
+{
+  "spec": "sigrank/0.1-draft",
+  "spec_status": "legacy_alias",
+  "protocol": {
+    "name": "TTEOP",
+    "version": "tteop/0.1-draft",
+    "authority": "tteop-spec@0.1.5-draft"
+  },
+  ...
+}
+```
+
+An agent consuming this response must not conclude that `sigrank/0.1-draft`
+is the active interoperability standard. The `spec_status` field and
+`protocol` block make the authority transition unambiguous.
+
 ## Known limitations
 
 - The wire identifier remains `sigrank/0.1-draft` for compatibility. Migration
@@ -165,7 +185,7 @@ tteop-spec@0.1.5-draft (canonical executable/reference semantics)
   with banker's rounding (SRP-METRIC-002) and canonical null semantics
         │
         ▼
-@sigrank/cascade@^0.2.0 (SigRank product facade)
+@sigrank/cascade@0.2.0 (SigRank product facade)
   delegates computeMetrics() to tteop-spec
   maps output_fraction → snr, log_leverage → dev10x (display aliases)
   adds RS05 class taxonomy, operator signatures, field ranking

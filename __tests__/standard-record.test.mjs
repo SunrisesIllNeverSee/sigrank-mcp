@@ -13,6 +13,10 @@ const record = await handleGetSigRankStandardRecord({
 });
 
 assert.equal(record.spec, "sigrank/0.1-draft");
+assert.equal(record.spec_status, "legacy_alias");
+assert.equal(record.protocol.name, "TTEOP");
+assert.equal(record.protocol.version, "tteop/0.1-draft");
+assert.equal(record.protocol.authority, "tteop-spec@0.1.5-draft");
 assert.equal(record.timestamp, "2026-08-27T00:00:00.000Z");
 assert.deepEqual(record.telemetry, {
   input: 1_251_211,

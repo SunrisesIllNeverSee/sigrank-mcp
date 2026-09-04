@@ -2,12 +2,16 @@ import { cascade } from "../analytics/cascade.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
 
 export const SIGRANK_STANDARD_VERSION = "sigrank/0.1-draft";
+export const TTEOP_PROTOCOL_VERSION = "tteop/0.1-draft";
+export const TTEOP_SPEC_VERSION = "tteop-spec@0.1.5-draft";
 export const PRODUCT_ARCHITECTURE = Object.freeze({
   brand: "SignalAF",
   governance: "MO§ES™",
   product: "Upsilon",
   leaderboard: "SigRank",
   wire_spec: SIGRANK_STANDARD_VERSION,
+  protocol: TTEOP_PROTOCOL_VERSION,
+  protocol_authority: TTEOP_SPEC_VERSION,
 });
 
 export const TOOL_DEF = {
@@ -39,9 +43,20 @@ export const TOOL_DEF = {
   outputSchema: {
     type: "object",
     additionalProperties: false,
-    required: ["spec", "timestamp", "source", "telemetry", "metrics", "warnings"],
+    required: ["spec", "spec_status", "protocol", "timestamp", "source", "telemetry", "metrics", "warnings"],
     properties: {
-      spec: { const: SIGRANK_STANDARD_VERSION, description: "SigRank specification version." },
+      spec: { const: SIGRANK_STANDARD_VERSION, description: "Legacy wire identifier. Resolves to TTEOP tteop/0.1-draft." },
+      spec_status: { const: "legacy_alias", description: "Indicates this spec identifier is a legacy alias, not a current protocol." },
+      protocol: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "version", "authority"],
+        properties: {
+          name: { const: "TTEOP", description: "Canonical protocol name." },
+          version: { const: TTEOP_PROTOCOL_VERSION, description: "Current TTEOP protocol version." },
+          authority: { const: TTEOP_SPEC_VERSION, description: "Canonical executable/reference implementation." }
+        }
+      },
       timestamp: { type: "string", format: "date-time", description: "ISO-8601 record timestamp." },
       source: {
         type: "object",
@@ -128,6 +143,12 @@ export async function handleGetSigRankStandardRecord(args) {
 
   return {
     spec: SIGRANK_STANDARD_VERSION,
+    spec_status: "legacy_alias",
+    protocol: {
+      name: "TTEOP",
+      version: TTEOP_PROTOCOL_VERSION,
+      authority: TTEOP_SPEC_VERSION,
+    },
     timestamp: recordTimestamp(args?.timestamp),
     source: {
       provider: args?.provider || "unknown",
