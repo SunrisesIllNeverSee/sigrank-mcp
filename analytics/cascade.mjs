@@ -60,15 +60,10 @@ export {
  * The four raw token pillars → the cascade.
  *
  * Object-signature wrapper around the canonical `@sigrank/cascade` cascade()
- * (which takes positional args). Accepts null for cacheCreate/cacheRead
- * (unavailable cache) and passes null through to tteop-spec via cascade.
- * Re-attaches the `mode` field via detectMode() so the 20+ call sites in
- * this repo that read `result.mode` keep working.
+ * (which takes positional args). Re-attaches the `mode` field via detectMode()
+ * so the 20+ call sites in this repo that read `result.mode` keep working.
  */
 export function cascade({ input, output, cacheCreate, cacheRead }) {
-  // Pass null through to cascade (→ tteop-spec) for canonical null semantics.
-  // detectMode receives the raw values (Number(null) = 0, which is fine for
-  // mode classification).
   const result = cascadeCanonical(input, output, cacheCreate, cacheRead);
   // Re-attach mode — the canonical package intentionally omits it (mode is a
   // presentation-layer concern, not canonical math).

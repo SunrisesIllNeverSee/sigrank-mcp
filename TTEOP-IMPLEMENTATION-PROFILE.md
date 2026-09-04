@@ -187,7 +187,6 @@ tteop-spec@0.1.5-draft (canonical executable/reference semantics)
         ▼
 @sigrank/cascade@0.2.1 (SigRank product facade)
   delegates computeMetrics() to tteop-spec
-  passes null cache through to tteop-spec for canonical null semantics
   maps output_fraction → snr, log_leverage → dev10x (display aliases)
   adds RS05 class taxonomy, operator signatures, field ranking
   translates canonical warning strings to product-facing names

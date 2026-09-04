@@ -125,15 +125,21 @@ export async function handleGetSigRankStandardRecord(args) {
   const cacheWrite = tokenCount(args?.cache_write, "cache_write", false);
   const cacheRead = tokenCount(args?.cache_read, "cache_read", false);
 
-  // Pass null through to cascade (→ tteop-spec) so canonical null semantics
-  // apply directly. Passing 0 would produce 0-valued metrics instead of null,
-  // losing the unavailable/zero distinction. No manual null override needed.
   const c = cascade({
     input,
     output,
-    cacheCreate: cacheWrite,
-    cacheRead: cacheRead,
+    cacheCreate: cacheWrite ?? 0,
+    cacheRead: cacheRead ?? 0,
   });
+  // Standard warning order: cache-unavailability warnings precede the
+  // dev10x_undefined warning (the "why" before the "what"). The standalone
+  // conformance runner validates warnings as ordered arrays.
+  const warnings = [];
+  if (cacheWrite === null) warnings.push("cache_write is unavailable; 10xDEV is undefined.");
+  if (cacheRead === null) warnings.push("cache_read is unavailable; Yield, Leverage, and 10xDEV are undefined.");
+  for (const w of (c.warnings || [])) {
+    if (!warnings.includes(w)) warnings.push(w);
+  }
 
   return {
     spec: SIGRANK_STANDARD_VERSION,
@@ -156,12 +162,12 @@ export async function handleGetSigRankStandardRecord(args) {
       cache_read: cacheRead,
     },
     metrics: {
-      yield: c.yield,
-      leverage: c.leverage,
+      yield: cacheRead === null ? null : c.yield,
+      leverage: cacheRead === null ? null : c.leverage,
       velocity: c.velocity,
       snr: c.snr,
-      dev10x: c.dev10x,
+      dev10x: cacheWrite === null || cacheRead === null ? null : c.dev10x,
     },
-    warnings: c.warnings || [],
+    warnings,
   };
 }

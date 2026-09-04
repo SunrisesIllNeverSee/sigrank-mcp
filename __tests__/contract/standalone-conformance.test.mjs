@@ -130,16 +130,6 @@ function arraysEqual(a, b) {
   return true;
 }
 
-// Normalize warning strings for comparison. The legacy fixtures use the
-// display name "10xDEV" in human-readable cache-unavailable messages, while
-// the cascade translation uses the field name "dev10x". Both refer to the
-// same metric (TTEOP log_leverage). This normalization allows the legacy
-// compatibility test to compare warnings semantically rather than rejecting
-// on display-name casing differences.
-function normalizeWarnings(warnings) {
-  return warnings.map((w) => w.replace(/10xDEV/g, "dev10x").replace(/SNR/g, "snr"));
-}
-
 // ─── Conformance gate: every fixture must pass ───────────────────────────────
 
 const it = standardAvailable ? test : test.skip; it(`MCP producer passes all 13 standalone fixtures (Standard ref ${SIGRANK_STANDARD_REF})`, async () => {
@@ -196,11 +186,9 @@ const it = standardAvailable ? test : test.skip; it(`MCP producer passes all 13 
       }
     }
 
-    // 4. Warnings (ordered arrays, with display-name normalization)
+    // 4. Warnings (ordered arrays)
     if (expected.warnings !== undefined) {
-      const actualNorm = normalizeWarnings(record.warnings || []);
-      const expectedNorm = normalizeWarnings(expected.warnings);
-      if (!arraysEqual(actualNorm, expectedNorm)) {
+      if (!arraysEqual(record.warnings, expected.warnings)) {
         errors.push(`${id}: warnings mismatch: expected ${JSON.stringify(expected.warnings)}, got ${JSON.stringify(record.warnings)}`);
       }
     }
