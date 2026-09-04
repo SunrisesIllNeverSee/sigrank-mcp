@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "Upsilon measurement engine distributed through the sigrank CLI/MCP compatibility package, with SigRank public leaderboard tools.",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
