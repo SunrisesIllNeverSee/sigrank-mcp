@@ -48,6 +48,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        persist-credentials: false
         with:
           # Full history + token so we can push the version commit back
           fetch-depth: 0

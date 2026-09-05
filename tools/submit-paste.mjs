@@ -16,9 +16,8 @@ export const TOOL_DEF = {
     "Ranks a paste of token counts locally and shows the cascade result (yield, leverage, velocity, class, card). This is a PREVIEW-ONLY tool — it does not publish to the board. The board's /api/v1/ingest-paste endpoint now requires an authenticated Supabase session, which MCP tools do not carry. To publish to the leaderboard, use submit_verified (which signs and posts to /api/v1/snapshots via the enrolled-device path) or submit directly through the signalaf.com web UI. Use this when you have token counts from ccusage or a dashboard and want to see your score instantly. Do NOT use this if you want to pull your local usage automatically — use tokenpull_submit for the zero-paste flow. Do NOT use this for multi-window dashboard pastes — use rank_windows to rank them first.",
   annotations: {
     title: "Preview paste ranking",
-    ...ANNOTATIONS.destructiveHint,
+    ...ANNOTATIONS.readOnlyHint,
     ...ANNOTATIONS.idempotentHint,
-    ...ANNOTATIONS.openWorldHint,
   },
   inputSchema: {
     type: "object",

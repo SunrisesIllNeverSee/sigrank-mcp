@@ -87,12 +87,12 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "token-cascade": "^0.2.1",
     "ccusage": "^20.0.19",
-    "tokscale": "^4.7.0",
-    "tteop-spec": "0.1.5-draft"
+    "tokscale": "^4.7.0"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "gifenc": "^1.0.3"
+    "gifenc": "^1.0.3",
+    "tteop-spec": "0.1.5-draft"
   },
   "overrides": {
     "@hono/node-server": "^2.0.5"

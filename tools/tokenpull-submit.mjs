@@ -16,9 +16,8 @@ export const TOOL_DEF = {
     "Pull your LOCAL token usage from session logs and compute the cascade per window — the zero-paste preview flow. Reads the four canonical pillars (input, output, cacheCreate, cacheRead) per window from your local logs and computes yield, leverage, velocity, class, and card. This is a PREVIEW-ONLY tool — it does not publish to the board. The board's /api/v1/ingest-paste endpoint now requires an authenticated Supabase session, which MCP tools do not carry. To publish to the leaderboard, use submit_verified (which signs and posts to /api/v1/snapshots via the enrolled-device path) or submit directly through the signalaf.com web UI. Token-only — no prompt content is read or transmitted.",
   annotations: {
     title: "Pull and preview tokens",
-    ...ANNOTATIONS.destructiveHint,
+    ...ANNOTATIONS.readOnlyHint,
     ...ANNOTATIONS.idempotentHint,
-    ...ANNOTATIONS.openWorldHint,
   },
   inputSchema: {
     type: "object",
