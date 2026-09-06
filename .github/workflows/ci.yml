@@ -27,8 +27,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
         with:
+          persist-credentials: false
           # Full history so gitleaks can scan past commits, not just the diff.
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
@@ -42,7 +42,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -78,7 +79,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -89,8 +91,8 @@ jobs:
 
       - name: Checkout sigrank-app (the other half of the contract)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
         with:
+          persist-credentials: false
           repository: SunrisesIllNeverSee/sigrank-app
           path: _sigrank-app
           # Public repo — no token needed. If it goes private, add a PAT secret.
@@ -111,8 +113,8 @@ jobs:
       # cannot silently alter consumer builds.
       - name: Checkout sigrank-standard (authoritative fixture pack)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
         with:
+          persist-credentials: false
           repository: SunrisesIllNeverSee/sigrank-standard
           path: _sigrank-standard
           ref: main
@@ -135,7 +137,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        persist-credentials: false
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
