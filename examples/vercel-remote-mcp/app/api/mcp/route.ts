@@ -17,7 +17,38 @@ const HOP_BY_HOP = new Set([
   "content-length",
 ]);
 
+/**
+ * Auth guard — rejects unauthenticated requests before proxying to the
+ * upstream MCP server. Set RELAY_API_KEY in your Vercel environment and
+ * require clients to send it as the Authorization header.
+ *
+ * GET (initialize/list) is allowed without auth so discovery works.
+ * POST/DELETE (mutating) require the relay key.
+ */
+function checkAuth(request: NextRequest): Response | null {
+  if (request.method === "GET") return null; // read-only discovery
+  const relayKey = process.env.RELAY_API_KEY;
+  if (!relayKey) {
+    return new Response(JSON.stringify({ error: "RELAY_API_KEY not configured" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const auth = request.headers.get("authorization") || "";
+  const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (provided !== relayKey) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return null;
+}
+
 async function proxy(request: NextRequest) {
+  const authError = checkAuth(request);
+  if (authError) return authError;
+
   const outboundHeaders = new Headers();
   request.headers.forEach((value, key) => {
     if (!HOP_BY_HOP.has(key.toLowerCase())) outboundHeaders.set(key, value);

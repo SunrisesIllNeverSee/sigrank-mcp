@@ -18,6 +18,7 @@ jobs:
   secret-scan:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       # gitleaks-action needs pull-requests: write to post review comments on
@@ -38,6 +39,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         persist-credentials: false
@@ -47,7 +49,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Unit tests
         run: node test.mjs
@@ -73,6 +75,7 @@ jobs:
   # This job checks out the web repo and runs all cross-repo contract tests.
   cross-repo-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         persist-credentials: false
@@ -82,7 +85,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Checkout sigrank-app (the other half of the contract)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -129,6 +132,7 @@ jobs:
   # defense-in-depth in case the whitelist is ever accidentally widened.
   pack-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         persist-credentials: false
@@ -137,7 +141,7 @@ jobs:
         with:
           node-version: 22
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Install and exercise the packed artifact
         run: npm run test:packaged

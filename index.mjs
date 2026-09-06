@@ -56,13 +56,14 @@ function serverVersion() {
 // than hanging on a broken connection.
 process.on("uncaughtException", (err) => {
   process.stderr.write(
-    `[sigrank-mcp] uncaughtException: ${err?.stack || err}\n`,
+    `[sigrank-mcp] uncaughtException: ${err?.message || err}\n`,
   );
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
   process.stderr.write(
-    `[sigrank-mcp] unhandledRejection: ${reason?.stack || reason}\n`,
+    `[sigrank-mcp] unhandledRejection: ${msg}\n`,
   );
   process.exit(1);
 });

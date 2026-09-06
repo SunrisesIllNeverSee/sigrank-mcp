@@ -25,6 +25,7 @@ jobs:
   tui-audit:
     name: TUI layout audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         persist-credentials: false
@@ -32,7 +33,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: TUI audit (CI mode — blocks on HIGH severity)
         run: node presentation/tui.mjs --audit --ci
@@ -50,6 +51,7 @@ jobs:
         with:
           name: tui-screenshots
           path: .tui-screenshots/
+        if-no-files-found: error
           retention-days: 14
 
       - name: Comment on PR with audit summary

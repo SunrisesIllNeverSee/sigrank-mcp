@@ -12,6 +12,7 @@
 import { snapshotHash, signPayload } from "../identity/sign.mjs";
 import { preflight } from "./preflight.mjs";
 import { pkgVersion } from "../lib/pkg-version.mjs";
+import { validateApiBase } from "../tools/_helpers.mjs";
 import {
   TERMS_VERSION,
   PRIVACY_VERSION,
@@ -179,8 +180,9 @@ export async function submitSignedWindow(
     };
   }
 
-  const apiBase =
-    opts.apiBase || process.env.SIGRANK_API_BASE || "https://signalaf.com";
+  const apiBase = validateApiBase(
+    opts.apiBase || process.env.SIGRANK_API_BASE || "https://signalaf.com",
+  );
   // FIX M: default a 15s AbortController timeout when the caller doesn't inject a
   // fetchImpl. The TUI path already wraps fetch (callTool → doFetch, 10s), but the
   // legacy CLI `watch --submit` + the CLI default-view [S] call submitSignedWindow

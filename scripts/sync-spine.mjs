@@ -17,7 +17,7 @@
 
 import { cp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const SPINE_DIRS = ['observatory', 'ontology', 'methodology', 'governance'];
 const DST_ROOT = resolve(process.env.SIGRANK_MCP_PATH || resolve(import.meta.dirname, '..'));
@@ -45,7 +45,7 @@ async function compareDir(srcDir, dstDir) {
       await stat(dstPath);
       const srcHash = await sha256File(srcPath);
       const dstHash = await sha256File(dstPath);
-      if (srcHash !== dstHash) {
+      if (!timingSafeEqual(Buffer.from(srcHash), Buffer.from(dstHash))) {
         changes.push({ type: 'modify', rel });
       }
     } catch {

@@ -21,6 +21,7 @@ jobs:
   audit:
     name: npm audit (high/critical gate)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -34,7 +35,7 @@ jobs:
       - name: Upgrade npm (use bulk advisory endpoint)
         run: npm install -g npm@latest
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: npm audit (fail on high/critical)
         # --omit=dev: production deps only (the ones that ship to npm).
@@ -56,4 +57,5 @@ jobs:
         with:
           name: npm-audit-report
           path: audit-report.md
+        if-no-files-found: error
           retention-days: 14

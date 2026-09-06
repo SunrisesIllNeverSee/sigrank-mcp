@@ -26,9 +26,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # needed to push the version bump branch
-  pull-requests: write # needed to create + merge the version bump PR
-  id-token: write # needed for mcp-publisher github-oidc authentication
+  contents: read # default; write granted only on the publish job
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -38,6 +36,12 @@ jobs:
   publish:
     name: Bump + publish + sync app
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: publish
+    permissions:
+      contents: write # needed to push the version bump branch
+      pull-requests: write # needed to create + merge the version bump PR
+      id-token: write # needed for mcp-publisher github-oidc authentication
     # Only publish when CI succeeded. Skip if the CI run was triggered by
     # the bot's own version commit (prevents infinite loop). Allow manual
     # workflow_dispatch triggers.
@@ -61,7 +65,7 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       # ── Pre-publish tests (mirror ci.yml test job) ──
       - name: Unit tests

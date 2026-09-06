@@ -25,6 +25,32 @@ const _envPath = `${_localBin}${process.env.PATH ? ":" + process.env.PATH : ""}`
 
 export const DEFAULT_API_BASE =
   process.env.SIGRANK_API_BASE || "https://signalaf.com";
+
+/** Allowed API hosts — prevents SSRF via SIGRANK_API_BASE override. */
+const ALLOWED_API_HOSTS = new Set([
+  "signalaf.com",
+  "sigeconomy.com",
+  "localhost",
+  "127.0.0.1",
+  "test.local", // test fixtures only
+]);
+
+/** Validate that a URL points to an allowed API host. */
+export function validateApiBase(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (!ALLOWED_API_HOSTS.has(u.hostname)) {
+      throw new Error(`Blocked: API host '${u.hostname}' is not in the allowlist`);
+    }
+    return urlStr;
+  } catch (e) {
+    if (e.message.startsWith("Blocked:")) throw e;
+    throw new Error(`Invalid API base URL: ${urlStr}`);
+  }
+}
+
+// Validate at load time so a misconfigured env var fails fast.
+validateApiBase(DEFAULT_API_BASE);
 /** Default network timeout in ms (override via opts.fetchTimeout or SIGRANK_FETCH_TIMEOUT). */
 export const DEFAULT_FETCH_TIMEOUT =
   Number(process.env.SIGRANK_FETCH_TIMEOUT) || 10_000;
