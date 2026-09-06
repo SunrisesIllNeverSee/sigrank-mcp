@@ -57,5 +57,5 @@ jobs:
         with:
           name: npm-audit-report
           path: audit-report.md
-        if-no-files-found: error
+          if-no-files-found: error
           retention-days: 14

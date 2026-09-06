@@ -51,7 +51,7 @@ jobs:
         with:
           name: tui-screenshots
           path: .tui-screenshots/
-        if-no-files-found: error
+          if-no-files-found: error
           retention-days: 14
 
       - name: Comment on PR with audit summary
