@@ -111,6 +111,7 @@ export async function handleSubmitVerified(args, ctx) {
         platform: "multi",
         now: ctx.opts.now,
         dryRun: !!args?.dry_run,
+        force: !!ctx.opts.force,
         report,
       });
       out.push({ window: wk, pillars: sum, ...r });
@@ -139,6 +140,7 @@ export async function handleSubmitVerified(args, ctx) {
       platform: pulled.platform,
       now: ctx.opts.now,
       dryRun: !!args?.dry_run,
+      force: !!ctx.opts.force,
       report,
     });
     out.push({ window: w.window, pillars: w.pillars, ...r });

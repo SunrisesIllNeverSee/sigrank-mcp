@@ -1832,6 +1832,57 @@ console.log(
   "✓ submit_verified: signs Schema 1.0 → POST /api/v1/snapshots · X-Agent-Signature · server-verifiable · plausibility-clean",
 );
 
+// --- 31b. idempotent actuation: duplicate submit returns cached result (HRN-004 p8) ---
+import { _clearDedupCache } from "./submit/index.mjs";
+_clearDedupCache();
+let dedupFetchCalls = 0;
+const dedupFetch = async (url, init) => {
+  dedupFetchCalls++;
+  return {
+    ok: true,
+    status: 202,
+    json: async () => ({
+      status: "received",
+      verification_tier: "verified",
+      persisted: true,
+    }),
+  };
+};
+const dedupId = {
+  ...generateIdentity({ device_id: "dedup-test-device-0001" }),
+  codename: "DedupTestOperator",
+  operator_id: "op_dedup",
+};
+const dedupOpts = {
+  apiBase: "http://test.local",
+  fetchImpl: dedupFetch,
+  adapter: mockAdapter,
+  identity: dedupId,
+  now: NOW,
+};
+const first = await callTool("submit_verified", { window: "all" }, dedupOpts);
+assert.strictEqual(dedupFetchCalls, 1, "first submit hits the network");
+assert.ok(first.windows[0].idempotencyKey, "first submit returns idempotencyKey");
+const firstHash = first.windows[0].snapshot_hash;
+// Second submit with identical data — should hit the dedup cache, NOT the network
+const second = await callTool("submit_verified", { window: "all" }, dedupOpts);
+assert.strictEqual(dedupFetchCalls, 1, "second submit is deduped (no network call)");
+assert.strictEqual(second.windows[0].idempotent, true, "second submit is marked idempotent");
+assert.strictEqual(second.windows[0].snapshot_hash, firstHash, "same snapshot_hash");
+// force: true bypasses the cache and re-POSTs
+const forced = await callTool(
+  "submit_verified",
+  { window: "all" },
+  { ...dedupOpts, force: true },
+);
+assert.strictEqual(dedupFetchCalls, 2, "force:true bypasses dedup and hits the network");
+assert.ok(!forced.windows[0].idempotent, "forced submit is not marked idempotent");
+_clearDedupCache();
+console.log(
+  "✓ idempotent actuation: duplicate submit deduped · force bypasses cache · HRN-004 p8",
+);
+
+
 // --- connect.mjs pure helpers (consolidation) ---
 assert.equal(isSignedIn(null), false, "isSignedIn(null)");
 assert.equal(isSignedIn({}), false, "isSignedIn({})");

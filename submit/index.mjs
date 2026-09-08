@@ -35,6 +35,24 @@ const PLATFORM_ENUM = new Set([
 const RULESET_VERSION = "sigrank-token-1";
 const DAY_MS = 86_400_000;
 
+// ─── Idempotent actuation (HRN-004 principle 8) ──────────────────────────────
+// snapshot_hash is the natural idempotency key: it is the SHA-256 of the
+// canonical payload bytes. A retried POST (network error, user retry) carries
+// the same hash, so the server can dedup on it. The client also keeps a
+// short-lived in-memory cache so a rapid double-submit never hits the network.
+//
+// Server contract: POST /api/v1/snapshots MUST treat snapshot_hash as an
+// idempotency key. A second POST with the same hash returns 200 with the
+// original result (not 201, not a duplicate row). See sigrank-app ingest gates.
+const DEDUP_TTL_MS = 5 * 60_000; // 5 minutes — covers retries + brief loops
+const _dedupCache = new Map(); // hash → { submittedAt, result }
+
+function _dedupEvict(now) {
+  for (const [k, v] of _dedupCache) {
+    if (now - v.submittedAt > DEDUP_TTL_MS) _dedupCache.delete(k);
+  }
+}
+
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const round = (n, dp) => {
   const f = 10 ** dp;
@@ -212,6 +230,23 @@ export async function submitSignedWindow(
     opts,
   );
 
+  // Idempotent actuation: if we already submitted this exact snapshot_hash
+  // within the dedup window, return the cached result instead of re-POSTing.
+  // The server also dedups on snapshot_hash, but this avoids the network round
+  // trip and makes the client-side retry safe. opts.force bypasses the cache
+  // (use when the operator explicitly wants to re-submit after a server fix).
+  const now = Date.now();
+  _dedupEvict(now);
+  const hash = payload.agent.snapshot_hash;
+  if (!opts.force && _dedupCache.has(hash)) {
+    const cached = _dedupCache.get(hash);
+    return {
+      ...cached.result,
+      idempotent: true,
+      detail: `Duplicate submit of snapshot ${hash} within ${DEDUP_TTL_MS / 1000}s window — returning cached result. Use force:true to bypass.`,
+    };
+  }
+
   // Preflight: run the same anti-gaming checks the server will run, locally.
   // If the payload would be rejected or downgraded, warn the operator BEFORE
   // submitting. The server always runs its own checks — this is a preview.
@@ -251,6 +286,7 @@ export async function submitSignedWindow(
       payload,
       signature,
       preflight: pre,
+      idempotencyKey: hash,
       detail:
         "By submitting, you agree to the SignalAF Terms of Service and Privacy Policy. Nothing sent. Re-run without dry_run to publish.",
     };
@@ -282,7 +318,7 @@ export async function submitSignedWindow(
     };
   }
 
-  return {
+  const result = {
     status: res.ok ? ack.status || "received" : "error",
     httpStatus: res.status,
     window: WINDOW_TYPE[windowKey] || windowKey,
@@ -291,9 +327,23 @@ export async function submitSignedWindow(
     // ranked = actually on the board (verified + written), not just "received".
     // An unenrolled/revoked device gets HTTP 202 received but is NEVER ranked.
     ranked: isRankedAck(res, ack),
-    snapshot_hash: payload.agent.snapshot_hash,
+    snapshot_hash: hash,
+    idempotencyKey: hash,
     reason: res.ok ? null : ack.reason || ack.status || `http_${res.status}`,
     detail: ack.detail ?? null,
     preflight: pre,
   };
+
+  // Cache successful and received submissions for dedup. Don't cache errors
+  // (network failures, preflight rejections) — those should be retried.
+  if (res.ok) {
+    _dedupCache.set(hash, { submittedAt: now, result });
+  }
+
+  return result;
+}
+
+// Test-only: clear the dedup cache between test cases.
+export function _clearDedupCache() {
+  _dedupCache.clear();
 }
