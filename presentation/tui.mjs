@@ -1134,7 +1134,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     );
     tdRow("10xDEV", tdLive.base.d10, tdLive.hcm.d10, tdLive.power.d10, tdLive.top.d10, (v) => v.toFixed(2));
     emit(
-      `    ${dim("AA baseline static · Top Evals live from your cascade · HCM/Power calibrate with user volume")}`,
+      `    ${dim("Top live · HCM/Power calibrate with volume")}`,
     );
   }
 
