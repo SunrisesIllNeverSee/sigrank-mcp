@@ -973,6 +973,29 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   })();
 
   if (used < budget - 8) {
+    // Compute the operator's combined "all" cascade for live Four Degrees.
+    // TD.top is overridden with the live metrics so the "Top Evals" column
+    // reflects the actual top operator instead of a static snapshot.
+    const combinedAll = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+    for (const d of active) {
+      const all = d.windows?.find((w) => w.window === "all");
+      if (!all) continue;
+      combinedAll.input += all.pillars.input ?? 0;
+      combinedAll.output += all.pillars.output ?? 0;
+      combinedAll.cacheCreate += all.pillars.cacheCreate ?? 0;
+      combinedAll.cacheRead += all.pillars.cacheRead ?? 0;
+    }
+    const liveTop = cascadeFrom(combinedAll);
+    const tdLive = { ...TD };
+    if (liveTop && (liveTop.yield ?? 0) > 0) {
+      tdLive.top = {
+        yield: liveTop.yield,
+        snr: liveTop.snr,
+        vel: liveTop.velocity ?? TD.top.vel,
+        lev: liveTop.leverage ?? TD.top.lev,
+        d10: liveTop.dev10x ?? TD.top.d10,
+      };
+    }
     // ── Custom insights — comparison vs the field + a concrete tip for the weakest metric
     emit(`  ${hr()}`);
     emit(
@@ -1011,45 +1034,45 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       chk(
         "Υ Yield",
         you.yield,
-        TD.hcm.yield,
-        TD.power.yield,
-        TD.top.yield,
+        tdLive.hcm.yield,
+        tdLive.power.yield,
+        tdLive.top.yield,
         fmtY,
         "compound more — reuse cache, raise output",
       );
       chk(
         "SNR",
         you.snr,
-        TD.hcm.snr,
-        TD.power.snr,
-        TD.top.snr,
+        tdLive.hcm.snr,
+        tdLive.power.snr,
+        tdLive.top.snr,
         fmtSNR,
         "tighten prompts — less input per unit output",
       );
       chk(
         "Leverage",
         you.leverage,
-        TD.hcm.lev,
-        TD.power.lev,
-        TD.top.lev,
+        tdLive.hcm.lev,
+        tdLive.power.lev,
+        tdLive.top.lev,
         (v) => fmtLev(v) + "×",
         "lean on cache-read — amplify prior context",
       );
       chk(
         "Velocity",
         you.velocity,
-        TD.hcm.vel,
-        TD.power.vel,
-        TD.top.vel,
+        tdLive.hcm.vel,
+        tdLive.power.vel,
+        tdLive.top.vel,
         (v) => v.toFixed(2),
         "more output per input token",
       );
       chk(
         "10xDEV",
         you.dev10x,
-        TD.hcm.d10,
-        TD.power.d10,
-        TD.top.d10,
+        tdLive.hcm.d10,
+        tdLive.power.d10,
+        tdLive.top.d10,
         (v) => v.toFixed(2),
         "raise leverage — every 10× lev adds 1 to 10xDEV",
       );
@@ -1096,22 +1119,22 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       emit(
         `    ${padEnd(label, 10)}  ${padStart(dim(fmt(b)), 9)}  ${padStart(white(fmt(h)), 9)}  ${padStart(white(fmt(p)), 9)}  ${padStart(gold(fmt(t)), 9)}`,
       );
-    tdRow("Υ Yield", TD.base.yield, TD.hcm.yield, TD.power.yield, TD.top.yield, fmtY);
-    tdRow("SNR", TD.base.snr, TD.hcm.snr, TD.power.snr, TD.top.snr, fmtSNR);
-    tdRow("Velocity", TD.base.vel, TD.hcm.vel, TD.power.vel, TD.top.vel, (v) =>
+    tdRow("Υ Yield", tdLive.base.yield, tdLive.hcm.yield, tdLive.power.yield, tdLive.top.yield, fmtY);
+    tdRow("SNR", tdLive.base.snr, tdLive.hcm.snr, tdLive.power.snr, tdLive.top.snr, fmtSNR);
+    tdRow("Velocity", tdLive.base.vel, tdLive.hcm.vel, tdLive.power.vel, tdLive.top.vel, (v) =>
       v.toFixed(2),
     );
     tdRow(
       "Leverage",
-      TD.base.lev,
-      TD.hcm.lev,
-      TD.power.lev,
-      TD.top.lev,
+      tdLive.base.lev,
+      tdLive.hcm.lev,
+      tdLive.power.lev,
+      tdLive.top.lev,
       (v) => fmtLev(v) + "×",
     );
-    tdRow("10xDEV", TD.base.d10, TD.hcm.d10, TD.power.d10, TD.top.d10, (v) => v.toFixed(2));
+    tdRow("10xDEV", tdLive.base.d10, tdLive.hcm.d10, tdLive.power.d10, tdLive.top.d10, (v) => v.toFixed(2));
     emit(
-      `    ${dim("reference values until live user volume calibrates HCM · Power · Top")}`,
+      `    ${dim("AA baseline static · Top Evals live from your cascade · HCM/Power calibrate with user volume")}`,
     );
   }
 
@@ -1130,7 +1153,9 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     emit();
     emit(`  ${hr()}`);
     emit(`  ${bold("Lifetime Tokens")}  ${dim("archived submissions · never decreases")}`);
-    const platforms = Object.entries(batched.per_platform ?? {});
+    const platforms = Object.entries(batched.per_platform ?? {}).filter(
+      ([plat]) => plat !== "multi",
+    );
     for (const [plat, pw] of platforms) {
       if (used >= budget - 2) break;
       const pc = platformColor(plat);
