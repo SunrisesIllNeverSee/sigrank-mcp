@@ -22,6 +22,7 @@ def main():
     try: prof=profile(root,cfg)
     except Exception as e: print(f'ERROR {e}'); return 2
     mode=str(deepget(cfg,'standard.mode','migrate')).lower()
+    if args.ci: mode='enforce'
     extra_dirs=set(deepget(cfg,'structure.allowed_root_dirs_extra',[]) or [])
     extra_files=set(deepget(cfg,'structure.allowed_root_files_extra',[]) or [])
     allowed_dirs=set(prof['allowed_root_directories'])|extra_dirs

@@ -49,7 +49,7 @@ jobs:
           echo "## npm audit — full report" > audit-report.md
           echo "" >> audit-report.md
           echo '```' >> audit-report.md
-          npm audit --omit=dev || true >> audit-report.md 2>&1
+          npm audit --omit=dev >> audit-report.md 2>&1 || true
           echo '```' >> audit-report.md
 
       - name: Upload audit report

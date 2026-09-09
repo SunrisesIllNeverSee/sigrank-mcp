@@ -111,7 +111,7 @@ no-data paths (data loads were try-caught; audit ran on empty data).
 **Command:** `node presentation/tui.mjs --audit --ci`
 **Exit code:** 0
 
-Exit 0 = no HIGH issues blocking CI.
+Note: The audit found 10 HIGH findings (lines 64-70) but `--ci` exited 0 because the `--ci` flag was not wired to force enforce mode at the time of this report (see `.repo/scripts/repo_check.py` fix). The HIGH issues were subsequently fixed in commit 33d97da.
 
 ### `--audit --svg` (SVG export)
 

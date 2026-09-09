@@ -12,4 +12,4 @@ The field is the comparison distribution defined by a particular dataset, inclus
 
 The current field-analysis schema records metadata, medians, IQR fences, operator records, yield quartiles, platform counts, and notable records. It can distinguish included observations from outlier classifications, but any published conclusion must retain dataset provenance and sampling limitations.
 
-Sources: `lib/analytics/field-types.ts`, `lib/analytics/field-data.ts`.
+Sources (server): `sigrank-app/lib/analytics/field-types.ts`, `sigrank-app/lib/analytics/field-data.ts`.

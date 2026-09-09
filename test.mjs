@@ -2285,12 +2285,12 @@ for (const tname of analyticsToolNames) {
   assert.ok(t.annotations?.readOnlyHint === true, `tool registration: ${tname} marked readOnly`);
 }
 
-// competitive_intel: empty target throws (validation guard)
-assert.rejects(
-  callTool("tokscale_competitive_intel", {}),
-  /requires a non-empty `target`/,
-  "tokscale_competitive_intel: empty target throws",
-);
+// competitive_intel: empty target returns structured error (not throw)
+{
+  const r = await callTool("tokscale_competitive_intel", {});
+  assert.ok(r.error && /requires a non-empty `target`/.test(r.error), "tokscale_competitive_intel: empty target returns structured error");
+  assert.strictEqual(r.found, false, "tokscale_competitive_intel: empty target found=false");
+}
 
 // Live shape tests — these exercise the real tokscale binary. They verify the
 // output SHAPE (keys present, types correct), not specific values, so they pass

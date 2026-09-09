@@ -113,7 +113,8 @@ export async function tokscaleModelBreakdown(threshold = 0.01) {
 }
 
 export async function handleTokscaleBreakdown(args) {
-  const threshold = Number(args?.threshold ?? 0.01);
+  const raw = Number(args?.threshold ?? 0.01);
+  const threshold = Number.isFinite(raw) ? Math.max(0, raw) : 0.01;
   const platforms = await tokscaleModelBreakdown(threshold);
   return { platforms };
 }

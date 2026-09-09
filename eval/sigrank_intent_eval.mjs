@@ -79,11 +79,14 @@ const CONFIDENCE_THRESHOLD = 0.78;
 // ── CSV parser ────────────────────────────────────────────────────────────────
 
 function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  const headers = lines[0].split(",");
+  const splitLine = (line) =>
+    (line.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || [])
+      .slice(0, -1)
+      .map((f) => f.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"'));
+  const lines = text.replace(/\r\n?/g, "\n").trim().split("\n");
+  const headers = splitLine(lines[0]);
   return lines.slice(1).map((line) => {
-    // Simple CSV parse — no quoted commas in our data
-    const vals = line.split(",");
+    const vals = splitLine(line);
     const row = {};
     headers.forEach((h, i) => { row[h] = vals[i] || ""; });
     return row;

@@ -23,13 +23,29 @@
  * obtained, falls back to uncached scan without damaging the cache.
  */
 
-import { execFile as execFileCb } from "node:child_process";
+import { execFile as execFileCb, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, stat, unlink } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 
 const execFileP = promisify(execFileCb);
+
+/** Run SQL via stdin to avoid OS argument-length limits (E2BIG on large transcripts). */
+function sqliteExecStdin(dbPath, sql, timeoutMs = 30_000) {
+  return new Promise((resolve) => {
+    const child = spawn("sqlite3", [dbPath], {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: timeoutMs,
+    });
+    let stderr = "";
+    child.stderr.on("data", (d) => { stderr += d; });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+    child.stdin.write(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS};\n${sql}`);
+    child.stdin.end();
+  });
+}
 
 const CACHE_SCHEMA_VERSION = "1";
 const CACHE_PARSER_VERSION = "omp-stage1-v1";
@@ -57,7 +73,7 @@ async function sqliteJson(dbPath, sql, timeoutMs = 10_000) {
 /** Run a SQLite command that doesn't return rows (DDL/DML). Returns success boolean. */
 async function sqliteExec(dbPath, sql, timeoutMs = 30_000) {
   try {
-    await execFileP("sqlite3", [dbPath, sql], {
+    await execFileP("sqlite3", [dbPath, `PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}; ${sql}`], {
       timeout: timeoutMs,
       maxBuffer: SQLITE_MAX_BUFFER,
     });
@@ -67,8 +83,13 @@ async function sqliteExec(dbPath, sql, timeoutMs = 30_000) {
   }
 }
 
-/** Run multiple SQL statements in a single sqlite3 call (semicolon-separated). */
+/** Run multiple SQL statements in a single sqlite3 call (semicolon-separated).
+ *  Uses stdin for large SQL to avoid OS argument-length limits. */
 async function sqliteExecBatch(dbPath, sql, timeoutMs = 60_000) {
+  // OS arg-length limit: ~256KB on macOS, ~2MB on Linux. Use stdin for safety.
+  if (sql.length > 200_000) {
+    return sqliteExecStdin(dbPath, sql, timeoutMs);
+  }
   return sqliteExec(dbPath, sql, timeoutMs);
 }
 
@@ -425,7 +446,7 @@ export async function* cachedOmpScan({
         const cachedSum = sumFields(cachedRecords, field);
         const uncachedSum = sumFields(uncachedRecords, field);
         if (cachedSum !== uncachedSum) {
-          console.error(
+          throw new Error(
             `[omp-cache] PARITY DRIFT: ${field} cached=${cachedSum} uncached=${uncachedSum} (diff=${cachedSum - uncachedSum})`,
           );
         }

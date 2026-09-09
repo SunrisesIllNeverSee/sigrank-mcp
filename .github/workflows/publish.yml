@@ -131,7 +131,7 @@ jobs:
           # Configure git auth since checkout used persist-credentials: false
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git checkout -b "$BRANCH"
-          git add package.json server.json manifest.json
+          git add -A -- package.json server.json manifest.json
           git commit -m "$NEW_VERSION"
           git push origin "$BRANCH"
           # Create PR and auto-merge (checks pass since it's just a version bump)

@@ -68,7 +68,6 @@ intent_taxonomy:
       - what makes a power user
       - how do advanced AI users work
       - what is an AI power user
-      - how do I become a better AI user
       - explain the scoring
     tool: describe_power_user
     expected_cta: Learn the scoring
@@ -83,6 +82,7 @@ intent_taxonomy:
       - reduce token burn
       - optimize my AI workflow
       - how can I rank higher
+      - how do I become a better AI user
     tool: optimize_efficiency
     expected_cta: Improve my score
 

@@ -161,7 +161,7 @@ smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
 ## Commands
 
 ```
-⊙ SigRank SignalAF CLI  v0.0.177
+⊙ SigRank SignalAF CLI  v1.0.37
 
 Default (no args)
   sigrank              unified dashboard: cascade + token pillars + board
@@ -407,7 +407,7 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 ## Privacy
 
 - **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank SignalAF.
-- **Local by default.** `tokenpull` reads only `~/.claude/projects` (Claude) or `~/.codex` (Codex) on your device. Numbers stay on your machine unless you explicitly submit with a codename.
+- **Local by default.** `tokenpull` reads only the selected or detected adapter paths on your device (e.g. `~/.claude/projects` for Claude, `~/.codex` for Codex, plus additional paths for Amp, Devin, Gemini, Goose, and other supported platforms). Numbers stay on your machine unless you explicitly submit with a codename.
 - **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
 - **Board reads are anonymous.** No account needed to browse, compare, or watch.
 - **Ranked submissions are signed, not trusted.** `sigrank submit` requires a one-time `enroll` (device-bound ed25519 key — the private key never leaves your machine). Verify what's sent with `sigrank submit --dry-run`: the payload is four token counts, ratios, and a signature.

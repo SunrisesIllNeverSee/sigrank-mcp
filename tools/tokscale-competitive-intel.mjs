@@ -39,7 +39,11 @@ export const TOOL_DEF = {
 export async function handleTokscaleCompetitiveIntel(args) {
   const target = String(args?.target || "").trim();
   if (!target) {
-    throw new Error("tokscale_competitive_intel requires a non-empty `target` argument (a tokscale client slug like 'claude' or 'codex').");
+    return {
+      target: "",
+      found: false,
+      error: "tokscale_competitive_intel requires a non-empty `target` argument (a tokscale client slug like 'claude' or 'codex').",
+    };
   }
   return await tokscaleCompetitiveIntel(target);
 }

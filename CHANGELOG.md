@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.37](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.37) (2026-09-08)
+
+### Fixes
+
+* TUI: remove "multi" from Lifetime Tokens display (combined total, not a platform)
+* TUI: Four Degrees "Top" column uses live operator cascade metrics instead of static snapshot
+* TUI: "all" cascade row uses server batched data (from 1.0.36)
+* Added Devin as first-class platform (P.09) across MCP + app
+
+## [1.0.36](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.36) (2026-09-08)
+
+### Fixes
+
+* TUI: "all" cascade row override uses server batched data to match Lifetime Tokens
+
+## [1.0.35](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.35) (2026-09-07)
+
+### Fixes
+
+* TUI presentation updates and audit fixes
+
 ## [0.0.203](https://github.com/SunrisesIllNeverSee/sigrank-mcp/compare/v0.0.202...v0.0.203) (2026-08-12)
 
 ### Chores

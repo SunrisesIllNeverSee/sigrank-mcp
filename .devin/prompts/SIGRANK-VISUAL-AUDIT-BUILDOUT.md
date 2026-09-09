@@ -12,7 +12,7 @@
 
 | Layer | Tool | Status |
 |-------|------|--------|
-| TUI audit | `presentation/tui-audit.mjs` (1123 lines) | Built, 9 check categories, A-F grades, CI mode, golden frames, SVG export |
+| TUI audit | `dev/tui-audit.mjs` (1123 lines) | Built, 9 check categories, A-F grades, CI mode, golden frames, SVG export |
 | Web perf/a11y | Lighthouse CI (`lighthouserc.json`) | 4 URLs, warn-level thresholds |
 | Web e2e | Playwright (`e2e/*.spec.ts`) | 4 specs: leaderboard, score-paste, profile, theme-cycle |
 | Web a11y | Axe in Playwright | Informational only (logs violations, doesn't fail) |
@@ -253,7 +253,7 @@ for (const page of PAGES) {
 ### WS-4: TUI render performance audit
 
 **Repo:** `_02_sigrank-mcp`
-**File:** `presentation/tui-audit.mjs` (extend)
+**File:** `dev/tui-audit.mjs` (extend)
 
 Add timing to the audit. Measure how long each tab takes to render. If a tab takes >500ms it'll feel sluggish to the user.
 
@@ -295,7 +295,7 @@ if (renderTime > 500) {
 ### WS-5: TUI keyboard shortcut audit
 
 **Repo:** `_02_sigrank-mcp`
-**File:** `presentation/tui-keybind-test.mjs` (new)
+**File:** `dev/tui-keybind-test.mjs` (new)
 
 We have 15+ keybindings but no automated test that they work. Documented keybindings from `tui.mjs`:
 
@@ -373,7 +373,7 @@ test("P key does nothing on Dashboard", () => {
 ### WS-6: TUI-to-PNG export
 
 **Repo:** `_02_sigrank-mcp`
-**File:** `presentation/tui-audit.mjs` (extend)
+**File:** `dev/tui-audit.mjs` (extend)
 
 SVG is great for docs but PNG is needed for:
 - README badges
@@ -450,7 +450,7 @@ node tui.mjs --record demo.gif
 ### WS-8: Color contrast checking (TUI)
 
 **Repo:** `_02_sigrank-mcp`
-**File:** `presentation/tui-audit.mjs` (extend)
+**File:** `dev/tui-audit.mjs` (extend)
 
 TUI terminals handle color differently than web, but we can still check that our ANSI color choices have sufficient contrast against the terminal background.
 

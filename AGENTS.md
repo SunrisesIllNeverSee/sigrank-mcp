@@ -5,7 +5,7 @@
 | What | Command |
 |------|---------|
 | Unit tests | `node test.mjs` (313 assertions) |
-| Signing tests | `node sign.test.mjs` |
+| Signing tests | `node --test __tests__/sign.test.mjs` |
 | Run CLI locally | `node index.mjs` (TUI if TTY, MCP server if piped) |
 | Install deps | `npm install` |
 
@@ -15,7 +15,7 @@
 |------|-------------|
 | Install deps | `bun install` |
 | Unit tests | `bun test.mjs` |
-| Signing tests | `bun sign.test.mjs` |
+| Signing tests | `bun test __tests__/sign.test.mjs` |
 | Run CLI locally | `bun index.mjs` |
 | Run published CLI | `bunx sigrank` (same as `npx sigrank` but faster) |
 

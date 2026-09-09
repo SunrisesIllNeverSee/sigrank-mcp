@@ -149,7 +149,7 @@ export function ensureIdentity() {
   // Regeneration path: a partial/corrupt record. The binding is tied to device_id —
   // if a new device_id is generated, the old codename/operator MUST NOT carry over
   // (bindingForFreshIdentity drops them). Only a reused device_id keeps its binding.
-  const fresh = generateIdentity({ device_id: existing?.device_id });
+  const fresh = generateIdentity();
   const binding = bindingForFreshIdentity(existing, fresh);
   fresh.codename = binding.codename;
   fresh.operator_id = binding.operator_id;
@@ -173,7 +173,13 @@ export function recordEnrollment({ codename, operator_id }) {
 /** Clear the local identity (sign out). Next enroll provisions a fresh device_id. */
 export function clearIdentity() {
   try {
-    if (existsSync(PATH)) unlinkSync(PATH);
+    if (existsSync(DIR)) {
+      for (const file of readdirSync(DIR)) {
+        if (file === "identity.json" || file.startsWith(BACKUP_PREFIX)) {
+          unlinkSync(join(DIR, file));
+        }
+      }
+    }
   } catch {
     /* best-effort */
   }

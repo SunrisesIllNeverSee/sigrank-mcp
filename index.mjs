@@ -54,21 +54,28 @@ function serverVersion() {
 // Prevent silent crashes — log to stderr (MCP clients read stdout; stderr is safe for
 // diagnostics). The process exits so the client can respawn with a clean slate rather
 // than hanging on a broken connection.
-process.on("uncaughtException", (err) => {
-  process.stderr.write(
-    `[sigrank-mcp] uncaughtException: ${err?.message || err}\n`,
-  );
-  process.exit(1);
-});
-process.on("unhandledRejection", (reason) => {
-  const msg = reason instanceof Error ? reason.message : String(reason);
-  process.stderr.write(
-    `[sigrank-mcp] unhandledRejection: ${msg}\n`,
-  );
-  process.exit(1);
-});
+// NOTE: These handlers are scoped to MCP mode only — see installMcpCrashHandlers()
+// called inside startMcpServer(). Installing them at module load would break the
+// TUI (process.exit(1) doesn't restore raw mode / alternate screen).
+
+function installMcpCrashHandlers() {
+  process.on("uncaughtException", (err) => {
+    process.stderr.write(
+      `[sigrank-mcp] uncaughtException: ${err?.message || err}\n`,
+    );
+    process.exit(1);
+  });
+  process.on("unhandledRejection", (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    process.stderr.write(
+      `[sigrank-mcp] unhandledRejection: ${msg}\n`,
+    );
+    process.exit(1);
+  });
+}
 
 async function startMcpServer() {
+  installMcpCrashHandlers();
   const server = new Server(
     { name: "sigrank", version: serverVersion() },
     { capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false } } },

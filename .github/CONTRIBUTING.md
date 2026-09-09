@@ -33,7 +33,7 @@ CI also runs (in addition to the above + cross-repo contract + pack-check):
 - **Token-only.** No message content is ever read, logged, or transmitted.
 - **No auth required.** All board reads and submit are anonymous.
 - **No credentials stored.** The keystore uses paste-keys, not API keys.
-- **Canon check:** `MO§ES (1251211, 11296121, 128196310, 2555179769) → Υ 18436.98`
+- **Canon check:** `MO§ES™ (1251211, 11296121, 128196310, 2555179769) → Υ 18436.98`
 
 ## Adding a platform adapter
 

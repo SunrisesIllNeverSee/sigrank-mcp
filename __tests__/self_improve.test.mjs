@@ -44,7 +44,7 @@ const MOSES = "1251211 11296121 128196310 2555179769";
   const r = await callTool("self_improve", { text: MOSES });
   assert.ok(r.mode, "no scope returns mode (default daily)");
   assert.strictEqual(r.mode.mode, "MAINTAIN", "no scope mode = MAINTAIN");
-  assert.ok(r.quality_score, "no scope returns quality_score");
+  assert.ok(typeof r.quality_score === "number", "no scope returns quality_score");
   assert.ok(r.assessment, "no scope returns assessment");
 }
 

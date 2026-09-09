@@ -51,17 +51,30 @@ async function proxy(request: NextRequest) {
 
   const outboundHeaders = new Headers();
   request.headers.forEach((value, key) => {
-    if (!HOP_BY_HOP.has(key.toLowerCase())) outboundHeaders.set(key, value);
+    const name = key.toLowerCase();
+    if (HOP_BY_HOP.has(name)) return;
+    if (name === "authorization" || name === "cookie") return;
+    outboundHeaders.set(key, value);
   });
   outboundHeaders.set("x-sigrank-vercel-relay", "1");
 
-  const upstream = await fetch(CANONICAL_MCP, {
-    method: request.method,
-    headers: outboundHeaders,
-    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
-    redirect: "manual",
-    cache: "no-store",
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(CANONICAL_MCP, {
+      method: request.method,
+      headers: outboundHeaders,
+      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
+      redirect: "manual",
+      cache: "no-store",
+      signal: request.signal,
+    });
+  } catch {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    return new Response(JSON.stringify({ error: "Upstream unavailable" }), {
+      status: 502,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const responseHeaders = new Headers();
   upstream.headers.forEach((value, key) => {

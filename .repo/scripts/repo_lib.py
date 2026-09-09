@@ -6,6 +6,11 @@ TRUE={'true','yes','on'}; FALSE={'false','no','off'}
 def scalar(v):
     v=v.strip()
     if not v: return None
+    # Strip unquoted inline comments (e.g. "product # default" → "product")
+    if not (v.startswith('"') or v.startswith("'")):
+        if '#' in v:
+            v=v.split('#',1)[0].strip()
+            if not v: return None
     if v.startswith('[') and v.endswith(']'):
         inner=v[1:-1].strip()
         if not inner: return []

@@ -44,10 +44,15 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('sync-report.json', 'utf8'));
-            const tsGaps = report.gaps.tokscale.clientsNotInMap || [];
-            const tsAdapterGaps = report.gaps.tokscale.clientsWithMissingAdapter || [];
-            const ccGaps = report.gaps.ccusage.clientsNotInAdapters || [];
+            let report;
+            try {
+              report = JSON.parse(fs.readFileSync('sync-report.json', 'utf8'));
+            } catch {
+              report = { timestamp: new Date().toISOString(), gaps: { tokscale: {}, ccusage: {} }, upstream: { tokscale: { clients: [] }, ccusage: { clients: [] } } };
+            }
+            const tsGaps = report.gaps?.tokscale?.clientsNotInMap || [];
+            const tsAdapterGaps = report.gaps?.tokscale?.clientsWithMissingAdapter || [];
+            const ccGaps = report.gaps?.ccusage?.clientsNotInAdapters || [];
             const body = [
               '## Platform Sync Gaps Detected',
               '',

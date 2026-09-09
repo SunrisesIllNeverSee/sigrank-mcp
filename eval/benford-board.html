@@ -30,8 +30,8 @@ td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
 .chart-meta { font-size: 0.7em; color: #666; margin-bottom: 12px; }
 .bars { display: flex; align-items: flex-end; gap: 6px; height: 180px; padding: 0 8px 0 36px; border-bottom: 1px solid #333; border-left: 1px solid #333; position: relative; }
 .y-axis { position: absolute; left: 0; top: 0; height: 100%; display: flex; flex-direction: column; justify-content: space-between; font-size: 0.6em; color: #555; }
-.digit-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; gap: 1px; }
-.bar { width: 100%; max-width: 20px; border-radius: 2px 2px 0 0; }
+.digit-col { flex: 1; display: flex; flex-direction: row; align-items: flex-end; justify-content: center; height: 100%; gap: 2px; }
+.bar { flex: 1; min-width: 6px; max-width: 20px; border-radius: 2px 2px 0 0; }
 .bar-expected { background: transparent; border: 1px dashed #666; }
 .x-labels { display: flex; gap: 6px; padding: 16px 8px 0 36px; }
 .x-label { flex: 1; text-align: center; font-size: 0.7em; color: #888; }
@@ -58,7 +58,7 @@ td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
 <div class="stat-card pass"><div class="label">Anomalous Yields</div><div class="value">0</div><div class="sub">zero cache_read + yield > 0</div></div>
 <div class="stat-card pass"><div class="label">Round-Number Bots</div><div class="value">0</div><div class="sub">3+ trailing-zero metrics</div></div>
 <div class="stat-card neutral"><div class="label">Platforms</div><div class="value">4</div><div class="sub">claude · chatgpt · other · gemini</div></div>
-<div class="stat-card neutral"><div class="label">Class Tiers</div><div class="value">8</div><div class="sub">ARCH+ → IGNITER</div></div>
+<div class="stat-card neutral"><div class="label">Class Tiers</div><div class="value">9</div><div class="sub">ARCH+ → BEARER</div></div>
 </div>
 
 <h2>Board-Wide Benford — All-Time Window</h2>

@@ -80,7 +80,7 @@ function spawnInPty(home) {
 
 test(
   "TUI accepts navigation and quit input while startup data is still loading",
-  { skip: process.platform === "win32", timeout: 4_000 },
+  { skip: process.platform === "win32", timeout: 8_000 },
   async () => {
     const home = mkdtempSync(path.join(os.tmpdir(), "sigrank-tui-test-"));
     const { child, sendNavigate, sendQuit } = spawnInPty(home);

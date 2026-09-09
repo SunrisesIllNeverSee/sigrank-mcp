@@ -36,7 +36,7 @@ This architecture is deliberate: the Vercel deployment gives you a project-owned
 }
 ```
 
-No environment variables are required.
+Set `RELAY_API_KEY` in your Vercel project environment. The relay rejects POST and DELETE requests without a matching `Authorization: Bearer <RELAY_API_KEY>` header.
 
 ## Direct hosted option
 

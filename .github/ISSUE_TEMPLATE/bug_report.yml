@@ -37,7 +37,7 @@ body:
     id: output
     attributes:
       label: Console output
-      description: Paste the error or unexpected output.
+      description: Paste the error or unexpected output. REDACT all tokens, credentials, personal data, and local file paths before submitting.
       render: shell
     validations:
       required: true
