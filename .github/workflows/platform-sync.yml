@@ -37,7 +37,7 @@ jobs:
         with:
           name: platform-sync-report
           path: sync-report.json
-        if-no-files-found: error
+          if-no-files-found: error
       - name: Create issue if gaps found
         if: failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
