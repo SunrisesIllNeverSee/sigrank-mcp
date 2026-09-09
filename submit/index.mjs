@@ -28,6 +28,7 @@ const PLATFORM_ENUM = new Set([
   "pi",
   "omp",
   "codex",
+  "devin",
   "multi",
   "other",
 ]);

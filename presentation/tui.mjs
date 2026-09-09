@@ -366,6 +366,28 @@ async function loadDashboardData({ includeOmp = false } = {}) {
 
   const boardData = await boardPromise;
   const batchedData = await batchedPromise;
+
+  // When the operator is signed in and the server has batched (rolled-forward)
+  // totals, override the local "all" window with the server's never-decreasing
+  // value. The local scan only sees what's on disk; the server has baseline +
+  // all deltas. This makes the cascade table "all" row match the Lifetime
+  // Tokens section so they don't diverge as platforms prune old session logs.
+  if (batchedData?.per_platform) {
+    for (const d of active) {
+      const bp = batchedData.per_platform[d.platform];
+      if (!bp?.all) continue;
+      const allWin = d.windows?.find((w) => w.window === "all");
+      if (allWin) {
+        allWin.pillars = {
+          input: bp.all.input ?? allWin.pillars.input,
+          output: bp.all.output ?? allWin.pillars.output,
+          cacheCreate: bp.all.cacheCreate ?? allWin.pillars.cacheCreate,
+          cacheRead: bp.all.cacheRead ?? allWin.pillars.cacheRead,
+        };
+      }
+    }
+  }
+
   return {
     active,
     verifierMap: {},
@@ -390,8 +412,23 @@ async function pullDashboardPlatform(dashData, platform) {
   try {
     const active = await pullActivePlatforms({ platforms: [platform] });
     for (const d of active) {
-      if (!dashData.active.find((a) => a.platform === d.platform))
+      if (!dashData.active.find((a) => a.platform === d.platform)) {
+        // Apply the same batched "all" override as loadDashboardData so
+        // progressively-loaded platforms match the Lifetime Tokens section.
+        const bp = dashData.batchedData?.per_platform?.[d.platform];
+        if (bp?.all) {
+          const allWin = d.windows?.find((w) => w.window === "all");
+          if (allWin) {
+            allWin.pillars = {
+              input: bp.all.input ?? allWin.pillars.input,
+              output: bp.all.output ?? allWin.pillars.output,
+              cacheCreate: bp.all.cacheCreate ?? allWin.pillars.cacheCreate,
+              cacheRead: bp.all.cacheRead ?? allWin.pillars.cacheRead,
+            };
+          }
+        }
         dashData.active.push(d);
+      }
     }
     dashData.active.sort(
       (a, b) =>
