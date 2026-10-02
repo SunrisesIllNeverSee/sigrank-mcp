@@ -32,9 +32,8 @@ import { plausibilityCheck } from "./submit/preflight.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
 
-// Regression: high cache reuse is an operator characteristic, not a
-// plausibility failure. The client preflight must mirror the server gate and
-// must not invent cache/input-share/cadence flags.
+// Regression: low fresh-input share can be legitimate in a high-reuse
+// operator. It must not produce an implausible_input_share flag.
 const highReuseTelemetry = {
   sessions_count: 1,
   turns_total: 10,
@@ -50,16 +49,24 @@ const highReuseWindow = {
   end: "2026-10-02T00:00:00.000Z",
 };
 const highReuseIssues = plausibilityCheck(highReuseTelemetry, highReuseWindow);
-const staleCompositionCodes = new Set([
-  "cache_without_creation",
-  "extreme_cache_ratio",
-  "low_cache_write_ratio",
-  "implausible_input_share",
-  "implausible_cadence",
-]);
+assert.equal(
+  highReuseIssues.some((issue) => issue.code === "implausible_input_share"),
+  false,
+  `high-reuse telemetry must not receive input-share flag: ${JSON.stringify(highReuseIssues)}`,
+);
+
+// Other production integrity signals remain active.
+const extremeReuseIssues = plausibilityCheck(
+  {
+    ...highReuseTelemetry,
+    tokens_total: 1_040_100,
+    tokens_cache_read: 1_010_000,
+  },
+  highReuseWindow,
+);
 assert.ok(
-  highReuseIssues.every((issue) => !staleCompositionCodes.has(issue.code)),
-  `high-reuse telemetry must not receive stale composition flags: ${JSON.stringify(highReuseIssues)}`,
+  extremeReuseIssues.some((issue) => issue.code === "extreme_cache_ratio"),
+  "cache-reuse review signal remains active above 100:1",
 );
 
 // --- 1. Cascade math reproduces canon ---
