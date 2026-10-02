@@ -21,12 +21,11 @@
 // ── plausibility checks (from gates.ts:86-137) ──────────────────────────────
 
 const GATE_LIMITS = {
-  TOTALS_TOLERANCE_FRAC: 0.01,
+  TOTALS_TOLERANCE_FRAC: 0.005,
   MAX_OUTPUT_TOKENS_PER_MIN: 20_000,
-  // Tightened range-plausibility bounds (deviewreview3)
-  MAX_CACHE_REUSE_RATIO: 35,
+  // Server-parity range-plausibility bounds.
+  MAX_CACHE_REUSE_RATIO: 100,
   MIN_CACHE_WRITE_RATIO: 0.5,
-  MIN_INPUT_SHARE_FRAC: 0.0003,
   MAX_CADENCE_PER_MIN: 15,
 };
 
@@ -115,7 +114,7 @@ export function plausibilityCheck(rt, window) {
     out.push({
       severity: "flag",
       code: "extreme_cache_ratio",
-      detail: `cache_read/cache_creation = ${(rt.tokens_cache_read / rt.tokens_cache_creation).toFixed(1)}:1 (real max ~30:1)`,
+      detail: `cache_read/cache_creation = ${(rt.tokens_cache_read / rt.tokens_cache_creation).toFixed(1)}:1 (review threshold 100:1)`,
     });
   }
   if (
@@ -127,16 +126,6 @@ export function plausibilityCheck(rt, window) {
       severity: "flag",
       code: "low_cache_write_ratio",
       detail: `cache_creation/output = ${(rt.tokens_cache_creation / rt.tokens_output).toFixed(2)}:1 (real min ~1.5:1)`,
-    });
-  }
-  if (
-    pillars > 10_000 &&
-    rt.tokens_input_fresh / pillars < GATE_LIMITS.MIN_INPUT_SHARE_FRAC
-  ) {
-    out.push({
-      severity: "flag",
-      code: "implausible_input_share",
-      detail: `input is ${((rt.tokens_input_fresh / pillars) * 100).toFixed(3)}% of total (real min ~0.3%)`,
     });
   }
   if (

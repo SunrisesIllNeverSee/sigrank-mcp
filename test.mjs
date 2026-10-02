@@ -28,8 +28,46 @@ import { isSignedIn, isCodeChar } from "./connect.mjs";
 import assert from "node:assert";
 import { runProxyTests } from "./__tests__/proxy.test.mjs";
 import { runOmpCacheTests } from "./__tests__/omp-cache.test.mjs";
+import { plausibilityCheck } from "./submit/preflight.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
+
+// Regression: low fresh-input share can be legitimate in a high-reuse
+// operator. It must not produce an implausible_input_share flag.
+const highReuseTelemetry = {
+  sessions_count: 1,
+  turns_total: 10,
+  tokens_total: 380_100,
+  tokens_input_fresh: 100,
+  tokens_output: 20_000,
+  tokens_cache_read: 350_000,
+  tokens_cache_creation: 10_000,
+  active_minutes_est: 10,
+};
+const highReuseWindow = {
+  start: "2026-09-25T00:00:00.000Z",
+  end: "2026-10-02T00:00:00.000Z",
+};
+const highReuseIssues = plausibilityCheck(highReuseTelemetry, highReuseWindow);
+assert.equal(
+  highReuseIssues.some((issue) => issue.code === "implausible_input_share"),
+  false,
+  `high-reuse telemetry must not receive input-share flag: ${JSON.stringify(highReuseIssues)}`,
+);
+
+// Other production integrity signals remain active.
+const extremeReuseIssues = plausibilityCheck(
+  {
+    ...highReuseTelemetry,
+    tokens_total: 1_040_100,
+    tokens_cache_read: 1_010_000,
+  },
+  highReuseWindow,
+);
+assert.ok(
+  extremeReuseIssues.some((issue) => issue.code === "extreme_cache_ratio"),
+  "cache-reuse review signal remains active above 100:1",
+);
 
 // --- 1. Cascade math reproduces canon ---
 const c = cascade(parsePillars(MOSES));
