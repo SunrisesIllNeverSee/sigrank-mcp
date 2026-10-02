@@ -1,9 +1,9 @@
 /**
  * preflight.mjs — local plausibility pre-checks for the MCP submit path.
  *
- * Mirrors ONLY the server's public plausibility gate (gates.ts) —
- * totals consistency, turns/sessions ratios, active-window bounds, and output
- * rate. These are integrity guards labeled "NOT the proprietary RS.xx"
+ * Mirrors ONLY the server's public plausibility gate (gates.ts:86-137) —
+ * totals consistency, turns/sessions ratios, output rate, cache ratio,
+ * cadence. These are integrity guards labeled "NOT the proprietary RS.xx"
  * and are safe to replicate in an open agent.
  *
  * The proprietary battery (Benford / cadence / contamination) is SERVER-ONLY
@@ -23,6 +23,10 @@
 const GATE_LIMITS = {
   TOTALS_TOLERANCE_FRAC: 0.005,
   MAX_OUTPUT_TOKENS_PER_MIN: 20_000,
+  // Server-parity range-plausibility bounds.
+  MAX_CACHE_REUSE_RATIO: 100,
+  MIN_CACHE_WRITE_RATIO: 0.5,
+  MAX_CADENCE_PER_MIN: 15,
 };
 
 /**
@@ -93,9 +97,47 @@ export function plausibilityCheck(rt, window) {
     });
   }
 
-  // Keep this client preview byte-for-byte aligned with the server's
-  // public plausibility gate. Cache composition, input share, and cadence are
-  // valid operator characteristics and are not server plausibility failures.
+  // Cross-field ratio checks (defense-in-depth — also in the plausibility gate)
+  // Bounds tightened (deviewreview3): original 100:1 + 50/min were too loose.
+  if (rt.tokens_cache_read > 1_000 && rt.tokens_cache_creation === 0) {
+    out.push({
+      severity: "flag",
+      code: "cache_without_creation",
+      detail: `${rt.tokens_cache_read} cache_read with 0 cache_creation (impossible cascade)`,
+    });
+  }
+  if (
+    rt.tokens_cache_creation > 0 &&
+    rt.tokens_cache_read / rt.tokens_cache_creation >
+      GATE_LIMITS.MAX_CACHE_REUSE_RATIO
+  ) {
+    out.push({
+      severity: "flag",
+      code: "extreme_cache_ratio",
+      detail: `cache_read/cache_creation = ${(rt.tokens_cache_read / rt.tokens_cache_creation).toFixed(1)}:1 (review threshold 100:1)`,
+    });
+  }
+  if (
+    rt.tokens_output > 1_000 &&
+    rt.tokens_cache_creation / rt.tokens_output <
+      GATE_LIMITS.MIN_CACHE_WRITE_RATIO
+  ) {
+    out.push({
+      severity: "flag",
+      code: "low_cache_write_ratio",
+      detail: `cache_creation/output = ${(rt.tokens_cache_creation / rt.tokens_output).toFixed(2)}:1 (real min ~1.5:1)`,
+    });
+  }
+  if (
+    rt.active_minutes_est > 0 &&
+    rt.turns_total / rt.active_minutes_est > GATE_LIMITS.MAX_CADENCE_PER_MIN
+  ) {
+    out.push({
+      severity: "flag",
+      code: "implausible_cadence",
+      detail: `${(rt.turns_total / rt.active_minutes_est).toFixed(1)} turns/min (real: 0.5-10)`,
+    });
+  }
 
   return out;
 }
