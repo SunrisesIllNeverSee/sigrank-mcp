@@ -28,8 +28,39 @@ import { isSignedIn, isCodeChar } from "./connect.mjs";
 import assert from "node:assert";
 import { runProxyTests } from "./__tests__/proxy.test.mjs";
 import { runOmpCacheTests } from "./__tests__/omp-cache.test.mjs";
+import { plausibilityCheck } from "./submit/preflight.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
+
+// Regression: input-share plausibility is a single-platform heuristic.
+// This cache-heavy shape is below the 0.03% floor but otherwise internally
+// consistent. It should flag for a single platform and NOT for a multi aggregate.
+const highReuseTelemetry = {
+  sessions_count: 1,
+  turns_total: 10,
+  tokens_total: 380_100,
+  tokens_input_fresh: 100,
+  tokens_output: 20_000,
+  tokens_cache_read: 350_000,
+  tokens_cache_creation: 10_000,
+  active_minutes_est: 10,
+};
+const highReuseWindow = {
+  start: "2026-09-25T00:00:00.000Z",
+  end: "2026-10-02T00:00:00.000Z",
+};
+assert.ok(
+  plausibilityCheck(highReuseTelemetry, highReuseWindow, "claude").some(
+    (issue) => issue.code === "implausible_input_share",
+  ),
+  "single-platform high-reuse telemetry still receives the input-share review flag",
+);
+assert.ok(
+  !plausibilityCheck(highReuseTelemetry, highReuseWindow, "multi").some(
+    (issue) => issue.code === "implausible_input_share",
+  ),
+  "multi-platform high-reuse telemetry is not falsely flagged by input-share floor",
+);
 
 // --- 1. Cascade math reproduces canon ---
 const c = cascade(parsePillars(MOSES));
