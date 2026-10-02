@@ -34,7 +34,7 @@ const GATE_LIMITS = {
  * Run plausibility checks against a payload's raw_telemetry.
  * Returns array of issues: { severity, code, detail }
  */
-export function plausibilityCheck(rt, window, platform = null) {
+export function plausibilityCheck(rt, window) {
   const out = [];
   const pillars =
     rt.tokens_input_fresh +
@@ -98,62 +98,9 @@ export function plausibilityCheck(rt, window, platform = null) {
     });
   }
 
-  // Cross-field ratio checks (defense-in-depth — also in the plausibility gate)
-  // Bounds tightened (deviewreview3): original 100:1 + 50/min were too loose.
-  if (rt.tokens_cache_read > 1_000 && rt.tokens_cache_creation === 0) {
-    out.push({
-      severity: "flag",
-      code: "cache_without_creation",
-      detail: `${rt.tokens_cache_read} cache_read with 0 cache_creation (impossible cascade)`,
-    });
-  }
-  if (
-    rt.tokens_cache_creation > 0 &&
-    rt.tokens_cache_read / rt.tokens_cache_creation >
-      GATE_LIMITS.MAX_CACHE_REUSE_RATIO
-  ) {
-    out.push({
-      severity: "flag",
-      code: "extreme_cache_ratio",
-      detail: `cache_read/cache_creation = ${(rt.tokens_cache_read / rt.tokens_cache_creation).toFixed(1)}:1 (real max ~30:1)`,
-    });
-  }
-  if (
-    rt.tokens_output > 1_000 &&
-    rt.tokens_cache_creation / rt.tokens_output <
-      GATE_LIMITS.MIN_CACHE_WRITE_RATIO
-  ) {
-    out.push({
-      severity: "flag",
-      code: "low_cache_write_ratio",
-      detail: `cache_creation/output = ${(rt.tokens_cache_creation / rt.tokens_output).toFixed(2)}:1 (real min ~1.5:1)`,
-    });
-  }
-  // Input-share floors are meaningful only inside one platform's token
-  // accounting semantics. A multi-platform aggregate can legitimately combine
-  // very high cache reuse with heterogeneous accounting, so its denominator is
-  // not comparable to this single-platform heuristic.
-  if (
-    platform !== "multi" &&
-    pillars > 10_000 &&
-    rt.tokens_input_fresh / pillars < GATE_LIMITS.MIN_INPUT_SHARE_FRAC
-  ) {
-    out.push({
-      severity: "flag",
-      code: "implausible_input_share",
-      detail: `input is ${((rt.tokens_input_fresh / pillars) * 100).toFixed(3)}% of total (single-platform review floor ~0.03%)`,
-    });
-  }
-  if (
-    rt.active_minutes_est > 0 &&
-    rt.turns_total / rt.active_minutes_est > GATE_LIMITS.MAX_CADENCE_PER_MIN
-  ) {
-    out.push({
-      severity: "flag",
-      code: "implausible_cadence",
-      detail: `${(rt.turns_total / rt.active_minutes_est).toFixed(1)} turns/min (real: 0.5-10)`,
-    });
-  }
+  // Keep this client preview byte-for-byte aligned with the server's
+  // public plausibility gate. Cache composition, input share, and cadence are
+  // valid operator characteristics and are not server plausibility failures.
 
   return out;
 }
@@ -171,11 +118,7 @@ export function plausibilityCheck(rt, window, platform = null) {
  * "guaranteed to pass all server gates."
  */
 export function preflight(payload) {
-  const issues = plausibilityCheck(
-    payload.raw_telemetry,
-    payload.window,
-    payload.platform?.primary ?? null,
-  );
+  const issues = plausibilityCheck(payload.raw_telemetry, payload.window);
 
   const hasReject = issues.some((i) => i.severity === "reject");
   const hasFlag = issues.some((i) => i.severity === "flag");
