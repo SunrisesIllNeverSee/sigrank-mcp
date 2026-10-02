@@ -29,7 +29,7 @@ import { cascade, classify, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mj
 import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
 import { submitSignedWindow } from "../submit.mjs";
-import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
+import { LEADERBOARD_METRIC, TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
 import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import os from "os";
@@ -37,9 +37,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 // Resolve local node_modules/.bin for bundled deps (ccusage, tokscale)
-const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));
+const _pkgRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const _localBin = path.join(_pkgRoot, "node_modules", ".bin");
-const _envPath = `${_localBin}${process.env.PATH ? ":" + process.env.PATH : ""}`;
+const _envPath = `${_localBin}${process.env.PATH ? path.delimiter + process.env.PATH : ""}`;
 
 // ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync for
 // defense-in-depth (shell injection prevention). execFile passes args as an
@@ -429,14 +429,17 @@ async function tokscalePillars(platform = "claude") {
       : Array.isArray(data)
         ? data
         : [];
-    const rows = entries.filter(
-      (e) =>
-        e &&
-        e.client === platform &&
-        e.model !== "<synthetic>" &&
-        e.model !== "unknown" &&
-        ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0),
-    );
+    const rows = entries.filter((e) => {
+      if (!e || e.model === "<synthetic>" || e.model === "unknown") return false;
+      const mapped = Object.prototype.hasOwnProperty.call(
+        TOKSCALE_CLIENT_MAP,
+        e.client,
+      )
+        ? TOKSCALE_CLIENT_MAP[e.client]
+        : e.client;
+      if (mapped !== platform) return false;
+      return (Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0;
+    });
     if (rows.length) {
       const p = rows.reduce(
         (acc, e) => ({
@@ -458,13 +461,16 @@ async function tokscalePillars(platform = "claude") {
   try {
     const data = JSON.parse(readFileSync(reportPath, "utf8"));
     const entries = data.entries ?? [];
-    const rows = entries.filter(
-      (e) =>
-        e.client === platform &&
-        e.model !== "<synthetic>" &&
-        e.model !== "unknown" &&
-        (e.input > 0 || e.output > 0),
-    );
+    const rows = entries.filter((e) => {
+      if (!e || e.model === "<synthetic>" || e.model === "unknown") return false;
+      const mapped = Object.prototype.hasOwnProperty.call(
+        TOKSCALE_CLIENT_MAP,
+        e.client,
+      )
+        ? TOKSCALE_CLIENT_MAP[e.client]
+        : e.client;
+      return mapped === platform && (e.input > 0 || e.output > 0);
+    });
     if (rows.length === 0) return null;
     const p = rows.reduce(
       (acc, e) => ({
