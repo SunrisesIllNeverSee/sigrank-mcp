@@ -495,7 +495,7 @@ assert.ok(
 
 // ── ADAPTER REGISTRY TESTS (2026-06-23) ──────────────────────────────────────
 
-// --- 16. ALL_PLATFORMS includes claude + codex + grok + all 17 registry adapters ---
+// --- 16. ALL_PLATFORMS includes claude + codex + all 20 registry adapters ---
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
 assert.ok(ALL_PLATFORMS.includes("grok"), "ALL_PLATFORMS includes grok");
@@ -519,8 +519,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  20,
-  `ALL_PLATFORMS has 20 entries, got ${ALL_PLATFORMS.length}`,
+  22,
+  `ALL_PLATFORMS has 22 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
@@ -719,6 +719,14 @@ await assert.rejects(
 // Use a mock adapter injected via tokenpull directly (tokenpullAny goes to registry;
 // test the registry routing by checking that the amp adapter is structurally wired).
 assert.strictEqual(ADAPTERS["amp"].platform, "amp", "ADAPTERS[amp] is wired");
+for (const p of ["antigravity", "grok", "zcode"]) {
+  assert.strictEqual(ADAPTERS[p].platform, p, `ADAPTERS[${p}] is wired`);
+  assert.strictEqual(
+    typeof ADAPTERS[p].messages,
+    "function",
+    `ADAPTERS[${p}].messages is callable`,
+  );
+}
 assert.ok(
   typeof ADAPTERS["amp"].messages === "function",
   "ADAPTERS[amp].messages is callable",
@@ -1307,48 +1315,37 @@ assert.deepStrictEqual(
 await rm(piRoot, { recursive: true, force: true });
 await rm(ompRoot, { recursive: true, force: true });
 
-// --- 25r. auto-detect still probes omp when tokscale succeeds without it ---
-// tokscale reports claude/codex/copilot/gemini/grok/kimi/kiro/opencode/pi and knows
-// nothing about oh-my-pi, so pullActivePlatforms' tokscale branch would have pulled a
-// list with no omp → no cascade row despite GBs of native local data.
+// --- 25r. auto-detect trusts Tokscale 4.17.0 for omp ---
+// Tokscale now has a first-class omp client, so SigRank no longer needs to force
+// an extra filesystem probe after successful Tokscale detection.
 import { withTokscaleBlind } from "./tools.mjs";
 import { TOKSCALE_BLIND_PLATFORMS } from "./lib/constants.mjs";
 
-const detectedNoOmp = ["claude", "codex", "copilot", "gemini", "kimi", "pi"];
-const targets = withTokscaleBlind(detectedNoOmp);
-assert.ok(
-  targets.includes("omp"),
-  "detection: omp is probed even when tokscale never reports it",
+assert.deepStrictEqual(
+  TOKSCALE_BLIND_PLATFORMS,
+  [],
+  "detection: Tokscale 4.17.0 has no known blind SigRank platforms",
 );
-for (const p of detectedNoOmp)
-  assert.ok(targets.includes(p), `detection: tokscale-detected ${p} is kept`);
-assert.strictEqual(
-  withTokscaleBlind(["claude", "omp"]).filter((p) => p === "omp").length,
-  1,
-  "detection: union does not duplicate an already-detected platform",
+const detectedWithOmp = ["claude", "codex", "copilot", "gemini", "kimi", "pi", "omp"];
+assert.deepStrictEqual(
+  withTokscaleBlind(detectedWithOmp),
+  detectedWithOmp,
+  "detection: Tokscale-detected platforms pass through without forced probes",
 );
 assert.deepStrictEqual(
   withTokscaleBlind(null),
-  [...TOKSCALE_BLIND_PLATFORMS],
-  "detection: null detection still yields the blind platforms",
+  [],
+  "detection: null detection adds no obsolete blind-platform probes",
 );
-for (const p of TOKSCALE_BLIND_PLATFORMS)
-  assert.ok(
-    ALL_PLATFORMS.includes(p),
-    `detection: blind platform ${p} is a registered adapter`,
-  );
 
 console.log(
-  "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · tokscale-blind detection · PLATFORM_ENUM · pi untouched",
+  "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · Tokscale 4.17 detection · PLATFORM_ENUM · pi untouched",
 );
 
 // --- 25s. watch scoping: --platform pulls only the platform it renders ---
-// `watch` re-pulls on EVERY refresh tick (default 30s). Auto-detect unions in the
-// tokscale-blind platforms (omp) — whose local tree is ~10 GiB — so
-// `watch --platform claude` burned ~46s per tick scanning oh-my-pi data that the
-// scoped view then filtered out at render time, leaving the watcher permanently
-// saturated (scan > refresh interval). Scoping the pull must NOT undo the
-// withTokscaleBlind guarantee for the unscoped default.
+// `watch` re-pulls on EVERY refresh tick (default 30s). Explicit scoping must
+// continue to prevent unrelated filesystem scans. With Tokscale 4.17.0, omp is
+// discovered normally and no longer needs a forced blind-platform probe.
 import { pullActivePlatforms } from "./tools.mjs";
 import { detectActivePulls } from "./presentation/cli.mjs";
 
@@ -1391,19 +1388,15 @@ assert.ok(
   "watch scope: a scoped pull never probes the ~10 GiB omp tree",
 );
 
-// 2. The unscoped default still unions in omp even when tokscale never reports it
-//    (the existing withTokscaleBlind guarantee — must not regress).
+// 2. The unscoped default trusts Tokscale's detected set. No hidden omp scan is
+//    added when Tokscale does not report omp.
 const unscopedSpy = makePullSpy(["claude", "codex"]);
 await pullActivePlatforms({}, unscopedSpy.opts);
-assert.ok(
-  unscopedSpy.pulled.includes("omp"),
-  "watch scope: unscoped auto-detect still probes omp (withTokscaleBlind intact)",
+assert.deepStrictEqual(
+  unscopedSpy.pulled.sort(),
+  ["claude", "codex"],
+  "watch scope: unscoped auto-detect pulls exactly Tokscale-detected platforms",
 );
-for (const p of ["claude", "codex"])
-  assert.ok(
-    unscopedSpy.pulled.includes(p),
-    `watch scope: unscoped auto-detect keeps tokscale-detected ${p}`,
-  );
 
 // 3. The watch tick loader itself: `detectActivePulls` owns BOTH the scope and the
 //    rows, so there is no "pull everything, then filter at render time" path left to
@@ -1425,22 +1418,23 @@ assert.deepStrictEqual(
   "watch --platform claude: renders exactly the requested platform",
 );
 
-// 4. --platform all / '' / no --platform behave as unscoped: omp still probed.
+// 4. --platform all / '' / no --platform behave as unscoped. When Tokscale
+//    reports omp, it is pulled and rendered normally.
 for (const allish of ["all", "", null, undefined]) {
-  const spy = makePullSpy(["claude", "codex"]);
+  const spy = makePullSpy(["claude", "codex", "omp"]);
   const rows = await detectActivePulls(allish, spy.opts);
   assert.ok(
     spy.pulled.includes("omp"),
-    `watch --platform ${JSON.stringify(allish)}: unscoped → omp is still pulled`,
+    `watch --platform ${JSON.stringify(allish)}: Tokscale-detected omp is pulled`,
   );
   assert.ok(
     rows.some((d) => d.platform === "omp"),
-    `watch --platform ${JSON.stringify(allish)}: unscoped → omp row is rendered`,
+    `watch --platform ${JSON.stringify(allish)}: Tokscale-detected omp row is rendered`,
   );
 }
 
 console.log(
-  "✓ watch scoping: --platform scopes the pull · omp not probed when scoped · unscoped default keeps withTokscaleBlind · all/none == unscoped",
+  "✓ watch scoping: --platform scopes the pull · unscoped trusts Tokscale detection · all/none == unscoped",
 );
 
 // ── rank_windows + watch_tokenpull TESTS ─────────────────────────────────────

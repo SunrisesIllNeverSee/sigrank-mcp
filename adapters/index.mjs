@@ -42,13 +42,16 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { cachedOmpScan, ompCacheEnabled } from "../omp-cache.mjs";
 
 const execFileP = promisify(execFileCb);
+const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DAY_MS = 86_400_000; // shared with tokenpull.mjs but kept local to avoid circular import
 
 // ── File-system helpers ───────────────────────────────────────────────────────
@@ -1075,6 +1078,96 @@ export const proxyAdapter = {
   },
 };
 
+
+// ── ccusage-backed adapters ──────────────────────────────────────────────────
+// ccusage maintains source-specific readers for these platforms and normalizes
+// its daily JSON output into the same four token buckets SigRank requires.
+// Keep these as thin adapters instead of duplicating upstream parsers here.
+// The bundled dependency is preferred; PATH is a fallback for development.
+async function execCcusage(args) {
+  const localEntrypoint = join(
+    PACKAGE_ROOT,
+    "node_modules",
+    "ccusage",
+    "src",
+    "cli.js",
+  );
+  const options = {
+    timeout: 30_000,
+    maxBuffer: 64 * 1024 * 1024,
+  };
+  if (existsSync(localEntrypoint)) {
+    return execFileP(process.execPath, [localEntrypoint, ...args], options);
+  }
+  return execFileP("ccusage", args, options);
+}
+
+function makeCcusageAdapter(platform) {
+  return {
+    platform,
+    defaultRoot: () => homedir(),
+    async *messages() {
+      let data;
+      try {
+        const { stdout } = await execCcusage([
+          platform,
+          "daily",
+          "--json",
+          "--no-cost",
+        ]);
+        data = JSON.parse(stdout || "{}");
+      } catch {
+        return;
+      }
+
+      const rows = Array.isArray(data?.daily)
+        ? data.daily
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+
+      for (const row of rows) {
+        if (!row || typeof row !== "object") continue;
+        const date = row.date || row.day;
+        if (!date) continue;
+        const input = Number(row.inputTokens ?? row.input_tokens ?? 0);
+        const output = Number(row.outputTokens ?? row.output_tokens ?? 0);
+        const cacheCreate = Number(
+          row.cacheCreationTokens ?? row.cache_create_tokens ?? 0,
+        );
+        const cacheRead = Number(
+          row.cacheReadTokens ?? row.cache_read_tokens ?? 0,
+        );
+        if (
+          ![input, output, cacheCreate, cacheRead].every(
+            (n) => Number.isFinite(n) && n >= 0,
+          )
+        ) {
+          continue;
+        }
+        if (input + output + cacheCreate + cacheRead === 0) continue;
+
+        yield {
+          id: `${platform}:${date}`,
+          sid: null,
+          ts: `${date}T12:00:00.000Z`,
+          input,
+          output,
+          cacheCreate,
+          cacheRead,
+          file: `ccusage:${platform}`,
+        };
+      }
+    },
+  };
+}
+
+export const antigravityAdapter = makeCcusageAdapter("antigravity");
+export const grokAdapter = makeCcusageAdapter("grok");
+export const zcodeAdapter = makeCcusageAdapter("zcode");
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
 export const ADAPTERS = {
@@ -1095,6 +1188,9 @@ export const ADAPTERS = {
   other: otherAdapter,
   omp: ompAdapter,
   proxy: proxyAdapter,
+  antigravity: antigravityAdapter,
+  grok: grokAdapter,
+  zcode: zcodeAdapter,
 };
 
-export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex", "grok"]);
+export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);

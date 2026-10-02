@@ -18,19 +18,20 @@
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, walkFiles } from "./index.mjs";
+import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
 
 const DAY_MS = 86_400_000;
 
 // Resolve the package root for finding bundled binaries (ccusage, tokscale, etc.)
-const _pkgRoot = join(dirname(fileURLToPath(import.meta.url)));
+const _pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const _localBin = join(_pkgRoot, "node_modules", ".bin");
 // Prepend local node_modules/.bin to PATH so bundled deps are found even when
 // not globally installed (e.g., npx sigrank, local dev).
-const _envPath = `${_localBin}${process.env.PATH ? ":" + process.env.PATH : ""}`;
+const _envPath = `${_localBin}${process.env.PATH ? delimiter + process.env.PATH : ""}`;
 
 // ASYNC FIX (2026-06-27): execFile wrapped in a Promise — replaces execSync in the
 // fresh verifier readers. execSync blocks the entire Node event loop (no key handling,
@@ -522,14 +523,17 @@ async function _freshTokscale(platform = "claude") {
       : Array.isArray(data)
         ? data
         : [];
-    const rows = entries.filter(
-      (e) =>
-        e &&
-        e.client === platform &&
-        e.model !== "<synthetic>" &&
-        e.model !== "unknown" &&
-        ((Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0),
-    );
+    const rows = entries.filter((e) => {
+      if (!e || e.model === "<synthetic>" || e.model === "unknown") return false;
+      const mapped = Object.prototype.hasOwnProperty.call(
+        TOKSCALE_CLIENT_MAP,
+        e.client,
+      )
+        ? TOKSCALE_CLIENT_MAP[e.client]
+        : e.client;
+      if (mapped !== platform) return false;
+      return (Number(e.input) || 0) > 0 || (Number(e.output) || 0) > 0;
+    });
     if (!rows.length) return null;
     const acc = rows.reduce(
       (a, e) => ({
