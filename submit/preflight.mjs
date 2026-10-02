@@ -1,9 +1,9 @@
 /**
  * preflight.mjs — local plausibility pre-checks for the MCP submit path.
  *
- * Mirrors ONLY the server's public plausibility gate (gates.ts:86-137) —
- * totals consistency, turns/sessions ratios, output rate, cache ratio,
- * cadence. These are integrity guards labeled "NOT the proprietary RS.xx"
+ * Mirrors ONLY the server's public plausibility gate (gates.ts) —
+ * totals consistency, turns/sessions ratios, active-window bounds, and output
+ * rate. These are integrity guards labeled "NOT the proprietary RS.xx"
  * and are safe to replicate in an open agent.
  *
  * The proprietary battery (Benford / cadence / contamination) is SERVER-ONLY
@@ -21,13 +21,8 @@
 // ── plausibility checks (from gates.ts:86-137) ──────────────────────────────
 
 const GATE_LIMITS = {
-  TOTALS_TOLERANCE_FRAC: 0.01,
+  TOTALS_TOLERANCE_FRAC: 0.005,
   MAX_OUTPUT_TOKENS_PER_MIN: 20_000,
-  // Tightened range-plausibility bounds (deviewreview3)
-  MAX_CACHE_REUSE_RATIO: 35,
-  MIN_CACHE_WRITE_RATIO: 0.5,
-  MIN_INPUT_SHARE_FRAC: 0.0003,
-  MAX_CADENCE_PER_MIN: 15,
 };
 
 /**
