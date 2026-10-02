@@ -42,6 +42,7 @@
  */
 
 import { readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execFile as execFileCb } from "node:child_process";
@@ -1084,24 +1085,21 @@ export const proxyAdapter = {
 // Keep these as thin adapters instead of duplicating upstream parsers here.
 // The bundled dependency is preferred; PATH is a fallback for development.
 async function execCcusage(args) {
-  const localBin = join(
+  const localEntrypoint = join(
     PACKAGE_ROOT,
     "node_modules",
-    ".bin",
-    process.platform === "win32" ? "ccusage.cmd" : "ccusage",
+    "ccusage",
+    "src",
+    "cli.js",
   );
-  try {
-    return await execFileP(localBin, args, {
-      timeout: 30_000,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-  } catch (e) {
-    if (e && e.code !== "ENOENT") throw e;
-    return execFileP("ccusage", args, {
-      timeout: 30_000,
-      maxBuffer: 64 * 1024 * 1024,
-    });
+  const options = {
+    timeout: 30_000,
+    maxBuffer: 64 * 1024 * 1024,
+  };
+  if (existsSync(localEntrypoint)) {
+    return execFileP(process.execPath, [localEntrypoint, ...args], options);
   }
+  return execFileP("ccusage", args, options);
 }
 
 function makeCcusageAdapter(platform) {
