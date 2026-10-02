@@ -1315,39 +1315,31 @@ assert.deepStrictEqual(
 await rm(piRoot, { recursive: true, force: true });
 await rm(ompRoot, { recursive: true, force: true });
 
-// --- 25r. auto-detect still probes omp when tokscale succeeds without it ---
-// tokscale reports claude/codex/copilot/gemini/grok/kimi/kiro/opencode/pi and knows
-// nothing about oh-my-pi, so pullActivePlatforms' tokscale branch would have pulled a
-// list with no omp → no cascade row despite GBs of native local data.
+// --- 25r. auto-detect trusts Tokscale 4.17.0 for omp ---
+// Tokscale now has a first-class omp client, so SigRank no longer needs to force
+// an extra filesystem probe after successful Tokscale detection.
 import { withTokscaleBlind } from "./tools.mjs";
 import { TOKSCALE_BLIND_PLATFORMS } from "./lib/constants.mjs";
 
-const detectedNoOmp = ["claude", "codex", "copilot", "gemini", "kimi", "pi"];
-const targets = withTokscaleBlind(detectedNoOmp);
-assert.ok(
-  targets.includes("omp"),
-  "detection: omp is probed even when tokscale never reports it",
+assert.deepStrictEqual(
+  TOKSCALE_BLIND_PLATFORMS,
+  [],
+  "detection: Tokscale 4.17.0 has no known blind SigRank platforms",
 );
-for (const p of detectedNoOmp)
-  assert.ok(targets.includes(p), `detection: tokscale-detected ${p} is kept`);
-assert.strictEqual(
-  withTokscaleBlind(["claude", "omp"]).filter((p) => p === "omp").length,
-  1,
-  "detection: union does not duplicate an already-detected platform",
+const detectedWithOmp = ["claude", "codex", "copilot", "gemini", "kimi", "pi", "omp"];
+assert.deepStrictEqual(
+  withTokscaleBlind(detectedWithOmp),
+  detectedWithOmp,
+  "detection: Tokscale-detected platforms pass through without forced probes",
 );
 assert.deepStrictEqual(
   withTokscaleBlind(null),
-  [...TOKSCALE_BLIND_PLATFORMS],
-  "detection: null detection still yields the blind platforms",
+  [],
+  "detection: null detection adds no obsolete blind-platform probes",
 );
-for (const p of TOKSCALE_BLIND_PLATFORMS)
-  assert.ok(
-    ALL_PLATFORMS.includes(p),
-    `detection: blind platform ${p} is a registered adapter`,
-  );
 
 console.log(
-  "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · tokscale-blind detection · PLATFORM_ENUM · pi untouched",
+  "✓ omp (oh-my-pi): registry · native 4-pillar · reasoningTokens not double-counted · cost never leaks · recursive subagents · >10k walk · Tokscale 4.17 detection · PLATFORM_ENUM · pi untouched",
 );
 
 // --- 25s. watch scoping: --platform pulls only the platform it renders ---
