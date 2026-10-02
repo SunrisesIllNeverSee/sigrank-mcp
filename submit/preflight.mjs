@@ -34,7 +34,7 @@ const GATE_LIMITS = {
  * Run plausibility checks against a payload's raw_telemetry.
  * Returns array of issues: { severity, code, detail }
  */
-export function plausibilityCheck(rt, window) {
+export function plausibilityCheck(rt, window, platform = null) {
   const out = [];
   const pillars =
     rt.tokens_input_fresh +
@@ -129,14 +129,19 @@ export function plausibilityCheck(rt, window) {
       detail: `cache_creation/output = ${(rt.tokens_cache_creation / rt.tokens_output).toFixed(2)}:1 (real min ~1.5:1)`,
     });
   }
+  // Input-share floors are meaningful only inside one platform's token
+  // accounting semantics. A multi-platform aggregate can legitimately combine
+  // very high cache reuse with heterogeneous accounting, so its denominator is
+  // not comparable to this single-platform heuristic.
   if (
+    platform !== "multi" &&
     pillars > 10_000 &&
     rt.tokens_input_fresh / pillars < GATE_LIMITS.MIN_INPUT_SHARE_FRAC
   ) {
     out.push({
       severity: "flag",
       code: "implausible_input_share",
-      detail: `input is ${((rt.tokens_input_fresh / pillars) * 100).toFixed(3)}% of total (real min ~0.3%)`,
+      detail: `input is ${((rt.tokens_input_fresh / pillars) * 100).toFixed(3)}% of total (single-platform review floor ~0.03%)`,
     });
   }
   if (
@@ -166,7 +171,11 @@ export function plausibilityCheck(rt, window) {
  * "guaranteed to pass all server gates."
  */
 export function preflight(payload) {
-  const issues = plausibilityCheck(payload.raw_telemetry, payload.window);
+  const issues = plausibilityCheck(
+    payload.raw_telemetry,
+    payload.window,
+    payload.platform?.primary ?? null,
+  );
 
   const hasReject = issues.some((i) => i.severity === "reject");
   const hasFlag = issues.some((i) => i.severity === "flag");
