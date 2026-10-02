@@ -32,9 +32,9 @@ import { plausibilityCheck } from "./submit/preflight.mjs";
 
 const MOSES = "1251211 11296121 128196310 2555179769";
 
-// Regression: input-share plausibility is a single-platform heuristic.
-// This cache-heavy shape is below the 0.03% floor but otherwise internally
-// consistent. It should flag for a single platform and NOT for a multi aggregate.
+// Regression: high cache reuse is an operator characteristic, not a
+// plausibility failure. The client preflight must mirror the server gate and
+// must not invent cache/input-share/cadence flags.
 const highReuseTelemetry = {
   sessions_count: 1,
   turns_total: 10,
@@ -49,17 +49,17 @@ const highReuseWindow = {
   start: "2026-09-25T00:00:00.000Z",
   end: "2026-10-02T00:00:00.000Z",
 };
+const highReuseIssues = plausibilityCheck(highReuseTelemetry, highReuseWindow);
+const staleCompositionCodes = new Set([
+  "cache_without_creation",
+  "extreme_cache_ratio",
+  "low_cache_write_ratio",
+  "implausible_input_share",
+  "implausible_cadence",
+]);
 assert.ok(
-  plausibilityCheck(highReuseTelemetry, highReuseWindow, "claude").some(
-    (issue) => issue.code === "implausible_input_share",
-  ),
-  "single-platform high-reuse telemetry still receives the input-share review flag",
-);
-assert.ok(
-  !plausibilityCheck(highReuseTelemetry, highReuseWindow, "multi").some(
-    (issue) => issue.code === "implausible_input_share",
-  ),
-  "multi-platform high-reuse telemetry is not falsely flagged by input-share floor",
+  highReuseIssues.every((issue) => !staleCompositionCodes.has(issue.code)),
+  `high-reuse telemetry must not receive stale composition flags: ${JSON.stringify(highReuseIssues)}`,
 );
 
 // --- 1. Cascade math reproduces canon ---
