@@ -21,7 +21,7 @@ import {
 // Resolve local node_modules/.bin for bundled deps (ccusage, tokscale)
 const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));
 const _localBin = path.join(_pkgRoot, "..", "node_modules", ".bin");
-const _envPath = `${_localBin}${process.env.PATH ? ":" + process.env.PATH : ""}`;
+const _envPath = `${_localBin}${process.env.PATH ? path.delimiter + process.env.PATH : ""}`;
 
 export const DEFAULT_API_BASE =
   process.env.SIGRANK_API_BASE || "https://signalaf.com";
