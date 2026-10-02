@@ -495,7 +495,7 @@ assert.ok(
 
 // ── ADAPTER REGISTRY TESTS (2026-06-23) ──────────────────────────────────────
 
-// --- 16. ALL_PLATFORMS includes claude + codex + grok + all 17 registry adapters ---
+// --- 16. ALL_PLATFORMS includes claude + codex + all 20 registry adapters ---
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
 assert.ok(ALL_PLATFORMS.includes("grok"), "ALL_PLATFORMS includes grok");
@@ -519,8 +519,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  20,
-  `ALL_PLATFORMS has 20 entries, got ${ALL_PLATFORMS.length}`,
+  22,
+  `ALL_PLATFORMS has 22 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
@@ -719,6 +719,14 @@ await assert.rejects(
 // Use a mock adapter injected via tokenpull directly (tokenpullAny goes to registry;
 // test the registry routing by checking that the amp adapter is structurally wired).
 assert.strictEqual(ADAPTERS["amp"].platform, "amp", "ADAPTERS[amp] is wired");
+for (const p of ["antigravity", "grok", "zcode"]) {
+  assert.strictEqual(ADAPTERS[p].platform, p, `ADAPTERS[${p}] is wired`);
+  assert.strictEqual(
+    typeof ADAPTERS[p].messages,
+    "function",
+    `ADAPTERS[${p}].messages is callable`,
+  );
+}
 assert.ok(
   typeof ADAPTERS["amp"].messages === "function",
   "ADAPTERS[amp].messages is callable",
