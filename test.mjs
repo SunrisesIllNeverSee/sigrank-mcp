@@ -1343,12 +1343,9 @@ console.log(
 );
 
 // --- 25s. watch scoping: --platform pulls only the platform it renders ---
-// `watch` re-pulls on EVERY refresh tick (default 30s). Auto-detect unions in the
-// tokscale-blind platforms (omp) — whose local tree is ~10 GiB — so
-// `watch --platform claude` burned ~46s per tick scanning oh-my-pi data that the
-// scoped view then filtered out at render time, leaving the watcher permanently
-// saturated (scan > refresh interval). Scoping the pull must NOT undo the
-// withTokscaleBlind guarantee for the unscoped default.
+// `watch` re-pulls on EVERY refresh tick (default 30s). Explicit scoping must
+// continue to prevent unrelated filesystem scans. With Tokscale 4.17.0, omp is
+// discovered normally and no longer needs a forced blind-platform probe.
 import { pullActivePlatforms } from "./tools.mjs";
 import { detectActivePulls } from "./presentation/cli.mjs";
 
@@ -1391,19 +1388,15 @@ assert.ok(
   "watch scope: a scoped pull never probes the ~10 GiB omp tree",
 );
 
-// 2. The unscoped default still unions in omp even when tokscale never reports it
-//    (the existing withTokscaleBlind guarantee — must not regress).
+// 2. The unscoped default trusts Tokscale's detected set. No hidden omp scan is
+//    added when Tokscale does not report omp.
 const unscopedSpy = makePullSpy(["claude", "codex"]);
 await pullActivePlatforms({}, unscopedSpy.opts);
-assert.ok(
-  unscopedSpy.pulled.includes("omp"),
-  "watch scope: unscoped auto-detect still probes omp (withTokscaleBlind intact)",
+assert.deepStrictEqual(
+  unscopedSpy.pulled.sort(),
+  ["claude", "codex"],
+  "watch scope: unscoped auto-detect pulls exactly Tokscale-detected platforms",
 );
-for (const p of ["claude", "codex"])
-  assert.ok(
-    unscopedSpy.pulled.includes(p),
-    `watch scope: unscoped auto-detect keeps tokscale-detected ${p}`,
-  );
 
 // 3. The watch tick loader itself: `detectActivePulls` owns BOTH the scope and the
 //    rows, so there is no "pull everything, then filter at render time" path left to
@@ -1425,22 +1418,23 @@ assert.deepStrictEqual(
   "watch --platform claude: renders exactly the requested platform",
 );
 
-// 4. --platform all / '' / no --platform behave as unscoped: omp still probed.
+// 4. --platform all / '' / no --platform behave as unscoped. When Tokscale
+//    reports omp, it is pulled and rendered normally.
 for (const allish of ["all", "", null, undefined]) {
-  const spy = makePullSpy(["claude", "codex"]);
+  const spy = makePullSpy(["claude", "codex", "omp"]);
   const rows = await detectActivePulls(allish, spy.opts);
   assert.ok(
     spy.pulled.includes("omp"),
-    `watch --platform ${JSON.stringify(allish)}: unscoped → omp is still pulled`,
+    `watch --platform ${JSON.stringify(allish)}: Tokscale-detected omp is pulled`,
   );
   assert.ok(
     rows.some((d) => d.platform === "omp"),
-    `watch --platform ${JSON.stringify(allish)}: unscoped → omp row is rendered`,
+    `watch --platform ${JSON.stringify(allish)}: Tokscale-detected omp row is rendered`,
   );
 }
 
 console.log(
-  "✓ watch scoping: --platform scopes the pull · omp not probed when scoped · unscoped default keeps withTokscaleBlind · all/none == unscoped",
+  "✓ watch scoping: --platform scopes the pull · unscoped trusts Tokscale detection · all/none == unscoped",
 );
 
 // ── rank_windows + watch_tokenpull TESTS ─────────────────────────────────────
