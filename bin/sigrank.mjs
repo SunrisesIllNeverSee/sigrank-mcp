@@ -26,10 +26,19 @@ function flag(name, fallback = undefined) {
   return fallback;
 }
 
-function printStandard() {
+async function printStandard() {
+  const { TTEOP_PROTOCOL_VERSION, TTEOP_SPEC_VERSION } = await import(
+    "../tools/standard-record.mjs"
+  );
+
   const payload = {
     spec: SPEC,
-    status: "proposed_open_standard",
+    spec_status: "legacy_alias",
+    protocol: {
+      name: "TTEOP",
+      version: TTEOP_PROTOCOL_VERSION,
+      authority: TTEOP_SPEC_VERSION,
+    },
     architecture: {
       brand: "SignalAF",
       governance: "MO§ES™",
@@ -59,6 +68,9 @@ function printStandard() {
   }
 
   process.stdout.write(`Upsilon measurement engine · compatibility spec ${SPEC}\n`);
+  process.stdout.write(
+    `Protocol authority: TTEOP ${TTEOP_PROTOCOL_VERSION} (${TTEOP_SPEC_VERSION})\n`,
+  );
   process.stdout.write(`Upsilon measures. SigRank is the public proof surface.\n\n`);
   process.stdout.write(`Scope: ${payload.scope}\n`);
   process.stdout.write(`Primitives: input / output / cache_write / cache_read\n`);
@@ -136,7 +148,7 @@ async function exportStandardRecord() {
 }
 
 if (cmd === "standard") {
-  printStandard();
+  await printStandard();
 } else if (cmd === "export" && args.includes("--standard")) {
   exportStandardRecord().catch((err) => {
     process.stderr.write(`[sigrank] ${err?.message || err}\n`);

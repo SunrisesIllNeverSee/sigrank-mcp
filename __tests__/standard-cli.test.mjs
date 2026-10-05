@@ -14,9 +14,16 @@ function run(args) {
   });
 }
 
-test("sigrank standard --json exposes the draft identity", () => {
+test("sigrank standard --json exposes the legacy-alias + TTEOP identity", () => {
   const out = JSON.parse(run(["standard", "--json"]));
   assert.equal(out.spec, "sigrank/0.1-draft");
+  assert.equal(out.spec_status, "legacy_alias");
+  assert.deepEqual(out.protocol, {
+    name: "TTEOP",
+    version: "tteop/0.1-draft",
+    authority: "tteop-spec@0.1.5-draft",
+  });
+  assert.equal(out.status, undefined);
   assert.equal(out.reference_math, "token-cascade");
   assert.deepEqual(out.telemetry, [
     "input",
