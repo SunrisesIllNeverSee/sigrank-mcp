@@ -25,17 +25,30 @@ one-off package execution.
 
 ## Publishing
 
-**Auto-publish is ON (2026-07-31).** Push to main triggers `.github/workflows/publish.yml`,
-which runs tests, bumps the patch version, publishes to npm, pushes the version
-commit back to main, and dispatches a `sync-mcp-version` event to sigrank-app
-(so the app's `MCP_VERSION` constant auto-updates → Vercel auto-deploys).
+**Explicit release only (2026-10-05).** `.github/workflows/publish.yml` no
+longer fires on push or CI completion. A release happens only via:
+
+- **Tag push:** `git tag v1.0.x && git push origin v1.0.x` — the tag pins the
+  version (must be `v1.0.x`, patch-only scheme) and publishes for real.
+- **Manual dispatch:** Actions → "Publish to npm + MCP Registry" → Run.
+  `dry_run` defaults to `true` (validates the full pipeline without
+  releasing); re-run with `dry_run=false` to publish the next patch.
+
+The workflow runs tests, resolves the version, publishes to npm via **OIDC
+trusted publishing** (no `NPM_TOKEN`; npm CLI >= 11.5.1 pinned in-workflow),
+opens + auto-merges the version-bump PR back to main, and publishes to the
+MCP Registry via GitHub OIDC. The app auto-syncs `MCP_VERSION` by checking
+npm daily — no dispatch needed.
 
 **Do NOT manually run `npm publish` or `npm version`.** The workflow handles it.
-If you need to publish manually (e.g. the workflow is broken), bump the patch
-version in `package.json`, commit, push, and the workflow will handle the rest.
 
 **Do NOT add `npm publish` or `npm version` to commit messages or scripts.**
-The workflow does this automatically. Manual publishes create duplicate versions.
+Manual publishes create duplicate versions.
+
+**npm-side requirement:** trusted publishing must be configured on npmjs.com
+for org `SunrisesIllNeverSee`, repo `sigrank-mcp`, workflow `publish.yml`,
+environment `publish`. If publish fails with E404/E401, that config is the
+first thing to check.
 
 **Version scheme: `1.0.x` (graduated from `0.0.x` on 2026-08-27).** The patch
 (third decimal) increments on every release: `1.0.0` → `1.0.1` → `1.0.2` → ...
