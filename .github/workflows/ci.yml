@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -64,6 +64,9 @@ jobs:
 
       - name: TUI startup input regression
         run: node --test __tests__/tui-input.test.mjs
+
+      - name: MCP stdio contract (tools/prompts/resources/routing/stdout purity)
+        run: node --test __tests__/mcp-stdio.test.mjs
 
       - name: Version format check (3-digit ruleset)
         run: node scripts/check-version.mjs
@@ -142,7 +145,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        node: [20, 22]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
