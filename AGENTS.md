@@ -25,20 +25,26 @@ one-off package execution.
 
 ## Publishing
 
-**Explicit release only (2026-10-05).** `.github/workflows/publish.yml` no
-longer fires on push or CI completion. A release happens only via:
+**Explicit release only (2026-10-05).** `.github/workflows/publish.yml` never
+fires on push-to-main or CI completion. A release happens only via:
 
-- **Tag push:** `git tag v1.0.x && git push origin v1.0.x` — the tag pins the
-  version (must be `v1.0.x`, patch-only scheme) and publishes for real.
-- **Manual dispatch:** Actions → "Publish to npm + MCP Registry" → Run.
-  `dry_run` defaults to `true` (validates the full pipeline without
-  releasing); re-run with `dry_run=false` to publish the next patch.
+- **Dispatch release (preferred):** Actions → "Publish to npm + MCP Registry"
+  → Run with `dry_run=false`. The job bumps the patch across **all four**
+  versioned files (`package.json`, `package-lock.json`, `server.json`,
+  `manifest.json`), merges the bump PR, runs the full test gate on the merged
+  commit, tags THAT commit `v1.0.x`, then publishes that exact tree to npm and
+  the MCP Registry.
+- **Manual tag (alternative):** push `v1.0.x` pointing at a commit whose
+  `package.json` already equals that version — the publish job refuses
+  mismatched tags (ordering invariant: a tag must point at the versioned
+  commit, never the pre-bump tree).
+- **Dry run:** dispatch with `dry_run=true` validates the pipeline without
+  releasing. **Registry repair:** dispatch with `registry_only=true`
+  republishes `server.json` to the MCP Registry after an npm-propagation race.
 
-The workflow runs tests, resolves the version, publishes to npm via **OIDC
-trusted publishing** (no `NPM_TOKEN`; npm CLI >= 11.5.1 pinned in-workflow),
-opens + auto-merges the version-bump PR back to main, and publishes to the
-MCP Registry via GitHub OIDC. The app auto-syncs `MCP_VERSION` by checking
-npm daily — no dispatch needed.
+npm auth is **OIDC trusted publishing** (no `NPM_TOKEN`; npm CLI >= 11.5.1
+pinned in-workflow). MCP Registry auth is GitHub OIDC. The app auto-syncs
+`MCP_VERSION` by checking npm daily — no dispatch needed.
 
 **Do NOT manually run `npm publish` or `npm version`.** The workflow handles it.
 
@@ -57,8 +63,11 @@ was retired because legacy `0.17.x`/`0.18.x`/`0.19.x` versions sorted higher in
 semver (`0.17.2 > 0.0.232`), causing the MCP Registry to show a stale version
 as "latest." Graduating to `1.0.x` fixes this (`1.0.0 > 0.19.0 > 0.17.2`).
 
-**Required secret (GitHub repo settings → Secrets → Actions):**
-- `NPM_TOKEN` — npm automation token (npmjs.com → Access Tokens → Automation)
+**Required config (npmjs.com, not GitHub):** a Trusted Publisher for GitHub
+Actions — org `SunrisesIllNeverSee`, repo `sigrank-mcp`, workflow
+`publish.yml`, environment `publish`, allowed to publish + manage dist-tags.
+No npm token exists anywhere in the pipeline; the stored `NPM_TOKEN` secret
+is unused (removing it would be tidier).
 
 The app repo auto-syncs by checking npm daily — no cross-repo PAT needed.
 

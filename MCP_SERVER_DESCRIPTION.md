@@ -1,6 +1,6 @@
 # SigRank MCP Server
 
-> Operator leaderboard measuring users, not models — 24 tools, TUI, signed submit, privacy-first.
+> Operator leaderboard measuring users, not models — 25 tools, TUI, signed submit, privacy-first.
 
 SigRank is the first leaderboard that ranks **AI operators** — the humans — by token cascade efficiency, not the models. The yield metric (Υ = cache_read × output / input²) turns raw token telemetry into a competitive ranking on [signalaf.com](https://signalaf.com).
 
@@ -64,7 +64,7 @@ npx sigrank diagnose            # Diagnose cascade inefficiencies
 npx sigrank improve             # Get improvement suggestions
 ```
 
-## The 24 MCP Tools
+## The 25 MCP Tools
 
 ### Read-only — pure math (no auth, no filesystem)
 
@@ -81,39 +81,40 @@ npx sigrank improve             # Get improvement suggestions
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 7 | `get_leaderboard` | Fetch the live public leaderboard from signalaf.com. Returns all ranked operators sorted by yield, with codename, Υ, leverage, velocity, class, and rank position. |
-| 8 | `get_operator` | Get any operator's full profile by codename. Returns detailed metrics + per-window breakdowns (7d/30d/90d/all-time) with the four token pillars per window. |
-| 9 | `discover_peers` | Find mentors, peers, and complementary operators for your operator on the leaderboard. |
+| 7 | `get_sigrank_standard_record` | Build the portable `sigrank/0.1-draft` compatibility record (legacy alias under TTEOP authority) from token telemetry. Computes the canonical cascade locally — no network. |
+| 8 | `get_leaderboard` | Fetch the live public leaderboard from signalaf.com. Returns all ranked operators sorted by yield, with codename, Υ, leverage, velocity, class, and rank position. |
+| 9 | `get_operator` | Get any operator's full profile by codename. Returns detailed metrics + per-window breakdowns (7d/30d/90d/all-time) with the four token pillars per window. |
+| 10 | `discover_peers` | Find mentors, peers, and complementary operators for your operator on the leaderboard. |
 
 ### Read-only — local filesystem (no auth, no network)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 10 | `tokenpull` | Pull your LOCAL token usage from session logs and rank it across all four windows — zero paste. Reads token counts, not message content. Numbers stay on your machine. 17 platform adapters. |
-| 11 | `tokenpull_compare` | Pull token usage from ALL four local sources in parallel (JSONL canon, ccusage CLI, token-dashboard SQLite, tokscale) and compare side-by-side with delta % vs baseline. |
-| 12 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
+| 11 | `tokenpull` | Pull your LOCAL token usage from session logs and rank it across all four windows — zero paste. Reads token counts, not message content. Numbers stay on your machine. 17 platform adapters. |
+| 12 | `tokenpull_compare` | Pull token usage from ALL four local sources in parallel (JSONL canon, ccusage CLI, token-dashboard SQLite, tokscale) and compare side-by-side with delta % vs baseline. |
+| 13 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
 
 ### Write — submit to board (needs enrolled identity)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 13 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
-| 14 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
-| 15 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
-| 16 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
+| 14 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
+| 15 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
+| 16 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
+| 17 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
 
 ### Tokscale analytics — local tokscale data (no auth, no network)
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 17 | `tokscale_breakdown` | Per-model token breakdown across platforms (models under threshold → "other"). |
-| 18 | `tokscale_market_share` | AI tool market share: each tool's % of tokens/cost/messages, ranked. From local tokscale data. |
-| 19 | `tokscale_developer_profile` | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspaces. Paths redacted. |
-| 20 | `tokscale_model_trends` | Model adoption over time: per-model first/last seen, active days, month-by-month adoption curve. |
-| 21 | `tokscale_cost_analysis` | Cost per developer per model: cost_per_million_tokens, cost_per_message, share_cost, client rollup. |
-| 22 | `tokscale_device_profile` | Device fingerprinting: installed tools, session counts, active days, day-of-week distribution, concurrency. Paths redacted. |
-| 23 | `tokscale_mcp_usage` | MCP server usage: detected servers, detection window, active days. |
-| 24 | `tokscale_competitive_intel` | Competitive intelligence for any AI tool: rank, model mix, cost efficiency, share vs all competitors. |
+| 18 | `tokscale_breakdown` | Per-model token breakdown across platforms (models under threshold → "other"). |
+| 19 | `tokscale_market_share` | AI tool market share: each tool's % of tokens/cost/messages, ranked. From local tokscale data. |
+| 20 | `tokscale_developer_profile` | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspaces. Paths redacted. |
+| 21 | `tokscale_model_trends` | Model adoption over time: per-model first/last seen, active days, month-by-month adoption curve. |
+| 22 | `tokscale_cost_analysis` | Cost per developer per model: cost_per_million_tokens, cost_per_message, share_cost, client rollup. |
+| 23 | `tokscale_device_profile` | Device fingerprinting: installed tools, session counts, active days, day-of-week distribution, concurrency. Paths redacted. |
+| 24 | `tokscale_mcp_usage` | MCP server usage: detected servers, detection window, active days. |
+| 25 | `tokscale_competitive_intel` | Competitive intelligence for any AI tool: rank, model mix, cost efficiency, share vs all competitors. |
 
 ### Moved to bestuser-router-mcp (5 intent tools)
 
@@ -160,7 +161,7 @@ The intent-based tools (in bestuser-router-mcp) are designed to map natural-lang
 | Transport | stdio |
 | Platform | Cross-platform (Node.js) |
 | Language | JavaScript |
-| Tools | 24 |
+| Tools | 25 |
 | Auth | None for reads; Supabase anon key for submits |
 | Category | Developer Tools |
 

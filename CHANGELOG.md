@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.0.44](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.44) (2026-10-05)
+
+### Features
+
+* MCP: explicit opt-in support for protocol revision 2026-07-28 via `serveStdio` — a `server/discover` probe with the modern `_meta` envelope pins the connection to the modern era; `initialize` openings keep the 2025-era protocol unchanged (dual-era serving, `legacy: 'serve'`)
+* Docs: `docs/PROTOCOL-COMPATIBILITY.md` — served eras, negotiation rules, host/client matrix
+
+### Tests
+
+* stdio characterization suite 15 → 24: 9 modern-era tests (discover negotiation, era parity, envelope-claim requirement, `-32022` late-initialize, probe→initialize fallback, modern stdout purity + EOF)
+
+## [1.0.43](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.43) (2026-10-05)
+
+### Breaking Changes
+
+* Node.js >= 20 required (was >= 18)
+
+### Features
+
+* MCP: migrated `@modelcontextprotocol/sdk` v1 → official v2 packages (`@modelcontextprotocol/server` 2.3.0); zero v1 imports remain
+* `sigrank standard --json`: `sigrank/0.1-draft` now correctly labeled `legacy_alias` under TTEOP authority (`tteop-spec@0.1.5-draft`)
+
+### Fixes
+
+* Release workflow: explicit releases only — no auto-publish after CI; real npm OIDC trusted publishing (dead NPM_TOKEN path removed); `--dry-run` + collision pre-gates; `--provenance`
+
+### Tests
+
+* 15-test SDK-agnostic stdio behavior freeze locked identical across v1 → v2 (tools/prompts/resources, error classes, stdout purity, routing, EOF) on Node 20/22/26
+
 ## [1.0.37](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.37) (2026-09-08)
 
 ### Fixes

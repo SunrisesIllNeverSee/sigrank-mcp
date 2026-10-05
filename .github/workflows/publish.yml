@@ -1,42 +1,57 @@
 name: Publish to npm + MCP Registry
 
 # EXPLICIT RELEASE ONLY. This workflow never runs on push-to-main or on CI
-# completion. A release happens only when:
+# completion. Two entry points:
 #
-#   1. Manual dispatch (Actions → "Publish to npm + MCP Registry" → Run
-#      workflow). `dry_run` defaults to true: the first run validates the
-#      entire pipeline (tests, version bump, tarball) without releasing.
-#      Re-run with dry_run=false to actually publish the next patch.
-#   2. A version tag `v1.0.x` is pushed. The tag IS the release decision —
-#      it publishes for real, and the tag's version becomes the package
-#      version (must satisfy the 1.0.x patch-only scheme).
+#   1. Manual dispatch (Actions → "Publish to npm + MCP Registry" → Run):
+#        dry_run=false, registry_only=false  → FULL RELEASE: bumps the patch
+#          version across package.json + package-lock.json + server.json +
+#          manifest.json, merges the bump PR, runs the full test gate on the
+#          merged commit, tags THAT commit v1.0.x, publishes that exact tree
+#          to npm, then publishes to the MCP Registry.
+#        dry_run=true                        → validate only (tests + pack +
+#          npm --dry-run); nothing is released.
+#        registry_only=true                  → repair path: republish the
+#          current server.json to the MCP Registry only (npm-propagation
+#          race repair; skips tests/npm/git).
+#   2. A tag `v1.0.x` pushed by a human (owner credentials — see CASCADE
+#      NOTE). The tag MUST point at a commit whose package.json already
+#      equals the tag version; the publish job refuses anything else. This
+#      is the manual alternative to the dispatch release.
+#
+# ORDERING INVARIANT (added 2026-10-05): a release tag always points at a
+# commit that already carries that version. The version is never mutated
+# after the tag exists. v1.0.43/v1.0.44 predate this rule and their tags
+# point at the pre-bump tree — left as-is deliberately (published content
+# was correct; only the tag→source mapping lagged).
+#
+# CASCADE NOTE: events created by GITHUB_TOKEN do not trigger other
+# workflows — so (a) the bot version PR gets no CI jobs (the post-merge
+# in-job test gate below is the real enforcement), and (b) the tag pushed
+# by the release job does NOT fire the publish job — the release job
+# publishes itself, on the merge commit's tree.
 #
 # npm auth: OIDC trusted publishing — NO NPM_TOKEN. npm CLI >= 11.5.1 is
 # required for trusted publishing, so it is pinned below. The trusted
 # publisher must be configured on npmjs.com for:
-#   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml
+#   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml,
+#   environment: publish
 # (npm-side setting; GitHub cannot verify it — if publish fails with
 # E404/E401, check that configuration first.)
 #
 # MCP Registry authentication uses GitHub OIDC (id-token: write) — no secret
 # needed for the io.github.SunrisesIllNeverSee/* namespace.
-#
-# HISTORY: this workflow previously fired via workflow_run after every
-# successful CI run on main, so CI/docs-only merges attempted releases
-# (run 37224071549 failed with npm E404; nothing was published). It also
-# claimed OIDC in comments while passing NODE_AUTH_TOKEN from secrets —
-# a dead/mismatched token overrides OIDC. Both defects fixed here.
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Validate only — run tests + pack + npm --dry-run, skip npm/registry release"
+        description: "Validate only — run tests + pack + npm --dry-run, skip release"
         required: true
         type: boolean
         default: true
       registry_only:
-        description: "Repair only — republish current package.json version to MCP Registry (skip tests/npm/version bump). Use after an npm-propagation race."
+        description: "Repair only — republish current server.json to MCP Registry (skip tests/npm/version bump)"
         required: false
         type: boolean
         default: false
@@ -44,33 +59,138 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read # default; write granted only on the publish job
+  contents: read # default; write granted only on the release job
 
 concurrency:
-  group: publish-${{ github.ref }}
+  # One release at a time globally — a tag push and a dispatch must never
+  # interleave (double version bump / double publish).
+  group: publish
   cancel-in-progress: false
 
 jobs:
+
+  # ════════════════════════════════════════════════════════════════════════
+  # TAG-TRIGGERED PUBLISH — human-pushed tags only (token pushes don't
+  # cascade). Publishes exactly the tagged tree; mutates nothing in git.
+  # ════════════════════════════════════════════════════════════════════════
   publish:
-    name: Bump + publish + sync app
+    name: Publish tagged release
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: publish
     permissions:
-      contents: write # needed to push the version bump branch
-      pull-requests: write # needed to create + merge the version bump PR
-      id-token: write # needed for npm OIDC trusted publishing + mcp-publisher github-oidc
-    env:
-      # Releases are real publishes only when a tag fired this run, or a
-      # manual dispatch explicitly set dry_run=false. registry_only dispatches
-      # repair the MCP Registry entry without touching npm/git.
-      REAL_PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false || inputs.registry_only == true }}
-      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_only == true }}
+      contents: read
+      id-token: write # npm OIDC trusted publishing + mcp-publisher github-oidc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          # Full history + token so we can push the version commit back
+          ref: ${{ github.ref }} # the tag's commit — never "main"
+
+      - name: Verify tag matches the committed version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [[ ! "$TAG_VERSION" =~ ^1\.0\.[0-9]+$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a v1.0.x release tag (patch-only scheme)"
+            exit 1
+          fi
+          if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points at a commit whose package.json is ${PKG_VERSION}."
+            echo "A release tag must point at a commit that already carries that version."
+            echo "Use the workflow_dispatch release instead (it builds the versioned commit first)."
+            exit 1
+          fi
+          if npm view "sigrank@${TAG_VERSION}" version >/dev/null 2>&1; then
+            echo "::error::sigrank@${TAG_VERSION} already exists on npm — aborting"
+            exit 1
+          fi
+          echo "✓ Tag ${GITHUB_REF_NAME} ↔ package.json ${PKG_VERSION}"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # OIDC trusted publishing requires npm >= 11.5.1; Node 22's bundled
+      # npm is older. Pinned exactly — no floating tags in the release path.
+      - name: Pin npm CLI for trusted publishing
+        run: npm install -g npm@11.5.1
+
+      - run: npm ci --ignore-scripts
+
+      # ── Pre-publish tests (mirror ci.yml test job) ──
+      - name: Unit tests
+        run: node test.mjs
+
+      - name: Signing tests
+        run: node __tests__/sign.test.mjs
+
+      - name: TUI startup input regression
+        run: node --test __tests__/tui-input.test.mjs
+
+      - name: Version format + drift check
+        run: node scripts/check-version.mjs
+
+      - name: Install and exercise the packed artifact
+        run: npm run test:packaged
+
+      # ── Validate the exact tarball npm would publish ──
+      - name: Validate package (npm publish --dry-run)
+        run: npm publish --dry-run
+
+      # No NODE_AUTH_TOKEN: authentication is OIDC trusted publishing via
+      # id-token. --provenance attaches the supply-chain attestation.
+      - name: Publish to npm (OIDC trusted publishing)
+        run: npm publish --provenance
+
+      # ── MCP Registry — npm's CDN can lag behind the PUT; if this races and
+      #    fails 400 'version not found', repair with a registry_only dispatch
+      #    instead of burning a version. ──
+      - name: Install mcp-publisher (pinned v1.8.1 + checksum verified)
+        run: |
+          MCP_PUBLISHER_VERSION="v1.8.1"
+          MCP_PUBLISHER_SHA256="a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+          MCP_PUBLISHER_URL="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
+          curl -L "$MCP_PUBLISHER_URL" -o /tmp/mcp-publisher.tar.gz
+          echo "$MCP_PUBLISHER_SHA256  /tmp/mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf /tmp/mcp-publisher.tar.gz -C . mcp-publisher
+          chmod +x mcp-publisher
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Validate server.json
+        run: ./mcp-publisher validate server.json
+
+      - name: Publish to MCP Registry
+        continue-on-error: true
+        run: ./mcp-publisher publish server.json
+
+  # ════════════════════════════════════════════════════════════════════════
+  # DISPATCH RELEASE — validate / repair / full release. The full release
+  # does version→PR→merge→test→tag→publish so the tag always lands on a
+  # commit that already carries the version.
+  # ════════════════════════════════════════════════════════════════════════
+  release:
+    name: Dispatch release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: publish
+    permissions:
+      contents: write # push the version-bump branch + the release tag
+      pull-requests: write # create + merge the version bump PR
+      id-token: write # npm OIDC + mcp-publisher github-oidc
+    env:
+      REGISTRY_ONLY: ${{ inputs.registry_only == true }}
+      DRY_RUN: ${{ inputs.dry_run == true && inputs.registry_only == false }}
+      REAL_RELEASE: ${{ inputs.dry_run == false && inputs.registry_only == false }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: main
@@ -82,8 +202,6 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      # OIDC trusted publishing requires npm >= 11.5.1; Node 22's bundled
-      # npm is older. Pinned exactly — no floating tags in the release path.
       - name: Pin npm CLI for trusted publishing
         if: env.REGISTRY_ONLY != 'true'
         run: npm install -g npm@11.5.1
@@ -91,88 +209,65 @@ jobs:
       - if: env.REGISTRY_ONLY != 'true'
         run: npm ci --ignore-scripts
 
-      # ── Pre-publish tests (mirror ci.yml test job) ──
+      # ── Validation gate (dry_run validates; real release re-runs the gate
+      #    on the merged commit below — no point running it twice) ──
       - name: Unit tests
-        if: env.REGISTRY_ONLY != 'true'
+        if: env.DRY_RUN == 'true'
         run: node test.mjs
 
       - name: Signing tests
-        if: env.REGISTRY_ONLY != 'true'
+        if: env.DRY_RUN == 'true'
         run: node __tests__/sign.test.mjs
 
       - name: TUI startup input regression
-        if: env.REGISTRY_ONLY != 'true'
+        if: env.DRY_RUN == 'true'
         run: node --test __tests__/tui-input.test.mjs
 
-      - name: Version format check
+      - name: Version format + drift check
         if: env.REGISTRY_ONLY != 'true'
         run: node scripts/check-version.mjs
 
       - name: Install and exercise the packed artifact
-        if: env.REGISTRY_ONLY != 'true'
+        if: env.DRY_RUN == 'true'
         run: npm run test:packaged
 
-      # ── Resolve release version ──
-      # Tag push: tag pins the version (must be v1.0.x). Dispatch: bump patch.
-      - name: Resolve release version
+      # ── Bump all four versioned files (patch only) ──
+      - name: Bump version (package.json + package-lock.json + server.json + manifest.json)
         id: bump
         if: env.REGISTRY_ONLY != 'true'
         run: |
-          OLD_VERSION=$(node -p "require('./package.json').version")
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            TAG_VERSION="${GITHUB_REF_NAME#v}"
-            if [[ ! "$TAG_VERSION" =~ ^1\.0\.[0-9]+$ ]]; then
-              echo "::error::Tag ${GITHUB_REF_NAME} is not a v1.0.x release tag (patch-only scheme)"
-              exit 1
-            fi
-            npm version "$TAG_VERSION" --no-git-tag-version
-          else
-            npm version patch --no-git-tag-version
-          fi
+          npm version patch --no-git-tag-version # updates package.json AND package-lock.json
           NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Resolved ${OLD_VERSION} → ${NEW_VERSION}"
+          if git ls-remote --tags origin | grep -q "refs/tags/v${NEW_VERSION}$"; then
+            echo "::error::tag v${NEW_VERSION} already exists — aborting"
+            exit 1
+          fi
           if npm view "sigrank@${NEW_VERSION}" version >/dev/null 2>&1; then
             echo "::error::sigrank@${NEW_VERSION} already exists on npm — aborting"
             exit 1
           fi
+          # server.json (root + packages[].version) + manifest.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" server.json
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" manifest.json
+          node scripts/check-version.mjs # drift gate must pass before commit
+          echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Prepared ${NEW_VERSION}"
 
-      # ── Validate the exact tarball npm would publish ──
       - name: Validate package (npm publish --dry-run)
         if: env.REGISTRY_ONLY != 'true'
         run: npm publish --dry-run
 
-      # ── Publish to npm FIRST (before git commit, so a failed publish
-      #    doesn't leave a version bump in git that npm doesn't have) ──
-      # No NODE_AUTH_TOKEN: authentication is OIDC trusted publishing via
-      # id-token. --provenance attaches the supply-chain attestation.
-      - name: Publish to npm (OIDC trusted publishing)
-        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
-        run: npm publish --provenance
-
-      # ── Commit the version bump + push (only runs on a real publish) ──
-      # Rebases on latest main before pushing to avoid non-fast-forward rejection
-      # when a concurrent push lands between checkout and this step. Without this,
-      # the version commit is lost and package.json falls behind npm — which breaks
-      # the app's cross-repo contract test (mcp-version-drift.test.mjs).
-      - name: Sync server.json + manifest.json to new version
-        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
+      - name: Dry-run summary
+        if: env.DRY_RUN == 'true'
         run: |
-          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
-          # Update server.json (MCP registry manifest)
-          if [ -f server.json ]; then
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" server.json
-          fi
-          # Update manifest.json (MCPB manifest)
-          if [ -f manifest.json ]; then
-            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/g" manifest.json
-          fi
-          echo "✓ Synced server.json + manifest.json to $NEW_VERSION"
+          echo "DRY RUN complete — nothing was published."
+          echo "Version that WOULD release: ${{ steps.bump.outputs.new_version }}"
+          echo "Re-run with dry_run=false to perform the release."
 
-      # ── Push version bump via PR (main is protected, can't push directly) ──
-      - name: Push version bump via PR
-        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
+      # ── Version bump PR (main is protected). Bot pushes get no CI jobs —
+      #    the post-merge gate below on the merged commit is the real check. ──
+      - name: Merge version bump via PR
+        if: env.REAL_RELEASE == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -180,36 +275,53 @@ jobs:
           BRANCH="bot/version-${NEW_VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Configure git auth since checkout used persist-credentials: false
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git checkout -b "$BRANCH"
-          git add -A -- package.json server.json manifest.json
+          git add -A -- package.json package-lock.json server.json manifest.json
           git commit -m "$NEW_VERSION"
           git push origin "$BRANCH"
-          # Create PR and auto-merge (checks pass since it's just a version bump)
-          PR_URL=$(gh pr create --title "$NEW_VERSION" --body "Auto-generated version bump from publish workflow." --head "$BRANCH" --base main)
+          PR_URL=$(gh pr create --title "$NEW_VERSION" --body "Auto-generated version bump from release workflow." --head "$BRANCH" --base main)
           echo "Created PR: $PR_URL"
-          # Wait for checks to pass, then merge
           sleep 5
           gh pr merge --squash --delete-branch --admin "$PR_URL" || {
-            echo "⚠ Auto-merge failed, retrying in 30s..."
             sleep 30
             gh pr merge --squash --delete-branch --admin "$PR_URL" || {
-              echo "✗ Auto-merge failed after retry"
-              echo "  npm has $NEW_VERSION but package.json on main is stale."
-              echo "  Manually merge the PR: $PR_URL"
-              # Don't fail the workflow — npm publish already succeeded
+              echo "::error::Auto-merge failed — merge $PR_URL manually, then tag the merge commit v${NEW_VERSION}"
+              exit 1
             }
           }
           echo "✓ Version bump PR merged"
 
-      # ── Publish to MCP Registry (non-blocking — npm propagation delay
-      #    can cause this to fail, but the version commit is already pushed) ──
-      # Uses GitHub OIDC authentication — no secret needed for io.github.* namespace.
-      # The server.json name (io.github.SunrisesIllNeverSee/sigrank-mcp) must match
-      # the mcpName in package.json and the GitHub repo owner.
+      # ── The release gate: run the FULL suite on the merged commit, then
+      #    tag THAT SHA. Publish only happens after the tag exists. ──
+      - name: Test the merged release commit
+        if: env.REAL_RELEASE == 'true'
+        run: |
+          git fetch origin main
+          MERGE_SHA=$(git rev-parse origin/main)
+          git checkout "$MERGE_SHA"
+          npm ci --ignore-scripts
+          node test.mjs
+          node __tests__/sign.test.mjs
+          node --test __tests__/tui-input.test.mjs
+          node scripts/check-version.mjs
+          npm run test:packaged
+          echo "merge_sha=${MERGE_SHA}" >> "$GITHUB_ENV"
+
+      - name: Tag the versioned commit
+        if: env.REAL_RELEASE == 'true'
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          git tag "v${NEW_VERSION}" "${{ env.merge_sha }}"
+          git push origin "v${NEW_VERSION}"
+          echo "✓ Tag v${NEW_VERSION} → ${{ env.merge_sha }}"
+
+      - name: Publish to npm (OIDC trusted publishing)
+        if: env.REAL_RELEASE == 'true'
+        run: npm publish --provenance
+
       - name: Install mcp-publisher (pinned v1.8.1 + checksum verified)
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_RELEASE == 'true' || env.REGISTRY_ONLY == 'true'
         run: |
           MCP_PUBLISHER_VERSION="v1.8.1"
           MCP_PUBLISHER_SHA256="a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
@@ -220,24 +332,17 @@ jobs:
           chmod +x mcp-publisher
 
       - name: Authenticate to MCP Registry (GitHub OIDC)
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_RELEASE == 'true' || env.REGISTRY_ONLY == 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Validate server.json
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_RELEASE == 'true' || env.REGISTRY_ONLY == 'true'
         run: ./mcp-publisher validate server.json
 
       - name: Publish to MCP Registry
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_RELEASE == 'true' || env.REGISTRY_ONLY == 'true'
         continue-on-error: true
         run: ./mcp-publisher publish server.json
-
-      - name: Dry-run summary
-        if: env.REAL_PUBLISH != 'true'
-        run: |
-          echo "DRY RUN complete — nothing was published."
-          echo "Version that WOULD release: ${{ steps.bump.outputs.new_version }}"
-          echo "Re-run this workflow with dry_run=false, or push tag v${{ steps.bump.outputs.new_version }}, to publish."
 
       # Version sync: sigrank-app checks npm daily at 07:00 UTC and auto-updates
       # its MCP_VERSION constant. No dispatch needed — the app pulls, we don't push.
