@@ -35,6 +35,11 @@ on:
         required: true
         type: boolean
         default: true
+      registry_only:
+        description: "Repair only — republish current package.json version to MCP Registry (skip tests/npm/version bump). Use after an npm-propagation race."
+        required: false
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -57,8 +62,10 @@ jobs:
       id-token: write # needed for npm OIDC trusted publishing + mcp-publisher github-oidc
     env:
       # Releases are real publishes only when a tag fired this run, or a
-      # manual dispatch explicitly set dry_run=false.
-      REAL_PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+      # manual dispatch explicitly set dry_run=false. registry_only dispatches
+      # repair the MCP Registry entry without touching npm/git.
+      REAL_PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false || inputs.registry_only == true }}
+      REGISTRY_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.registry_only == true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -69,6 +76,7 @@ jobs:
           ref: main
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        if: env.REGISTRY_ONLY != 'true'
         with:
           node-version: 22
           cache: npm
@@ -77,30 +85,38 @@ jobs:
       # OIDC trusted publishing requires npm >= 11.5.1; Node 22's bundled
       # npm is older. Pinned exactly — no floating tags in the release path.
       - name: Pin npm CLI for trusted publishing
+        if: env.REGISTRY_ONLY != 'true'
         run: npm install -g npm@11.5.1
 
-      - run: npm ci --ignore-scripts
+      - if: env.REGISTRY_ONLY != 'true'
+        run: npm ci --ignore-scripts
 
       # ── Pre-publish tests (mirror ci.yml test job) ──
       - name: Unit tests
+        if: env.REGISTRY_ONLY != 'true'
         run: node test.mjs
 
       - name: Signing tests
+        if: env.REGISTRY_ONLY != 'true'
         run: node __tests__/sign.test.mjs
 
       - name: TUI startup input regression
+        if: env.REGISTRY_ONLY != 'true'
         run: node --test __tests__/tui-input.test.mjs
 
       - name: Version format check
+        if: env.REGISTRY_ONLY != 'true'
         run: node scripts/check-version.mjs
 
       - name: Install and exercise the packed artifact
+        if: env.REGISTRY_ONLY != 'true'
         run: npm run test:packaged
 
       # ── Resolve release version ──
       # Tag push: tag pins the version (must be v1.0.x). Dispatch: bump patch.
       - name: Resolve release version
         id: bump
+        if: env.REGISTRY_ONLY != 'true'
         run: |
           OLD_VERSION=$(node -p "require('./package.json').version")
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
@@ -124,6 +140,7 @@ jobs:
 
       # ── Validate the exact tarball npm would publish ──
       - name: Validate package (npm publish --dry-run)
+        if: env.REGISTRY_ONLY != 'true'
         run: npm publish --dry-run
 
       # ── Publish to npm FIRST (before git commit, so a failed publish
@@ -131,7 +148,7 @@ jobs:
       # No NODE_AUTH_TOKEN: authentication is OIDC trusted publishing via
       # id-token. --provenance attaches the supply-chain attestation.
       - name: Publish to npm (OIDC trusted publishing)
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
         run: npm publish --provenance
 
       # ── Commit the version bump + push (only runs on a real publish) ──
@@ -140,7 +157,7 @@ jobs:
       # the version commit is lost and package.json falls behind npm — which breaks
       # the app's cross-repo contract test (mcp-version-drift.test.mjs).
       - name: Sync server.json + manifest.json to new version
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
         run: |
           NEW_VERSION="${{ steps.bump.outputs.new_version }}"
           # Update server.json (MCP registry manifest)
@@ -155,7 +172,7 @@ jobs:
 
       # ── Push version bump via PR (main is protected, can't push directly) ──
       - name: Push version bump via PR
-        if: env.REAL_PUBLISH == 'true'
+        if: env.REAL_PUBLISH == 'true' && env.REGISTRY_ONLY != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
