@@ -22,18 +22,8 @@
  * Token-only — no transcript content.
  */
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-  ListResourcesRequestSchema,
-  ReadResourceRequestSchema,
-  McpError,
-  ErrorCode,
-} from "@modelcontextprotocol/sdk/types.js";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { Server, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import { TOOLS, callTool } from "./tools.mjs";
 import { runCli } from "./cli.mjs";
 import { readFileSync } from "node:fs";
@@ -80,15 +70,15 @@ async function startMcpServer() {
     { name: "sigrank", version: serverVersion() },
     { capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false } } },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler('tools/list', async () => ({
     tools: TOOLS,
   }));
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  server.setRequestHandler('tools/call', async (req) => {
     // Unknown tool name = a client/host bug → JSON-RPC -32602 protocol error, per the MCP
     // spec. isError results (below) are reserved for tools that ran and failed.
     if (!TOOLS.some((t) => t.name === req.params.name)) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
         `Unknown tool: ${req.params.name}`,
       );
     }
@@ -134,10 +124,10 @@ async function startMcpServer() {
     },
   ];
 
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  server.setRequestHandler('prompts/list', async () => ({
     prompts: PROMPTS,
   }));
-  server.setRequestHandler(GetPromptRequestSchema, async (req) => {
+  server.setRequestHandler('prompts/get', async (req) => {
     const name = req.params.name;
     const args = req.params.arguments || {};
     if (name === "check-my-efficiency") {
@@ -190,7 +180,7 @@ async function startMcpServer() {
         ],
       };
     }
-    throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
+    throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown prompt: ${name}`);
   });
 
   // --- Resources: static context agents can read without calling a tool ---
@@ -240,14 +230,14 @@ async function startMcpServer() {
     "sigrank://data-policy": "./resources/data-policy.md",
   };
 
-  server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  server.setRequestHandler('resources/list', async () => ({
     resources: RESOURCES,
   }));
-  server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+  server.setRequestHandler('resources/read', async (req) => {
     const uri = req.params.uri;
     const file = RESOURCE_FILES[uri];
     if (!file) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+      throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown resource: ${uri}`);
     }
     const content = readFileSync(new URL(file, import.meta.url), "utf8");
     return {
