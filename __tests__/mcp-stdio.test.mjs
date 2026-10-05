@@ -404,3 +404,202 @@ test("server exits cleanly on stdin EOF", async () => {
   });
   assert.notEqual(exitCode, "timeout", "server did not exit on stdin EOF");
 });
+
+// ─── Phase 2B: modern era (protocol revision 2026-07-28) ────────────────────
+//
+// serveStdio owns era selection per connection: a `server/discover` request
+// carrying the per-request _meta envelope pins the connection to the modern
+// era; an `initialize` opening keeps the 2025-era legacy protocol (retained —
+// all tests above still exercise it). The same factory backs both eras, so
+// every assertion below checks era PARITY against the legacy contract.
+//
+// Observed wire constants (SDK 2.3.0):
+//   - discover result carries supportedVersions + serverInfo in _meta
+//   - claim-less server/discover classifies as legacy → -32601
+//   - initialize on a modern-pinned connection → -32022 naming supported
+//   - discover → initialize on one connection falls back to legacy cleanly
+
+const MODERN_REVISION = "2026-07-28";
+const MODERN_ENVELOPE = {
+  "io.modelcontextprotocol/protocolVersion": MODERN_REVISION,
+  "io.modelcontextprotocol/clientInfo": { name: "char-test", version: "0.0.0" },
+  "io.modelcontextprotocol/clientCapabilities": {},
+};
+
+function modern(client, method, params = {}) {
+  return client.send(method, { ...params, _meta: MODERN_ENVELOPE });
+}
+
+async function discover(client) {
+  // server/discover is the modern opening: returns the probe result and
+  // leaves the connection in probe phase until the next request pins it.
+  return client.send("server/discover", { _meta: MODERN_ENVELOPE });
+}
+
+test("server/discover negotiates 2026-07-28 with server identity in _meta", async () => {
+  const client = new McpClient();
+  try {
+    const res = await discover(client);
+    assert.ok(
+      res.supportedVersions?.includes(MODERN_REVISION),
+      "supportedVersions includes 2026-07-28",
+    );
+    assert.equal(
+      res._meta?.["io.modelcontextprotocol/serverInfo"]?.name,
+      "sigrank",
+    );
+    assert.equal(
+      res._meta?.["io.modelcontextprotocol/serverInfo"]?.version,
+      PKG_VERSION,
+    );
+    assert.ok(res.capabilities?.tools !== undefined, "tools capability");
+    assert.ok(res.capabilities?.prompts !== undefined, "prompts capability");
+    assert.ok(res.capabilities?.resources !== undefined, "resources capability");
+  } finally {
+    client.stop();
+  }
+});
+
+test("modern-pinned connection serves the identical tool table", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    const { tools } = await modern(client, "tools/list");
+    assert.equal(tools.length, EXPECTED_TOOLS);
+    assert.ok(tools.some((t) => t.name === "get_sigrank_standard_record"));
+  } finally {
+    client.stop();
+  }
+});
+
+test("modern tools/call returns the same canonical record as legacy", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    const res = await modern(client, "tools/call", {
+      name: "get_sigrank_standard_record",
+      arguments: {
+        input: 1251211,
+        output: 11296121,
+        cache_write: 128196310,
+        cache_read: 2555179769,
+        provider: "test",
+        model: "test-model",
+        tool: "test-tool",
+      },
+    });
+    assert.notEqual(res.isError, true);
+    const record = JSON.parse(res.content[0].text);
+    assert.equal(record.spec, "sigrank/0.1-draft");
+    assert.equal(record.spec_status, "legacy_alias");
+    assert.equal(record.metrics.yield, 18436.98);
+  } finally {
+    client.stop();
+  }
+});
+
+test("modern unknown tool is still a protocol error, not isError", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    await assert.rejects(
+      modern(client, "tools/call", { name: "nonexistent_tool_xyz", arguments: {} }),
+      (err) => {
+        assert.equal(err.code, -32602);
+        return true;
+      },
+    );
+  } finally {
+    client.stop();
+  }
+});
+
+test("claim-less server/discover classifies as legacy (envelope is required)", async () => {
+  const client = new McpClient();
+  try {
+    await assert.rejects(
+      client.send("server/discover", {}),
+      (err) => {
+        assert.equal(err.code, -32601, "method not found on a legacy connection");
+        return true;
+      },
+    );
+  } finally {
+    client.stop();
+  }
+});
+
+test("initialize on a modern-pinned connection is rejected with -32022", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    await modern(client, "tools/list"); // any request pins the era
+    await assert.rejects(
+      client.send("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "x", version: "1" },
+      }),
+      (err) => {
+        assert.equal(err.code, -32022, "unsupported protocol version");
+        assert.deepEqual(err.data?.supported, [MODERN_REVISION]);
+        return true;
+      },
+    );
+  } finally {
+    client.stop();
+  }
+});
+
+test("discover → initialize fallback still serves the legacy handshake", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    // Auto-negotiating clients that probe then fall back on the same
+    // connection must still get a working 2025-era handshake.
+    const init = await client.send("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "char-test", version: "0.0.0" },
+    });
+    assert.equal(init.serverInfo?.name, "sigrank");
+    assert.equal(init.protocolVersion, "2025-06-18");
+    client.notify("notifications/initialized");
+    const { tools } = await client.send("tools/list", {});
+    assert.equal(tools.length, EXPECTED_TOOLS);
+  } finally {
+    client.stop();
+  }
+});
+
+test("stdout purity holds on the modern era", async () => {
+  const client = new McpClient();
+  try {
+    await discover(client);
+    await modern(client, "tools/list");
+    await modern(client, "resources/list");
+    const lines = client
+      .rawStdout()
+      .split("\n")
+      .filter((l) => l.trim());
+    assert.ok(lines.length >= 3, "protocol traffic exists");
+    for (const line of lines) {
+      const msg = JSON.parse(line); // throws → fail
+      assert.equal(msg.jsonrpc, "2.0", `non-protocol stdout line: ${line.slice(0, 80)}`);
+    }
+  } finally {
+    client.stop();
+  }
+});
+
+test("modern-pinned connection exits cleanly on stdin EOF", async () => {
+  const client = new McpClient();
+  await discover(client);
+  await modern(client, "tools/list");
+  const exitCode = await new Promise((resolve) => {
+    client.proc.on("exit", (code) => resolve(code));
+    client.proc.stdin.end();
+    setTimeout(() => { client.stop(); resolve("timeout"); }, 5000);
+  });
+  assert.notEqual(exitCode, "timeout", "modern-pinned server did not exit on stdin EOF");
+});
