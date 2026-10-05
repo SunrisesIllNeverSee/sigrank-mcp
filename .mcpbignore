@@ -39,12 +39,6 @@ test.mjs
 # Eval / analysis artifacts
 eval/
 
-# Documentation directories (not needed in MCP bundle)
-governance/
-observatory/
-ontology/
-methodology/
-
 # Docker
 Dockerfile
 .dockerignore
