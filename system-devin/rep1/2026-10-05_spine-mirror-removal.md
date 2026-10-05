@@ -27,7 +27,7 @@ Branch `chore/spine-mirror-removal`, commit `0b10525` — local, unpushed, unmer
    - remove the `spine:check` script (its `cd ../sigrank-mcp` is broken in the `_01_/_02_` layout anyway)
    - port salvaged corrections UP into the app docs (endpoint paths, signature mechanics, corrected `lib/` source paths — full list in the report)
    - stamp canon provenance on normative docs, or fold them into a search-authority projection — owner call
-3. **Owner flag:** removed `ontology/metrics.md` copy had Yield(Υ)→Upsilon in its description — conflicts with canon (Upsilon=engine, Yield=metric). Flagged, not propagated. Owner rules before any app-side edit.
+3. **Resolved — owner ruling 2026-10-05:** Yield (Υ) is the metric; Upsilon is the product/engine. The removed `ontology/metrics.md` copy's "Upsilon" rename was a canon violation; app source already correct. No action needed — do not reintroduce.
 4. On next release, verify `sigrank.mcpb` regenerates without spine paths.
 
 ## Why (one line)

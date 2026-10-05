@@ -57,4 +57,4 @@ Both sides compute stage values and 10xDEV only when every pillar is positive, a
 
 The `observatory/`, `ontology/`, `methodology/`, and `governance/` directories were a mirror of `sigrank-app` docs synced by `scripts/sync-spine.mjs`. The mirror was removed because it declared the app as canon source-of-truth (the real canon owner is `search-authority`), was never shipped (absent from `files[]`, excluded in `.npmignore`/`.mcpbignore`), was read by no code, and its check ran in no CI. The repo-scope annotations from the mirrored copies are preserved above.
 
-Known open item propagated to the brief: the mirrored `ontology/metrics.md` copy had renamed "Yield (Υ)" to "Upsilon" in its description — that conflicts with canon (Upsilon is the engine/product; Yield (Υ) is the metric). Flagged for owner, not propagated.
+Resolved 2026-10-05 (owner ruling): the mirrored `ontology/metrics.md` copy had renamed "Yield (Υ)" to "Upsilon" in its description — a canon violation. **Upsilon is the measurement engine/product; Yield (Υ) is the metric.** The violation existed only in the downstream mirror copy; the sigrank-app source was already correct. Do not reintroduce.
