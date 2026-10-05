@@ -1,29 +1,42 @@
 name: Publish to npm + MCP Registry
 
-# Auto-publish flow: runs ONLY after CI (ci.yml) completes successfully on
-# main. Bumps the patch version, publishes to npm, publishes to the MCP
-# Registry, pushes the version commit back to main, and the app auto-syncs
-# its MCP_VERSION constant (→ Vercel auto-deploys).
+# EXPLICIT RELEASE ONLY. This workflow never runs on push-to-main or on CI
+# completion. A release happens only when:
 #
-# npm publishing uses OIDC trusted publishing (no NPM_TOKEN needed).
-# The trusted publisher is configured on npmjs.com for:
+#   1. Manual dispatch (Actions → "Publish to npm + MCP Registry" → Run
+#      workflow). `dry_run` defaults to true: the first run validates the
+#      entire pipeline (tests, version bump, tarball) without releasing.
+#      Re-run with dry_run=false to actually publish the next patch.
+#   2. A version tag `v1.0.x` is pushed. The tag IS the release decision —
+#      it publishes for real, and the tag's version becomes the package
+#      version (must satisfy the 1.0.x patch-only scheme).
+#
+# npm auth: OIDC trusted publishing — NO NPM_TOKEN. npm CLI >= 11.5.1 is
+# required for trusted publishing, so it is pinned below. The trusted
+# publisher must be configured on npmjs.com for:
 #   org: SunrisesIllNeverSee, repo: sigrank-mcp, workflow: publish.yml
+# (npm-side setting; GitHub cannot verify it — if publish fails with
+# E404/E401, check that configuration first.)
 #
-# MCP Registry authentication uses GitHub OIDC (no secret needed for
-# io.github.SunrisesIllNeverSee/* namespace). Requires id-token: write.
+# MCP Registry authentication uses GitHub OIDC (id-token: write) — no secret
+# needed for the io.github.SunrisesIllNeverSee/* namespace.
 #
-# SECURITY: This workflow is triggered by workflow_run (CI completion), NOT
-# by push. This ensures publishing can never outrun CI — the publish job
-# only fires after all CI checks pass. The bot's own version-commit push
-# triggers CI but not publish (guarded by actor check), preventing an
-# infinite loop.
+# HISTORY: this workflow previously fired via workflow_run after every
+# successful CI run on main, so CI/docs-only merges attempted releases
+# (run 37224071549 failed with npm E404; nothing was published). It also
+# claimed OIDC in comments while passing NODE_AUTH_TOKEN from secrets —
+# a dead/mismatched token overrides OIDC. Both defects fixed here.
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validate only — run tests + pack + npm --dry-run, skip npm/registry release"
+        required: true
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read # default; write granted only on the publish job
@@ -41,15 +54,11 @@ jobs:
     permissions:
       contents: write # needed to push the version bump branch
       pull-requests: write # needed to create + merge the version bump PR
-      id-token: write # needed for mcp-publisher github-oidc authentication
-    # Only publish when CI succeeded. Skip if the CI run was triggered by
-    # the bot's own version commit (prevents infinite loop). Allow manual
-    # workflow_dispatch triggers.
-    if: |
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.actor != 'github-actions[bot]') ||
-      github.event_name == 'workflow_dispatch'
+      id-token: write # needed for npm OIDC trusted publishing + mcp-publisher github-oidc
+    env:
+      # Releases are real publishes only when a tag fired this run, or a
+      # manual dispatch explicitly set dry_run=false.
+      REAL_PUBLISH: ${{ github.event_name == 'push' || inputs.dry_run == false }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -64,6 +73,11 @@ jobs:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
+
+      # OIDC trusted publishing requires npm >= 11.5.1; Node 22's bundled
+      # npm is older. Pinned exactly — no floating tags in the release path.
+      - name: Pin npm CLI for trusted publishing
+        run: npm install -g npm@11.5.1
 
       - run: npm ci --ignore-scripts
 
@@ -83,30 +97,50 @@ jobs:
       - name: Install and exercise the packed artifact
         run: npm run test:packaged
 
-      # ── Bump patch version (in working tree, not committed yet) ──
-      - name: Bump patch version
+      # ── Resolve release version ──
+      # Tag push: tag pins the version (must be v1.0.x). Dispatch: bump patch.
+      - name: Resolve release version
         id: bump
         run: |
           OLD_VERSION=$(node -p "require('./package.json').version")
-          npm version patch --no-git-tag-version
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [[ ! "$TAG_VERSION" =~ ^1\.0\.[0-9]+$ ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} is not a v1.0.x release tag (patch-only scheme)"
+              exit 1
+            fi
+            npm version "$TAG_VERSION" --no-git-tag-version
+          else
+            npm version patch --no-git-tag-version
+          fi
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "old_version=${OLD_VERSION}" >> "$GITHUB_OUTPUT"
           echo "new_version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Bumped ${OLD_VERSION} → ${NEW_VERSION}"
+          echo "Resolved ${OLD_VERSION} → ${NEW_VERSION}"
+          if npm view "sigrank@${NEW_VERSION}" version >/dev/null 2>&1; then
+            echo "::error::sigrank@${NEW_VERSION} already exists on npm — aborting"
+            exit 1
+          fi
+
+      # ── Validate the exact tarball npm would publish ──
+      - name: Validate package (npm publish --dry-run)
+        run: npm publish --dry-run
 
       # ── Publish to npm FIRST (before git commit, so a failed publish
       #    doesn't leave a version bump in git that npm doesn't have) ──
-      - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish
+      # No NODE_AUTH_TOKEN: authentication is OIDC trusted publishing via
+      # id-token. --provenance attaches the supply-chain attestation.
+      - name: Publish to npm (OIDC trusted publishing)
+        if: env.REAL_PUBLISH == 'true'
+        run: npm publish --provenance
 
-      # ── Commit the version bump + push (only runs if publish succeeded) ──
+      # ── Commit the version bump + push (only runs on a real publish) ──
       # Rebases on latest main before pushing to avoid non-fast-forward rejection
       # when a concurrent push lands between checkout and this step. Without this,
       # the version commit is lost and package.json falls behind npm — which breaks
       # the app's cross-repo contract test (mcp-version-drift.test.mjs).
       - name: Sync server.json + manifest.json to new version
+        if: env.REAL_PUBLISH == 'true'
         run: |
           NEW_VERSION="${{ steps.bump.outputs.new_version }}"
           # Update server.json (MCP registry manifest)
@@ -121,6 +155,7 @@ jobs:
 
       # ── Push version bump via PR (main is protected, can't push directly) ──
       - name: Push version bump via PR
+        if: env.REAL_PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -157,6 +192,7 @@ jobs:
       # The server.json name (io.github.SunrisesIllNeverSee/sigrank-mcp) must match
       # the mcpName in package.json and the GitHub repo owner.
       - name: Install mcp-publisher (pinned v1.8.1 + checksum verified)
+        if: env.REAL_PUBLISH == 'true'
         run: |
           MCP_PUBLISHER_VERSION="v1.8.1"
           MCP_PUBLISHER_SHA256="a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
@@ -167,14 +203,24 @@ jobs:
           chmod +x mcp-publisher
 
       - name: Authenticate to MCP Registry (GitHub OIDC)
+        if: env.REAL_PUBLISH == 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Validate server.json
+        if: env.REAL_PUBLISH == 'true'
         run: ./mcp-publisher validate server.json
 
       - name: Publish to MCP Registry
+        if: env.REAL_PUBLISH == 'true'
         continue-on-error: true
         run: ./mcp-publisher publish server.json
+
+      - name: Dry-run summary
+        if: env.REAL_PUBLISH != 'true'
+        run: |
+          echo "DRY RUN complete — nothing was published."
+          echo "Version that WOULD release: ${{ steps.bump.outputs.new_version }}"
+          echo "Re-run this workflow with dry_run=false, or push tag v${{ steps.bump.outputs.new_version }}, to publish."
 
       # Version sync: sigrank-app checks npm daily at 07:00 UTC and auto-updates
       # its MCP_VERSION constant. No dispatch needed — the app pulls, we don't push.
