@@ -41,4 +41,30 @@ if (patch > 999) {
 
 const scheme = graduatedMatch ? "1.0" : "0.0 (legacy)";
 console.log(`✓ Version "${ver}" complies with ${scheme} ruleset.`);
+
+// Cross-file drift gate — every versioned surface must agree with
+// package.json. Added 2026-10-05 after package-lock drifted two releases
+// behind (release workflow bumped package.json but never staged the lock).
+import { readFileSync } from "node:fs";
+
+const read = (f) => JSON.parse(readFileSync(new URL(`../${f}`, import.meta.url), "utf8"));
+const lock = read("package-lock.json");
+const server = read("server.json");
+const manifest = read("manifest.json");
+
+const drift = [];
+if (lock.version !== ver) drift.push(`package-lock.json root version ${lock.version}`);
+if (lock.packages?.[""]?.version !== ver)
+  drift.push(`package-lock.json packages[""] version ${lock.packages?.[""]?.version}`);
+if (server.version !== ver) drift.push(`server.json version ${server.version}`);
+for (const [i, p] of (server.packages ?? []).entries())
+  if (p.version !== ver) drift.push(`server.json packages[${i}] version ${p.version}`);
+if (manifest.version !== ver) drift.push(`manifest.json version ${manifest.version}`);
+
+if (drift.length) {
+  console.error(`✗ Version drift — package.json is ${ver} but:`);
+  for (const d of drift) console.error(`    ${d}`);
+  process.exit(1);
+}
+console.log("✓ package.json / package-lock.json / server.json / manifest.json versions agree.");
 process.exit(0);
