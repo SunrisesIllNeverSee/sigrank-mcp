@@ -81,10 +81,10 @@
     "on-device"
   ],
   "dependencies": {
-    "token-cascade": "^0.2.1",
+    "token-cascade": "0.2.1",
     "ccusage": "^20.0.19",
     "tokscale": "^4.7.0",
-    "@modelcontextprotocol/server": "^2.3.0"
+    "@modelcontextprotocol/server": "2.3.0"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
