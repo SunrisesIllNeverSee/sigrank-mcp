@@ -22,7 +22,7 @@
  * Token-only — no transcript content.
  */
 
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { Server, ProtocolError, ProtocolErrorCode } from "@modelcontextprotocol/server";
 import { TOOLS, callTool } from "./tools.mjs";
 import { runCli } from "./cli.mjs";
@@ -64,8 +64,12 @@ function installMcpCrashHandlers() {
   });
 }
 
-async function startMcpServer() {
-  installMcpCrashHandlers();
+// One factory builds a server instance per connection. serveStdio owns the
+// era decision: a `server/discover` probe with the modern envelope pins the
+// connection to protocol revision 2026-07-28; an `initialize` opening serves
+// the 2025-era protocol unchanged (legacy: 'serve' — retained deliberately;
+// see docs/PROTOCOL-COMPATIBILITY.md). The same handlers back both eras.
+function buildServer() {
   const server = new Server(
     { name: "sigrank", version: serverVersion() },
     { capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false } } },
@@ -251,7 +255,15 @@ async function startMcpServer() {
     };
   });
 
-  await server.connect(new StdioServerTransport());
+  return server;
+}
+
+function startMcpServer() {
+  installMcpCrashHandlers();
+  serveStdio(() => buildServer(), {
+    onerror: (e) =>
+      process.stderr.write(`[sigrank-mcp] stdio transport: ${e.message}\n`),
+  });
 }
 
 // Route:
