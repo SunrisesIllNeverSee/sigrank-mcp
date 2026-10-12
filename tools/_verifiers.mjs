@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileAsync } from "./_helpers.mjs";
+import { TOKSCALE_SCAN_TIMEOUT_MS } from "../lib/constants.mjs";
 
 async function _ccusagePillars(platform = "claude") {
   try {
@@ -87,7 +88,11 @@ async function _tokenDashPillars() {
 async function _tokscalePillars(platform = "claude") {
   // Try the bundled tokscale CLI first (fresh data), fall back to saved report file.
   try {
-    const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+    const raw = await execFileAsync(
+      "tokscale",
+      ["models", "--json"],
+      TOKSCALE_SCAN_TIMEOUT_MS,
+    );
     const data = JSON.parse(raw);
     const entries = Array.isArray(data?.entries)
       ? data.entries

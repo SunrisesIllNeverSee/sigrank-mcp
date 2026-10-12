@@ -29,7 +29,11 @@ import { cascade, classify, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mj
 import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
 import { submitSignedWindow } from "../submit.mjs";
-import { LEADERBOARD_METRIC, TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
+import {
+  LEADERBOARD_METRIC,
+  TOKSCALE_CLIENT_MAP,
+  TOKSCALE_SCAN_TIMEOUT_MS,
+} from "../lib/constants.mjs";
 import { execFile } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import os from "os";
@@ -422,7 +426,11 @@ async function ccusagePillars(platform = "claude") {
 async function tokscalePillars(platform = "claude") {
   // Try the bundled tokscale CLI first (fresh data), fall back to saved report file.
   try {
-    const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+    const raw = await execFileAsync(
+      "tokscale",
+      ["models", "--json"],
+      TOKSCALE_SCAN_TIMEOUT_MS,
+    );
     const data = JSON.parse(raw);
     const entries = Array.isArray(data?.entries)
       ? data.entries

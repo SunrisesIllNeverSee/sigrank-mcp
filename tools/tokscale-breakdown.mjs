@@ -4,7 +4,10 @@
 
 import { execFileAsync } from "./_helpers.mjs";
 import { ANNOTATIONS } from "./_schemas.mjs";
-import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
+import {
+  TOKSCALE_CLIENT_MAP,
+  TOKSCALE_SCAN_TIMEOUT_MS,
+} from "../lib/constants.mjs";
 
 export const TOOL_DEF = {
   name: "tokscale_breakdown",
@@ -47,7 +50,11 @@ export const TOOL_DEF = {
  * Returns: { platform: [{ model, input, output, cacheRead, cacheCreate, pct }] }
  */
 export async function tokscaleModelBreakdown(threshold = 0.01) {
-  const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+  const raw = await execFileAsync(
+    "tokscale",
+    ["models", "--json"],
+    TOKSCALE_SCAN_TIMEOUT_MS,
+  );
   const data = JSON.parse(raw);
   const entries = Array.isArray(data?.entries)
     ? data.entries

@@ -22,7 +22,10 @@ import { join, dirname, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { ADAPTERS, walkFiles } from "./index.mjs";
-import { TOKSCALE_CLIENT_MAP } from "../lib/constants.mjs";
+import {
+  TOKSCALE_CLIENT_MAP,
+  TOKSCALE_SCAN_TIMEOUT_MS,
+} from "../lib/constants.mjs";
 
 const DAY_MS = 86_400_000;
 
@@ -516,7 +519,11 @@ async function _freshTokendash(platform = "claude") {
 // Now uses execFile (async) so the TUI stays responsive.
 async function _freshTokscale(platform = "claude") {
   try {
-    const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+    const raw = await execFileAsync(
+      "tokscale",
+      ["models", "--json"],
+      TOKSCALE_SCAN_TIMEOUT_MS,
+    );
     const data = JSON.parse(raw);
     const entries = Array.isArray(data?.entries)
       ? data.entries

@@ -12,6 +12,7 @@ import { buildFetch, DEFAULT_API_BASE, DEFAULT_FETCH_TIMEOUT } from "./_helpers.
 import {
   TOKSCALE_CLIENT_MAP,
   TOKSCALE_BLIND_PLATFORMS,
+  TOKSCALE_SCAN_TIMEOUT_MS,
 } from "../lib/constants.mjs";
 
 import { TOOL_DEF as rankPasteTool, handleRankPaste } from "./rank-paste.mjs";
@@ -83,7 +84,11 @@ export const TOOLS = [
 
 /** Run `tokscale models --json` and return the list of our platform names. */
 async function _tokscaleDetectClients() {
-  const raw = await execFileAsync("tokscale", ["models", "--json"], 60000);
+  const raw = await execFileAsync(
+    "tokscale",
+    ["models", "--json"],
+    TOKSCALE_SCAN_TIMEOUT_MS,
+  );
   const data = JSON.parse(raw);
   const entries = Array.isArray(data?.entries)
     ? data.entries

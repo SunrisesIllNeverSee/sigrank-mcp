@@ -1444,7 +1444,7 @@ function renderCompare(data) {
   const missing = [];
   if (!cc) missing.push("ccusage (npm i -g ccusage)");
   if (!td) missing.push("token-dashboard (~/.claude/token-dashboard.db)");
-  if (!ts) missing.push("tokscale (npm i -g tokscale)");
+  if (!ts) missing.push("tokscale (not installed, or scan timed out)");
   if (missing.length)
     for (const ln of wrapDim(`no data from: ${missing.join(" · ")}`)) emit(ln);
   emit();

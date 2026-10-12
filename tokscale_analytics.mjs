@@ -33,7 +33,10 @@ import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOKSCALE_CLIENT_MAP } from "./lib/constants.mjs";
+import {
+  TOKSCALE_CLIENT_MAP,
+  TOKSCALE_SCAN_TIMEOUT_MS,
+} from "./lib/constants.mjs";
 
 // Resolve local node_modules/.bin for the bundled tokscale binary.
 const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -61,13 +64,14 @@ function execFileAsync(cmd, args, timeoutMs) {
   });
 }
 
-// tokscale subcommand timeouts. `models` is fast (~5s); `graph` and `report`
-// walk every session log and can take ~30s on a heavy machine. 60s ceiling.
-const T_MODELS = 60_000;
-const T_MONTHLY = 60_000;
-const T_CLIENTS = 30_000;
-const T_GRAPH = 60_000;
-const T_REPORT = 60_000;
+// tokscale subcommand timeouts. `models`/`clients`/`graph`/`report` all walk the
+// session logs — on a heavy machine the scan runs ~55-60s and grows with log
+// volume, so they share TOKSCALE_SCAN_TIMEOUT_MS (was a flat 60s that flaked).
+const T_MODELS = TOKSCALE_SCAN_TIMEOUT_MS;
+const T_MONTHLY = TOKSCALE_SCAN_TIMEOUT_MS;
+const T_CLIENTS = TOKSCALE_SCAN_TIMEOUT_MS;
+const T_GRAPH = TOKSCALE_SCAN_TIMEOUT_MS;
+const T_REPORT = TOKSCALE_SCAN_TIMEOUT_MS;
 
 const HOME = os.homedir();
 
