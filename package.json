@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "1.0.45",
+  "version": "1.0.46",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "Upsilon measurement engine distributed through the sigrank CLI/MCP compatibility package, with SigRank public leaderboard tools.",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
@@ -82,8 +82,8 @@
   ],
   "dependencies": {
     "token-cascade": "0.2.1",
-    "ccusage": "^20.0.19",
-    "tokscale": "^4.7.0",
+    "ccusage": "20.0.30",
+    "tokscale": "4.18.0",
     "@modelcontextprotocol/server": "2.3.0"
   },
   "devDependencies": {

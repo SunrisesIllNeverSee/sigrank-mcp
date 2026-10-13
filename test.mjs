@@ -4,6 +4,7 @@
 import { cascade, parsePillars } from "./cascade.mjs";
 import { narrate } from "./narrate.mjs";
 import { callTool, TOOLS } from "./tools.mjs";
+import { validateApiBase } from "./tools/_helpers.mjs";
 import {
   tokenpull,
   tokenpullCodex,
@@ -1734,6 +1735,21 @@ assert.strictEqual(
   "invalid code → error status (no throw)",
 );
 assert.strictEqual(bad.reason, "code_invalid", "invalid-code reason surfaced");
+// hardening: MCP enroll refuses to re-bind an already-enrolled device; submit_verified needs confirm
+{
+  let hit = false;
+  const reOut = await callTool(
+    "enroll",
+    { code: "SIGR-AAAAA-BBBBB-CCCCC" },
+    { identity: { ...testIdentity, codename: "x", operator_id: "o" }, fetchImpl: async () => { hit = true; return { status: 500, json: async () => ({}) }; } },
+  );
+  assert.strictEqual(reOut.status, "already_enrolled", "enroll refuses when already enrolled");
+  assert.strictEqual(hit, false, "already-enrolled enroll makes no network call");
+  const noConfirm = await callTool("submit_verified", {}, { identity: { ...testIdentity, codename: "x", operator_id: "o" } });
+  assert.strictEqual(noConfirm.status, "confirmation_required", "submit_verified requires confirm:true");
+  assert.throws(() => validateApiBase("http://signalaf.com"), /https/, "validateApiBase rejects http for non-loopback");
+  assert.doesNotThrow(() => validateApiBase("http://localhost:3000"), "validateApiBase allows http loopback");
+}
 // empty code → throws at the tool boundary
 await assert.rejects(
   () => callTool("enroll", { code: "" }, { identity: testIdentity }),
@@ -1765,7 +1781,7 @@ const snapFetch = async (url, init) => {
 };
 const pub = await callTool(
   "submit_verified",
-  { window: "all" },
+  { window: "all", confirm: true },
   {
     apiBase: "http://test.local",
     fetchImpl: snapFetch,
@@ -1892,19 +1908,19 @@ const dedupOpts = {
   identity: dedupId,
   now: NOW,
 };
-const first = await callTool("submit_verified", { window: "all" }, dedupOpts);
+const first = await callTool("submit_verified", { window: "all", confirm: true }, dedupOpts);
 assert.strictEqual(dedupFetchCalls, 1, "first submit hits the network");
 assert.ok(first.windows[0].idempotencyKey, "first submit returns idempotencyKey");
 const firstHash = first.windows[0].snapshot_hash;
 // Second submit with identical data — should hit the dedup cache, NOT the network
-const second = await callTool("submit_verified", { window: "all" }, dedupOpts);
+const second = await callTool("submit_verified", { window: "all", confirm: true }, dedupOpts);
 assert.strictEqual(dedupFetchCalls, 1, "second submit is deduped (no network call)");
 assert.strictEqual(second.windows[0].idempotent, true, "second submit is marked idempotent");
 assert.strictEqual(second.windows[0].snapshot_hash, firstHash, "same snapshot_hash");
 // force: true bypasses the cache and re-POSTs
 const forced = await callTool(
   "submit_verified",
-  { window: "all" },
+  { window: "all", confirm: true },
   { ...dedupOpts, force: true },
 );
 assert.strictEqual(dedupFetchCalls, 2, "force:true bypasses dedup and hits the network");

@@ -564,7 +564,7 @@ async function _freshTokscale(platform = "claude") {
  *
  *   - ccusage  : `ccusage <platform> daily --json`              → 7d/30d/90d/all
  *   - tokendash: refresh + read ~/.claude/token-dashboard.db    → all (claude only)
- *   - tokscale : `bunx tokscale@latest models --json`           → all
+ *   - tokscale : `tokscale models --json` (bundled, pinned)     → all
  */
 export async function freshVerifierPillars(platform = "claude") {
   const p = platform || "claude";

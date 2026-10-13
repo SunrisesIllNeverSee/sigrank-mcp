@@ -61,7 +61,9 @@ export function persistIdentity(identity) {
   if (existsSync(PATH)) {
     try {
       const stamp = Date.now();
-      copyFileSync(PATH, join(DIR, `${BACKUP_PREFIX}${stamp}`));
+      const bakPath = join(DIR, `${BACKUP_PREFIX}${stamp}`);
+      copyFileSync(PATH, bakPath);
+      chmodSync(bakPath, 0o600);
       pruneBackups();
     } catch {
       /* best-effort — don't block the write */

@@ -311,6 +311,22 @@ export async function startProxy({
   };
 
   const server = http.createServer(async (req, res) => {
+    // DNS-rebinding / CSRF guard: only accept loopback Host headers on our own port, and
+    // refuse browser cross-site requests (Sec-Fetch-Site other than same-origin/none).
+    const hostHeader = String(req.headers.host || "");
+    const hm = /^(127\.0\.0\.1|localhost|\[::1\])(?::(\d+))?$/i.exec(hostHeader);
+    const boundPort = server.address()?.port;
+    const sfs = req.headers["sec-fetch-site"];
+    if (
+      !hm ||
+      (boundPort && Number(hm[2] || 80) !== boundPort) ||
+      (sfs !== undefined && sfs !== "same-origin" && sfs !== "none")
+    ) {
+      res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Forbidden\n");
+      req.resume();
+      return;
+    }
     let parsedUrl;
     try {
       parsedUrl = new URL(req.url || "/", `http://${req.headers.host || host}`);

@@ -95,7 +95,7 @@ sigrank submit
 sigrank submit --dry-run
 ```
 
-That's it. sigrank reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — only the four token counts leave your machine.
+That's it. sigrank reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — what leaves your machine is limited to the four token pillars plus the identifiers listed under [Privacy](#privacy).
 
 Or just explore without signing in:
 
@@ -314,7 +314,7 @@ Or if installed globally:
 | `self_improve`                        | `{text?}`                                                                        | One-click optimize: diagnoses, suggests, and simulates the best change in a single call                                                                                    |
 | `tokscale_breakdown(threshold?)`       | `{threshold?}`                                                                   | Per-model token breakdown across platforms (models under threshold → "other")                                                                                              |
 | `tokscale_market_share()`              | `{}`                                                                             | AI tool market share: each tool's % of tokens/cost/messages, ranked. From local tokscale data                                                                              |
-| `tokscale_developer_profile()`         | `{}`                                                                             | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspaces. Paths redacted                             |
+| `tokscale_developer_profile()`         | `{}`                                                                             | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspace count (no names). Paths redacted                             |
 | `tokscale_model_trends()`              | `{}`                                                                             | Model adoption over time: per-model first/last seen, active days, month-by-month adoption curve                                                                            |
 | `tokscale_cost_analysis()`             | `{}`                                                                             | Cost per developer per model: cost_per_million_tokens, cost_per_message, share_cost, client rollup                                                                        |
 | `tokscale_device_profile()`            | `{}`                                                                             | Device fingerprinting: installed tools, session counts, active days, day-of-week distribution, concurrency. Paths redacted                  |
@@ -405,6 +405,8 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 
 ## Privacy
 
+- **Exactly what leaves your machine (signed submit):** the four token pillars (input, output, cache create, cache read) per window, your codename, device id, device public key, ed25519 signature, agent version, platform, message/session counts, and the weekly report block. `enroll` additionally sends a device label, which defaults to `sigrank <version> · <platform>` (your hostname is never sent unless you set `SIGRANK_DEVICE_LABEL` or pass `device_label`). Never sent: prompts, responses, file paths, repo/project names, or environment variables.
+- **MCP safety rails.** The `enroll` tool refuses to re-bind a device that is already enrolled (re-enroll from the CLI), and `submit_verified` requires `confirm: true` to publish (not needed with `dry_run`). `tokscale_developer_profile` returns workspace counts only, never workspace or project names.
 - **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank SignalAF.
 - **Local by default.** `tokenpull` reads only the selected or detected adapter paths on your device (e.g. `~/.claude/projects` for Claude, `~/.codex` for Codex, plus additional paths for Amp, Devin, Gemini, Goose, and other supported platforms). Numbers stay on your machine unless you explicitly submit with a codename.
 - **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
@@ -417,7 +419,8 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 
 | Var                     | Default                | Description                  |
 | ----------------------- | ---------------------- | ---------------------------- |
-| `SIGRANK_API_BASE`      | `https://signalaf.com` | Override the board host      |
+| `SIGRANK_API_BASE`      | `https://signalaf.com` | Override the board host (https required; http only for loopback) |
+| `SIGRANK_DEVICE_LABEL`  | `sigrank <version> · <platform>` | Optional device label sent at enroll |
 | `SIGRANK_FETCH_TIMEOUT` | `10000`                | Board API fetch timeout (ms) |
 
 ---

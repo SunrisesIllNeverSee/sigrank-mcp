@@ -2904,7 +2904,7 @@ export async function runTui({
             didMulti = false;
           for (const p of platforms) {
             try {
-              const out = await callTool("submit_verified", { platform: p });
+              const out = await callTool("submit_verified", { platform: p, confirm: true });
               const ws = out.windows || [];
               const received = ws.filter((w) => w.status === "received");
               const verified = received.filter(
@@ -2924,6 +2924,7 @@ export async function runTui({
             try {
               const out = await callTool("submit_verified", {
                 platform: "multi",
+                confirm: true,
               });
               const ws = out.windows || [];
               const received = ws.filter((w) => w.status === "received");

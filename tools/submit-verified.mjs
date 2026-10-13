@@ -12,7 +12,7 @@ import { _computeReportBlock } from "./_report.mjs";
 export const TOOL_DEF = {
   name: "submit_verified",
   description:
-    "Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Pass dry_run:true to inspect the exact signed payload without publishing.",
+    "Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Publishing requires `confirm: true` (ask the user first); pass dry_run:true to inspect the exact signed payload without publishing and without confirm.",
   annotations: {
     title: "Submit verified score",
     ...ANNOTATIONS.destructiveHint,
@@ -33,6 +33,11 @@ export const TOOL_DEF = {
         description:
           "source platform (default: claude). 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active); empty windows are skipped.",
       },
+      confirm: {
+        type: "boolean",
+        description:
+          "REQUIRED to publish: must be true, set only after the user has explicitly approved submitting. Not needed with dry_run:true.",
+      },
       dry_run: {
         type: "boolean",
         description:
@@ -50,6 +55,13 @@ export async function handleSubmitVerified(args, ctx) {
     return {
       status: "not_enrolled",
       detail: "Run `npx sigrank-mcp enroll` to bind this device first.",
+    };
+  }
+  if (!args?.dry_run && args?.confirm !== true) {
+    return {
+      status: "confirmation_required",
+      detail:
+        "submit_verified publishes to the public board. Ask the user for approval, then call again with confirm: true (or use dry_run: true to preview).",
     };
   }
   const platform = args?.platform || "claude";

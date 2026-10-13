@@ -2,7 +2,6 @@
  * tools/enroll.mjs — enroll tool.
  */
 
-import os from "node:os";
 import { ensureIdentity, recordEnrollment } from "../identity/keystore.mjs";
 import { ENROLL_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/constants.mjs";
@@ -28,7 +27,7 @@ export const TOOL_DEF = {
       device_label: {
         type: "string",
         description:
-          "optional label for this device (default: hostname · agent version)",
+          "optional label for this device (default: sigrank <version> · <platform>; hostnames are never sent unless you pass a label yourself)",
       },
     },
     required: ["code"],
@@ -45,8 +44,23 @@ export async function handleEnroll(args, ctx) {
       "enroll requires a `code` — paste your connect code from signalaf.com → Settings → Connect a device.",
     );
   const id = ctx.opts.identity || ensureIdentity();
+  // Re-enroll guard: a model-invoked MCP call must never silently re-bind a device that
+  // already has an operator. The human CLI/TUI path sets opts.allowReenroll after its own
+  // explicit consent prompt.
+  if (id.codename && !ctx.opts.allowReenroll) {
+    return {
+      status: "already_enrolled",
+      codename: id.codename,
+      operator_id: id.operator_id ?? null,
+      device_id: id.device_id,
+      detail:
+        "This device is already enrolled. To re-enroll, run `npx sigrank enroll` in a terminal yourself; the MCP tool will not re-bind an enrolled device.",
+    };
+  }
   const deviceLabel = String(
-    args?.device_label || `${os.hostname()} · ${id.agent_version}`,
+    args?.device_label ||
+      process.env.SIGRANK_DEVICE_LABEL ||
+      `sigrank ${id.agent_version} · ${process.platform}`,
   ).slice(0, 120);
   const res = await ctx.doFetch(`${ctx.apiBase}/api/v1/devices/enroll`, {
     method: "POST",

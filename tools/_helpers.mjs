@@ -32,6 +32,8 @@ const ALLOWED_API_HOSTS = new Set([
   "sigeconomy.com",
   "localhost",
   "127.0.0.1",
+  "::1",
+  "[::1]",
   "test.local", // test fixtures only
 ]);
 
@@ -41,6 +43,10 @@ export function validateApiBase(urlStr) {
     const u = new URL(urlStr);
     if (!ALLOWED_API_HOSTS.has(u.hostname)) {
       throw new Error(`Blocked: API host '${u.hostname}' is not in the allowlist`);
+    }
+    const loopback = ["localhost", "127.0.0.1", "::1", "[::1]", "test.local"].includes(u.hostname);
+    if (u.protocol !== "https:" && !(loopback && u.protocol === "http:")) {
+      throw new Error(`Blocked: API base must use https (http only for loopback): ${u.protocol}//${u.hostname}`);
     }
     return urlStr;
   } catch (e) {

@@ -2,13 +2,15 @@
 
 ## What leaves your machine
 
-**Every submission path sends only four numbers:**
+**The usage content of every submission is four numbers:**
 - Input tokens
 - Output tokens
 - Cache create tokens
 - Cache read tokens
 
-That's the entire payload — no prompts, no code, no file contents, no conversation text. The MCP parses your input locally and sends only the four token counts to the server, which re-parses and re-scores them authoritatively.
+The signed path additionally carries: codename, device id, device public key, ed25519 signature, agent version, platform, message/session counts, and the weekly report block. `enroll` sends a device label (default `sigrank <version> · <platform>`; your hostname is not sent unless you set `SIGRANK_DEVICE_LABEL` or pass `device_label` yourself).
+
+Never sent: prompts, responses, code, file contents, file paths, repo or project names, or environment variables. The server re-parses and re-scores the pillars authoritatively.
 
 The optional `sigrank proxy` is a local Upsilon transport path to Anthropic/OpenAI, not a
 submission path to the SigRank leaderboard. When explicitly enabled, it necessarily receives and
@@ -32,8 +34,9 @@ only provider-reported token counts, model/backend metadata, and timestamps to
 - Your prompts or messages
 - Your code or file contents
 - Your tool calls or their results
-- Which AI platform you use (beyond token counts)
-- Your identity (only your chosen codename)
+- Your hostname (unless you opt in via a device label)
+- File paths, repo/project names, or environment variables
+- Your identity (only your chosen codename; the platform name, agent version, and message/session counts are sent)
 
 The local proxy process is different from the Upsilon service: if you opt in, it
 handles your provider traffic in memory solely to forward it to Anthropic or

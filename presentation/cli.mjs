@@ -1719,10 +1719,14 @@ async function runEnroll({ label } = {}) {
 
   let out;
   try {
-    out = await callTool("enroll", {
-      code,
-      device_label: typeof label === "string" ? label : undefined,
-    });
+    out = await callTool(
+      "enroll",
+      {
+        code,
+        device_label: typeof label === "string" ? label : undefined,
+      },
+      { allowReenroll: true }, // human at a TTY already consented above
+    );
   } catch (e) {
     writeln(red(`  ✗ ${e.message}`));
     process.exitCode = 1;
@@ -1778,6 +1782,7 @@ async function runSubmit({ platform = "claude", window } = {}) {
       platform,
       window: typeof window === "string" ? window : undefined,
       dry_run: process.argv.includes("--dry-run"),
+      confirm: true, // explicit CLI invocation is the confirmation
     });
   } catch (e) {
     writeln(red(`  ✗ ${e.message}`));

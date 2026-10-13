@@ -1099,6 +1099,8 @@ async function execCcusage(args) {
   if (existsSync(localEntrypoint)) {
     return execFileP(process.execPath, [localEntrypoint, ...args], options);
   }
+  // Fallback only: the bundled (pinned) ccusage above is preferred; this resolves "ccusage"
+  // from PATH when the bundled entrypoint is missing, so a PATH binary is trusted code here.
   return execFileP("ccusage", args, options);
 }
 
