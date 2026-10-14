@@ -20,7 +20,7 @@ export const TOOL_DEF = {
     properties: {
       tools: {
         type: "array",
-        description: "Per-tool profile with model mix, token pillars, session counts, workspaces",
+        description: "Per-tool profile with model mix, token pillars, session counts, workspace count",
       },
       summary: {
         type: "object",

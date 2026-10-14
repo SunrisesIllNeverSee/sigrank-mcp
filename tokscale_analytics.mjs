@@ -356,7 +356,6 @@ export async function tokscaleDeveloperProfile() {
       sessions_path_exists: c.sessions_path_exists ?? null,
       headless_supported: c.headless_supported ?? null,
       workspace_count: c.workspaces.size,
-      workspaces: [...c.workspaces].sort(),
       models: c.models,
     };
   });

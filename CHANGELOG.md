@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.46
+
+### Security / privacy
+
+* `enroll`: device label no longer defaults to the OS hostname; default is `sigrank <version> · <platform>` (opt-in override: `device_label` arg or `SIGRANK_DEVICE_LABEL`)
+* `enroll` (MCP): refuses to re-bind an already-enrolled device; re-enroll from the CLI
+* `submit_verified`: requires `confirm: true` to publish (not for `dry_run`); CLI/TUI pass it after their own consent
+* `tokscale_developer_profile`: returns `workspace_count` only, no workspace/project names
+* `validateApiBase`: https required except loopback hosts
+* Pinned `ccusage` 20.0.30 and `tokscale` 4.18.0 exactly; removed stale `tokscale@latest` comment
+* Proxy: rejects non-loopback Host headers and cross-site browser requests (403)
+* Keystore: identity backups chmod 0600
+* README / privacy-model corrected to list exactly what leaves the machine
+
 ## [1.0.44](https://github.com/SunrisesIllNeverSee/sigrank-mcp/releases/tag/v1.0.44) (2026-10-05)
 
 ### Features

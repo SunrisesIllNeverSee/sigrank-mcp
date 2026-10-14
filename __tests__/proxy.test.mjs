@@ -517,16 +517,16 @@ export async function runProxyTests() {
       req.end(JSON.stringify({ model: "claude-3", messages: [] }));
     });
 
-    // The request should reach the CONFIGURED upstream (loopback), proving
-    // the absolute-form host was ignored. Credentials were NOT sent to
-    // attacker.example — they went to the configured upstream only.
+    // A non-loopback Host header is now rejected outright (DNS-rebinding guard):
+    // 403, and nothing is forwarded anywhere, so credentials cannot leak.
+    assert.strictEqual(res.status, 403, "proxy must reject non-loopback Host with 403");
     assert.strictEqual(
       configuredUpstreamHit,
-      true,
-      "proxy must forward to the configured upstream, not the absolute-form host",
+      false,
+      "proxy must not forward a request carrying a non-loopback Host",
     );
 
-    console.log("✓ proxy: absolute-form request target ignored, credentials sent to configured upstream only");
+    console.log("✓ proxy: absolute-form request target ignored, non-loopback Host rejected with 403");
   } finally {
     if (proxy) await proxy.close().catch(() => {});
     if (configuredUpstream.listening) await closeServer(configuredUpstream).catch(() => {});
