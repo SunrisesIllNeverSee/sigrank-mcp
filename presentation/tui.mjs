@@ -19,7 +19,7 @@ import { freshVerifierPillars } from "../tokenpull.mjs";
 import { isSignedIn, isCodeChar } from "../connect.mjs";
 import { loadIdentity, clearIdentity } from "../keystore.mjs";
 import { execFile } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { pathToFileURL } from "node:url";
@@ -407,7 +407,7 @@ function sparkline(values) {
 // (tools.mjs keeps its own `_ccusagePillars`/`_tokscalePillars`/`_tokenDashPillars` —
 // still used by the `tokenpull_compare` MCP tool.)
 
-async function loadDashboardData({ includeOmp = false } = {}) {
+async function loadDashboardData({ includeOmp = false, onPrimary } = {}) {
   const boardPromise = Promise.race([
     fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=${LEADERBOARD_METRIC}`, {
       headers: { accept: "application/json" },
@@ -439,6 +439,16 @@ async function loadDashboardData({ includeOmp = false } = {}) {
   const active = await pullActivePlatforms({ platforms: ["claude"] }).catch(
     () => [],
   );
+  // PERF: hand the primary platform to the TUI the moment it lands, so Trends (and the cascade)
+  // can paint without waiting on the board/batched fetches (up to 5s each) below. The batched
+  // "all" override further down mutates these same objects in place.
+  if (active.length) {
+    try {
+      await onPrimary?.(active);
+    } catch {
+      /* paint hook is best-effort */
+    }
+  }
 
   const boardData = await boardPromise;
   const batchedData = await batchedPromise;
@@ -564,6 +574,87 @@ async function loadCompareData(platform = "claude") {
     td: fresh.tokendash,
     platform,
   };
+}
+
+// PERF (2026-10-15): Compare cache. The fresh verifier pull above takes seconds to minutes, so
+// the Compare tab shows the LAST SUCCESSFUL result for the platform immediately (with a dim
+// "updated Ns ago · refreshing…" note) and refreshes in the background. Kept in memory for the
+// session and mirrored to ~/.sigrank-mcp/compare-cache.json (dir 0700, file 0600 — same
+// conventions as identity/keystore.mjs) so a fresh launch also paints instantly. Only the
+// aggregated pillar numbers already shown on screen are stored. Never consulted off the TUI.
+const COMPARE_CACHE_PATH = () =>
+  path.join(os.homedir(), ".sigrank-mcp", "compare-cache.json");
+let _compareCache = null; // { [platform]: { at: epochMs, data } }
+
+function _compareCacheAll() {
+  if (_compareCache) return _compareCache;
+  _compareCache = {};
+  try {
+    const raw = JSON.parse(readFileSync(COMPARE_CACHE_PATH(), "utf-8"));
+    if (raw && typeof raw === "object" && raw.v === 1 && raw.platforms) {
+      for (const [p, e] of Object.entries(raw.platforms)) {
+        if (e && Number.isFinite(e.at) && e.data && typeof e.data === "object")
+          _compareCache[p] = { at: e.at, data: { ...e.data, platform: p } };
+      }
+    }
+  } catch {
+    /* absent / corrupt cache → start empty */
+  }
+  return _compareCache;
+}
+
+function getCachedCompare(platform) {
+  return _compareCacheAll()[platform] ?? null;
+}
+
+// A result is worth caching only if at least one source produced data.
+function _compareHasData(d) {
+  return !!(d && ((d.tpData?.windows?.length ?? 0) > 0 || d.cc || d.ts || d.td));
+}
+
+function putCachedCompare(platform, data) {
+  if (!_compareHasData(data)) return;
+  const all = _compareCacheAll();
+  // Keep only what renderCompare reads: per-window pillars from each source.
+  const slim = {
+    tpData: data.tpData
+      ? {
+          windows: (data.tpData.windows ?? []).map((w) => ({
+            window: w.window,
+            pillars: w.pillars,
+          })),
+        }
+      : null,
+    cc: data.cc ?? null,
+    ts: data.ts ?? null,
+    td: data.td ?? null,
+    platform,
+  };
+  all[platform] = { at: Date.now(), data: slim };
+  try {
+    const dir = path.dirname(COMPARE_CACHE_PATH());
+    mkdirSync(dir, { recursive: true });
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      /* best-effort */
+    }
+    const tmp = `${COMPARE_CACHE_PATH()}.tmp-${process.pid}`;
+    writeFileSync(tmp, JSON.stringify({ v: 1, platforms: all }), { mode: 0o600 });
+    renameSync(tmp, COMPARE_CACHE_PATH());
+  } catch {
+    /* disk cache is best-effort — the in-memory cache still works */
+  }
+}
+
+function fmtAgo(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
 }
 
 // #8 (2026-06-27): the Board tab shows ALL SUBMISSIONS ranked (raw submission rows), not operator
@@ -1603,6 +1694,11 @@ function renderTrends(data, subIdx = 0) {
   emit(
     `  ${bold("Trends")}  ${dim("every metric across windows (7d → all)")}    ${subBar}`,
   );
+  // PERF: Trends paints as soon as ANY platform is in (claude lands first); say so while the
+  // rest of the progressive scan is still filling dashData.active.
+  if (data?._loading && active?.length) {
+    emit(`  ${dim(`more platforms loading… (${active.length} in so far)`)}`);
+  }
   emit(`  ${dim("·".repeat(Math.min(W() - 4, 70)))}`);
   emit();
 
@@ -1762,6 +1858,16 @@ function renderCompare(data) {
   emit(
     `  ${bold("Source Comparison")}  ${dim(`platform: ${platform}`)}  ${dim(`·  ${sourceList}`)}`,
   );
+  // PERF: cached result → say how old it is and whether a refresh is in flight.
+  if (data?._cachedAt) {
+    const ago = fmtAgo(Date.now() - data._cachedAt);
+    const tail = data._refreshing
+      ? "refreshing…"
+      : data._refreshFailed
+        ? "refresh failed · [R] retries"
+        : "[R] refreshes";
+    emit(`  ${dim(`updated ${ago} · ${tail}`)}`);
+  }
 
   if (tpData) {
     const all = tpPillars["all"];
@@ -3030,6 +3136,69 @@ export async function runTui({
     flushScreen();
   };
 
+  // ── Compare loader (PERF 2026-10-15). Cached result for the platform → paint it at once with an
+  // "updated Ns ago · refreshing…" note and refresh in the background; no cache → the original
+  // animated "pulling fresh sources…" spinner. A newer request (platform switch, [R]) supersedes
+  // an older in-flight one: stale results are cached but never painted over the newer view.
+  let compareReq = 0;
+  let compareAgoTimer = null;
+  let compareInflight = null; // platform of the newest in-flight pull, or null
+  const openCompare = async (label = "pulling fresh sources…") => {
+    const req = ++compareReq;
+    const plat = platform;
+    const cached = getCachedCompare(plat);
+    compareInflight = plat;
+    let spinTimer = null;
+    if (compareAgoTimer) clearInterval(compareAgoTimer);
+    compareAgoTimer = null;
+    if (cached) {
+      compareData = { ...cached.data, _cachedAt: cached.at, _refreshing: true };
+      await redraw();
+      // keep the "updated Ns ago" note honest while the refresh runs
+      compareAgoTimer = setInterval(() => {
+        if (activeTab === 2 && req === compareReq && compareData?._refreshing)
+          redraw().catch(() => {});
+      }, 1000);
+    } else {
+      compareData = null;
+      await redraw(); // show the spinner line before the (slow) fresh pull
+      // Animated spinner with elapsed timer — the fresh verifier pull takes
+      // 5-20s+ (ccusage CLI scans 1,700+ JSONL files). Without animation the
+      // user sees a frozen "pulling fresh sources…" line and thinks it hung.
+      const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+      const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
+      const pullStart = Date.now();
+      let spinIdx = 0;
+      spinTimer = setInterval(() => {
+        if (activeTab !== 2 || req !== compareReq) return; // switched away — don't repaint
+        const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
+        const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
+        const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
+        spinIdx++;
+        // Repaint just the spinner line in-place (line 4 of the frame)
+        process.stdout.write(
+          GOTO(4, 1) + ERLINE +
+          `  ${gold(spin)} ${dim(label)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
+        );
+      }, 200);
+    }
+    const result = await loadCompareData(plat).catch(() => null);
+    if (spinTimer) clearInterval(spinTimer);
+    if (_compareHasData(result)) putCachedCompare(plat, result);
+    if (req !== compareReq) return; // superseded by a newer Compare request
+    compareInflight = null;
+    if (compareAgoTimer) clearInterval(compareAgoTimer);
+    compareAgoTimer = null;
+    if (_compareHasData(result) || !cached) {
+      compareData = result;
+      status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
+    } else {
+      // Refresh came back empty/failed — keep showing the cached result, flagged as such.
+      compareData = { ...cached.data, _cachedAt: cached.at, _refreshFailed: true };
+    }
+    if (activeTab === 2) await redraw();
+  };
+
   // ── Initial data load
   const loadAll = async () => {
     // A2 (2026-06-27): paint the frame + a clear "reading your cascade…" status IMMEDIATELY,
@@ -3057,7 +3226,16 @@ export async function runTui({
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
     // the remaining ALL_PLATFORMS entries in the background + redraw. The user sees their cascade
     // within ~1 read instead of a 7s blank "loading dashboard…".
-    dashData = await loadDashboardData({ includeOmp: ompEnabled }).catch((e) => {
+    const placeholder = dashData;
+    dashData = await loadDashboardData({
+      includeOmp: ompEnabled,
+      onPrimary: async (primary) => {
+        // Still the placeholder from this loadAll? Paint claude now (Trends + cascade).
+        if (dashData !== placeholder) return;
+        placeholder.active = primary;
+        await redraw();
+      },
+    }).catch((e) => {
       status = `dashboard error: ${e.message}`;
       return null;
     });
@@ -3556,35 +3734,15 @@ export async function runTui({
       // ASYNC FIX (2026-06-27): with execFile (async), the event loop keeps running during the
       // pull — key presses are NOT blocked. Guard: only render the result if the user is still
       // on the Compare tab (they may have switched away during the pull).
-      if (switched && activeTab === 2 && !compareData) {
+      if (switched && activeTab === 2 && (!compareData || compareData.platform !== platform)) {
         submitMsg = "";
-        await redraw(); // show the spinner line before the (slow) fresh pull
-        // Animated spinner with elapsed timer — the fresh verifier pull takes
-        // 5-20s (ccusage CLI scans 1,700+ JSONL files). Without animation the
-        // user sees a frozen "pulling fresh sources…" line and thinks it hung.
-        const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
-        const pullStart = Date.now();
-        let spinIdx = 0;
-        const spinTimer = setInterval(() => {
-          if (activeTab !== 2) return; // user switched away — don't repaint
-          const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
-          const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
-          const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
-          spinIdx++;
-          // Repaint just the spinner line in-place (line 4 of the frame)
-          process.stdout.write(
-            GOTO(4, 1) + ERLINE +
-            `  ${gold(spin)} ${dim(`pulling fresh sources…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
-          );
-        }, 200);
-        const result = await loadCompareData(platform).catch(() => null);
-        clearInterval(spinTimer);
-        if (activeTab === 2) {
-          // still on Compare? render the result
-          compareData = result;
+        // Left and came back mid-pull? Re-show its view instead of starting a second scan.
+        if (compareInflight === platform) {
           await redraw();
+          return;
         }
+        // Not awaited: the background refresh must not block key handling.
+        openCompare().catch(() => {});
         return;
       }
 
@@ -3632,34 +3790,10 @@ export async function runTui({
           // Compare: real platforms only (no 'all' — Compare is per-platform by design).
           const idx = CYCLE_PLATFORMS.indexOf(platform);
           platform = CYCLE_PLATFORMS[(idx + 1) % CYCLE_PLATFORMS.length];
-          // #9: clearing compareData makes redraw show the "pulling fresh sources…" spinner
-          // for the new platform while the fresh on-demand verifier pull runs.
-          compareData = null;
           status = `loading ${platform}…`;
-          await redraw();
-          // Animated spinner (same as the initial Compare load — see above)
-          const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-          const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
-          const pullStart = Date.now();
-          let spinIdx = 0;
-          const spinTimer = setInterval(() => {
-            if (activeTab !== 2) return;
-            const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
-            const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
-            const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
-            spinIdx++;
-            process.stdout.write(
-              GOTO(4, 1) + ERLINE +
-              `  ${gold(spin)} ${dim(`pulling ${platform}…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
-            );
-          }, 200);
-          // ASYNC FIX: guard — only render if still on Compare (user may have switched away)
-          const result = await loadCompareData(platform).catch(() => null);
-          clearInterval(spinTimer);
-          if (activeTab === 2) {
-            compareData = result;
-            status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
-          }
+          // Cached → instant paint + background refresh; else the spinner for the new platform.
+          openCompare(`pulling ${platform}…`).catch(() => {});
+          return;
         } else {
           // A5: Watch [P] cycles 'all' → claude → codex → … → 'all' (optional focus; default 'all').
           const WATCH_PLAT_CYCLE = ["all", ...CYCLE_PLATFORMS];
@@ -3723,15 +3857,8 @@ export async function runTui({
         // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
         // (loadAll no longer touches Compare). Clearing compareData shows the spinner first.
         if (activeTab === 2) {
-          compareData = null;
-          await redraw();
-          // ASYNC FIX: guard — only render if still on Compare
-          const result = await loadCompareData(platform).catch(() => null);
-          if (activeTab === 2) {
-            compareData = result;
-            status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
-            await redraw();
-          }
+          // [R] forces a fresh pull. Any cached result stays on screen, marked "refreshing…".
+          openCompare().catch(() => {});
           return;
         }
         await redraw();
