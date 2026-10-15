@@ -1693,7 +1693,8 @@ function renderCompare(data) {
   ];
   if (srcStatus.some((x) => !x.ok)) {
     // Short terminals: one line (names only) so the comparison table keeps its rows.
-    if (budget - used < 16) {
+    // Uses the real height — Compare's `budget` is floored at 40 on purpose.
+    if (H() - 4 - used < 16) {
       emit(
         `  ${dim("sources:")} ${srcStatus.map((x) => `${x.ok ? green("✓") : paint(c.red, "✗")} ${x.ok ? x.name : dim(x.name)}`).join("  ")}`,
       );
