@@ -1621,14 +1621,19 @@ function renderCompare(data) {
   const platform = data?.platform ?? "claude";
   const WINS = ["7d", "30d", "90d", "all"];
   const w = W();
-  // Compare tab needs more vertical space — 4 sources × 4 pillars = 16 rows
-  // + headers + cascade metrics. Use full terminal height (not H()-4) and
-  // fall back to a generous fixed minimum when rows is undefined (--render mode).
-  const budget = Math.max(H() - 2, 40);
+  // Real height (tab bar + footer = 4 rows). The old 40-row floor rendered rows
+  // the frame then clipped, which the layout audit flags as silently dropped.
+  // When content runs out of room the last row says so instead.
+  const budget = Math.max(6, H() - 4);
   let used = 0;
+  let clipped = false;
   const emit = (s = "") => {
-    if (used < budget) {
+    if (used < budget - 1) {
       writeln(s);
+      used++;
+    } else if (!clipped) {
+      clipped = true;
+      writeln(`  ${dim("▾ more below — make the window taller to see")}`);
       used++;
     }
   };
@@ -1693,8 +1698,7 @@ function renderCompare(data) {
   ];
   if (srcStatus.some((x) => !x.ok)) {
     // Short terminals: one line (names only) so the comparison table keeps its rows.
-    // Uses the real height — Compare's `budget` is floored at 40 on purpose.
-    if (H() - 4 - used < 16) {
+    if (budget - used < 16) {
       emit(
         `  ${dim("sources:")} ${srcStatus.map((x) => `${x.ok ? green("✓") : paint(c.red, "✗")} ${x.ok ? x.name : dim(x.name)}`).join("  ")}`,
       );
