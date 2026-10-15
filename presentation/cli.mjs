@@ -30,6 +30,11 @@ import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
 import { submitSignedWindow } from "../submit.mjs";
 import {
+  normalizeSource,
+  otelBaseUrl,
+  OTEL_SOURCE_TAG,
+} from "../adapters/otel.mjs";
+import {
   LEADERBOARD_METRIC,
   TOKSCALE_CLIENT_MAP,
   TOKSCALE_SCAN_TIMEOUT_MS,
@@ -811,11 +816,23 @@ export async function detectActivePulls(platform, opts = {}) {
   return pullActivePlatforms({ platforms: scoped }, opts).catch(() => []);
 }
 
+// Per-platform source marker for the watch grid (claude only can be otel-backed).
+function watchSourceNote(d) {
+  if (d.source === OTEL_SOURCE_TAG) return "  " + green("source: otel (live)");
+  if (d.platform === "claude" && d.source === "transcripts")
+    return (
+      "  " +
+      dim(`source: transcripts${d.otelFallback ? " (otel unreachable)" : ""}`)
+    );
+  return "";
+}
+
 async function runWatch({
   platform,
   window: win,
   refresh = 30,
   submit = false,
+  source = "auto",
 } = {}) {
   let lines = 0;
   const id = submit ? ensureIdentity() : null;
@@ -840,7 +857,7 @@ async function runWatch({
   const draw = async () => {
     // Re-pull each tick so a platform that just started writing logs appears automatically.
     // Scoped by platFilter, so a focused watch never scans platforms it cannot display.
-    const pulls = await detectActivePulls(platFilter);
+    const pulls = await detectActivePulls(platFilter, { source });
 
     if (lines > 0) write(CURSOR_UP(lines));
 
@@ -852,13 +869,34 @@ async function runWatch({
     const scopeLabel =
       (platFilter || "all active platforms") +
       "  ·  " +
-      (winFilter ? `window: ${winFilter}` : "all windows");
+      (winFilter ? `window: ${winFilter}` : "all windows") +
+      "  ·  " +
+      `source: ${source}`;
 
     push();
     push(
       `  ${gold("⊙ SigRank")} ${bold("Watch")}  ${dim(`${scopeLabel}  ·  ${ts}`)}`,
     );
     push(`  ${dim("─".repeat(w - 4))}`);
+
+    // --source otel with the collector down: claude drops out of the grid (the pull
+    // throws instead of silently falling back) — say so instead of showing nothing.
+    if (
+      source === "otel" &&
+      (!platFilter || platFilter === "claude") &&
+      !pulls.some((d) => d.platform === "claude")
+    ) {
+      let url = "(invalid SIGRANK_OTEL_URL)";
+      try {
+        url = otelBaseUrl();
+      } catch {
+        /* keep placeholder */
+      }
+      push();
+      push(
+        `  ${red(`source otel: sigrank-otel collector unreachable at ${url}`)} ${dim("— start it or use --source auto")}`,
+      );
+    }
 
     if (pulls.length === 0) {
       push();
@@ -873,7 +911,9 @@ async function runWatch({
       const byWin = {};
       for (const ww of d.windows || []) byWin[ww.window] = ww;
       push();
-      push(`  ${cyan(plat)}${d.estimated ? dim(" (est)") : ""}`);
+      push(
+        `  ${cyan(plat)}${d.estimated ? dim(" (est)") : ""}${watchSourceNote(d)}`,
+      );
       for (const wk of windows) {
         const ww = byWin[wk];
         const cas = ww ? cascadeFromPillars(ww.pillars) : null;
@@ -1618,6 +1658,9 @@ async function showHelp() {
   writeln(`    ${dim("--refresh")}   poll interval in seconds (default: 30)`);
   writeln(`    ${dim("--once")}      print once and exit (board only)`);
   writeln(`    ${dim("--port")}      proxy port (default: 8787)`);
+  writeln(
+    `    ${dim("--source")}    auto · otel · transcripts  (watch/submit; default auto = sigrank-otel collector if running)`,
+  );
   writeln();
   writeln(`  ${bold("For AI clients (not typeable)")}`);
   writeln(
@@ -1761,7 +1804,7 @@ async function runEnroll({ label } = {}) {
 }
 
 // ── submit: publish your verified (signed) runs to the board (D7 §5/§8) ─────────
-async function runSubmit({ platform = "claude", window } = {}) {
+async function runSubmit({ platform = "claude", window, source = "auto" } = {}) {
   const id = ensureIdentity();
   if (!id.codename || !id.operator_id) {
     writeln(
@@ -1783,6 +1826,7 @@ async function runSubmit({ platform = "claude", window } = {}) {
       window: typeof window === "string" ? window : undefined,
       dry_run: process.argv.includes("--dry-run"),
       confirm: true, // explicit CLI invocation is the confirmation
+      source,
     });
   } catch (e) {
     writeln(red(`  ✗ ${e.message}`));
@@ -1795,6 +1839,17 @@ async function runSubmit({ platform = "claude", window } = {}) {
     return;
   }
 
+  if (out.source) {
+    writeln(
+      `  ${dim("pillars from")} ${
+        out.source === OTEL_SOURCE_TAG
+          ? green("source: otel (live)")
+          : dim(
+              `source: transcripts${out.otel_fallback ? " (otel unreachable)" : ""}`,
+            )
+      }`,
+    );
+  }
   writeln();
   let anyRanked = false;
   let anyReceivedNotRanked = false;
@@ -1851,6 +1906,7 @@ export async function runCli(argv) {
     "cache-read",
     "combined-input",
     "port",
+    "source",
   ]);
   const flags = {};
   for (let i = 1; i < args.length; i++) {
@@ -1905,6 +1961,7 @@ export async function runCli(argv) {
         window: typeof flags.window === "string" ? flags.window : undefined,
         refresh: Number(flags.refresh) || 30,
         submit: flags.submit === true || flags.submit === "true",
+        source: normalizeSource(flags.source),
       });
     } else if (cmd === "proxy") {
       await runProxy({ port: flags.port ?? 8787 });
@@ -1919,6 +1976,7 @@ export async function runCli(argv) {
       await runSubmit({
         platform: flags.platform ?? "claude",
         window: flags.window,
+        source: normalizeSource(flags.source),
       });
     } else if (cmd === "--help" || cmd === "-h" || cmd === "help") {
       await showHelp();

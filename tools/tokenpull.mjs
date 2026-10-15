@@ -106,6 +106,8 @@ export async function handleTokenpull(args, ctx) {
     estimated: pulled.estimated || false,
     ...(pulled.ioRatio ? { ioRatio: pulled.ioRatio } : {}),
     generatedAt: pulled.generatedAt,
+    ...(pulled.source ? { source: pulled.source } : {}),
+    ...(pulled.otelFallback ? { otel_fallback: pulled.otelFallback } : {}),
     files: pulled.files,
     totalMessages: pulled.totalMessages,
     windows,

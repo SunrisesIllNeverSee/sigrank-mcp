@@ -8,6 +8,7 @@ import { submitSignedWindow } from "../submit/index.mjs";
 import { SUBMIT_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
 import { pullByPlatform, WINDOW_TYPE } from "./_helpers.mjs";
 import { _computeReportBlock } from "./_report.mjs";
+import { normalizeSource } from "../adapters/otel.mjs";
 
 export const TOOL_DEF = {
   name: "submit_verified",
@@ -32,6 +33,12 @@ export const TOOL_DEF = {
         enum: [...ALL_PLATFORMS, "multi"],
         description:
           "source platform (default: claude). 'multi' = combined cascade summed across all locally-detected platforms (needs 2+ active); empty windows are skipped.",
+      },
+      source: {
+        type: "string",
+        enum: ["auto", "otel", "transcripts"],
+        description:
+          "pillar source for claude (default: auto). auto = live sigrank-otel collector (127.0.0.1:4318 / SIGRANK_OTEL_URL) when reachable, else local transcripts; otel = collector required; transcripts = never probe. Other platforms always read transcripts.",
       },
       confirm: {
         type: "boolean",
@@ -65,6 +72,8 @@ export async function handleSubmitVerified(args, ctx) {
     };
   }
   const platform = args?.platform || "claude";
+  const source = normalizeSource(args?.source ?? ctx.opts.source);
+  const pullOpts = { ...ctx.opts, source };
 
   // MULTI: the combined cross-platform cascade. The dashboard already SUMS every
   // active platform's pillars (a "claude+codex" row) but never submitted it — this
@@ -74,7 +83,7 @@ export async function handleSubmitVerified(args, ctx) {
   if (platform === "multi") {
     const detected = [];
     for (const p of ALL_PLATFORMS) {
-      const r = await pullByPlatform(p, ctx.opts).catch(() => null);
+      const r = await pullByPlatform(p, pullOpts).catch(() => null);
       const live =
         r &&
         (r.windows || []).some(
@@ -133,11 +142,12 @@ export async function handleSubmitVerified(args, ctx) {
       codename: id.codename,
       operator_id: id.operator_id,
       sources: detected.map((d) => d.platform),
+      source: detected.some((d) => d.source === "otel-cc") ? "otel-cc" : "transcripts",
       windows: out,
     };
   }
 
-  const pulled = await pullByPlatform(platform, ctx.opts);
+  const pulled = await pullByPlatform(platform, pullOpts);
   const targets = args?.window
     ? pulled.windows.filter((w) => w.window === args.window)
     : pulled.windows;
@@ -162,6 +172,8 @@ export async function handleSubmitVerified(args, ctx) {
     codename: id.codename,
     operator_id: id.operator_id,
     generatedAt: pulled.generatedAt,
+    source: pulled.source,
+    ...(pulled.otelFallback ? { otel_fallback: pulled.otelFallback } : {}),
     windows: out,
   };
 }

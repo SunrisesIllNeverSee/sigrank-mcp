@@ -306,6 +306,11 @@ export const SUBMIT_OUTPUT = {
       type: "string",
       description: "Error or skip reason if status is not ok",
     },
+    source: {
+      type: "string",
+      description:
+        "Where the submitted pillars came from: 'otel-cc' (live sigrank-otel collector) or 'transcripts'",
+    },
   },
 };
 
@@ -335,6 +340,19 @@ export const TOKENPULL_OUTPUT = {
     cascade: CASCADE_OUTPUT,
     card: { type: "string", description: "Deterministic prose summary" },
     generatedAt: { type: "string", description: "ISO timestamp of the pull" },
+    source: {
+      type: "string",
+      description:
+        "Where the pillars came from: 'otel-cc' (live sigrank-otel collector) or 'transcripts' (local session logs)",
+    },
+    source_marker: {
+      type: ["string", "null"],
+      description: "Human marker, e.g. 'source: otel (live)'",
+    },
+    otel_fallback: {
+      type: "string",
+      description: "Present when source=auto fell back to transcripts — why the collector was not used",
+    },
     poll_interval_s: {
       type: "number",
       description: "Advisory poll cadence echoed back (does not make the call block)",

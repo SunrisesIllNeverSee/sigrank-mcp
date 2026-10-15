@@ -15,7 +15,7 @@
 import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
 import { ALL_PLATFORMS } from "../adapters.mjs";
 import { cascade, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mjs";
-import { freshVerifierPillars } from "../tokenpull.mjs";
+import { freshVerifierPillars, pullWithSource, OTEL_SOURCE_TAG } from "../tokenpull.mjs";
 import { isSignedIn, isCodeChar } from "../connect.mjs";
 import { loadIdentity, clearIdentity } from "../keystore.mjs";
 import { execFile } from "child_process";
@@ -2295,8 +2295,12 @@ async function loadWatchData(platform = "all", win = "all-windows") {
   const winFilter = win && win !== "all-windows" ? win : null;
   // Detect active platforms (any window with input+output > 0), respecting an optional [P] focus.
   const candidates = platFilter ? [platFilter] : ALL_PLATFORMS;
+  // source auto: claude reads the live sigrank-otel collector when it answers the
+  // ≤300 ms probe, else the transcripts (same rule as `sigrank watch`).
   const settled = await Promise.allSettled(
-    candidates.map((p) => tokenpullAny(p)),
+    candidates.map((p) =>
+      pullWithSource(p, { source: "auto" }, () => tokenpullAny(p)),
+    ),
   );
   const active = [];
   for (const r of settled) {
@@ -2352,7 +2356,13 @@ function renderWatchData(data) {
     const byWin = {};
     for (const ww of d.windows || []) byWin[ww.window] = ww;
     emit();
-    emit(`  ${cyan(d.platform)}${d.estimated ? dim(" (est)") : ""}`);
+    const srcNote =
+      d.source === OTEL_SOURCE_TAG
+        ? "  " + green("source: otel (live)")
+        : d.platform === "claude"
+          ? "  " + dim("source: transcripts")
+          : "";
+    emit(`  ${cyan(d.platform)}${d.estimated ? dim(" (est)") : ""}${srcNote}`);
     for (const wk of WINS) {
       if (used >= budget - 1) break;
       const ww = byWin[wk];
@@ -3240,7 +3250,13 @@ export async function runTui({
             didMulti = false;
           for (const p of platforms) {
             try {
-              const out = await callTool("submit_verified", { platform: p, confirm: true });
+              // source: transcripts — the preview above was built from the transcript
+              // dashboard; submitting collector numbers would break see→confirm→send.
+              const out = await callTool("submit_verified", {
+                platform: p,
+                confirm: true,
+                source: "transcripts",
+              });
               const ws = out.windows || [];
               const received = ws.filter((w) => w.status === "received");
               const verified = received.filter(
@@ -3261,6 +3277,7 @@ export async function runTui({
               const out = await callTool("submit_verified", {
                 platform: "multi",
                 confirm: true,
+                source: "transcripts",
               });
               const ws = out.windows || [];
               const received = ws.filter((w) => w.status === "received");

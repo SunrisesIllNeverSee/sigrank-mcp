@@ -17,6 +17,7 @@ import {
   tokenpullCodex as pullCodex,
   tokenpullAny,
 } from "../adapters/tokenpull.mjs";
+import { pullWithSource } from "../adapters/otel.mjs";
 
 // Resolve local node_modules/.bin for bundled deps (ccusage, tokscale)
 const _pkgRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -178,7 +179,19 @@ export function uploadStamp(content) {
 // Pull a platform's local usage → 4 windows of canonical pillars. Routes through
 // tokenpullAny() which handles Claude (native), Codex (estimated io_ratio), and all
 // other adapters from the registry. opts.adapter overrides for tests.
+//
+// opts.source ('auto' | 'otel' | 'transcripts') opts into the live sigrank-otel
+// collector for platform 'claude' (see adapters/otel.mjs). When opts.source is
+// unset the pull is exactly the pre-otel transcript path.
 export async function pullByPlatform(platform, opts = {}) {
+  if (opts.source != null)
+    return pullWithSource(platform || "claude", opts, () =>
+      _pullTranscripts(platform, opts),
+    );
+  return _pullTranscripts(platform, opts);
+}
+
+async function _pullTranscripts(platform, opts = {}) {
   if (opts.adapter) {
     // Test injection: bypass registry and use the mock adapter directly
     if (platform === "codex") {

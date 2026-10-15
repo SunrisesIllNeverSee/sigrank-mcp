@@ -2484,6 +2484,160 @@ console.log(
   "✓ tokscale_analytics: redactPath · num · isBookkeepingModel · tool registration · competitive_intel guard · live shape (7 functions)",
 );
 
+// ── otel source: live pillars from the sigrank-otel collector (mock HTTP server) ──
+{
+  const { createServer } = await import("node:http");
+  const { tokenpullOtel, pullWithSource, normalizeSource, otelBaseUrl } =
+    await import("./adapters/otel.mjs");
+  const { _clearDedupCache } = await import("./submit.mjs");
+  const OT = {
+    "7d": { input: 1000, output: 20000, cacheRead: 900000, cacheWrite: 50000, requests: 40 },
+    "30d": { input: 4000, output: 80000, cacheRead: 3600000, cacheWrite: 200000, requests: 160 },
+    "90d": { input: 9000, output: 180000, cacheRead: 8100000, cacheWrite: 450000, requests: 360 },
+    all: { input: 12000, output: 240000, cacheRead: 10800000, cacheWrite: 600000, requests: 480 },
+  };
+  let mode = "ok";
+  const hits = [];
+  const srv = createServer((req, res) => {
+    const u = new URL(req.url, "http://x");
+    hits.push(u.pathname + u.search);
+    const w = u.searchParams.get("window");
+    if (mode === "slow") return setTimeout(() => { res.end("{}"); }, 1000);
+    if (mode === "malformed") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end("{not json");
+    }
+    if (mode === "badshape") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ source: "otel-cc", window: w, total: { input: "x" } }));
+    }
+    if (u.pathname !== "/api/pillars" || !OT[w]) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        source: "otel-cc",
+        window: w,
+        sinceMs: w === "all" ? null : NOW - 86400000,
+        total: OT[w],
+        models: { "claude-opus-5-5": OT[w] },
+      }),
+    );
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const otelUrl = `http://127.0.0.1:${srv.address().port}`;
+  // A port nothing listens on → connection refused (fast unreachable path).
+  const dead = createServer();
+  await new Promise((r) => dead.listen(0, "127.0.0.1", r));
+  const deadUrl = `http://127.0.0.1:${dead.address().port}`;
+  await new Promise((r) => dead.close(r));
+
+  try {
+    // normalize + URL guards
+    assert.strictEqual(normalizeSource(undefined), "auto", "otel: default source = auto");
+    assert.strictEqual(normalizeSource("OTEL"), "otel", "otel: source is case-insensitive");
+    assert.throws(() => normalizeSource("bogus"), /Unknown source/, "otel: bad source throws");
+    assert.strictEqual(otelBaseUrl({}), process.env.SIGRANK_OTEL_URL ? otelBaseUrl({}) : "http://127.0.0.1:4318", "otel: default URL");
+    assert.throws(() => otelBaseUrl({ otelUrl: "http://example.com:4318" }), /loopback/, "otel: non-loopback URL refused");
+
+    // reachable → 4 windows mapped onto canonical pillars (cacheWrite → cacheCreate, requests → messages)
+    const ok = await tokenpullOtel({ otelUrl, now: NOW });
+    assert.strictEqual(ok.ok, true, "otel: reachable collector → ok");
+    assert.strictEqual(ok.result.source, "otel-cc", "otel: result tagged otel-cc");
+    assert.strictEqual(ok.result.platform, "claude", "otel: platform claude");
+    assert.deepStrictEqual(ok.result.windows.map((w) => w.window), ["7d", "30d", "90d", "all"], "otel: 4 windows in order");
+    const o7 = ok.result.windows[0];
+    assert.deepStrictEqual(o7.pillars, { input: 1000, output: 20000, cacheCreate: 50000, cacheRead: 900000 }, "otel: pillar mapping (input = logged API input)");
+    assert.strictEqual(o7.messages, 40, "otel: requests → messages");
+    assert.ok(hits.some((h) => h === "/api/pillars?window=all"), "otel: hits /api/pillars?window=all");
+
+    // watch_tokenpull (auto, reachable) — otel pillars + visible marker; mock adapter NOT used
+    const wOtel = await callTool("watch_tokenpull", { window: "7d" }, { adapter: mockAdapter, otelUrl, now: NOW });
+    assert.strictEqual(wOtel.source, "otel-cc", "otel: watch_tokenpull auto → otel-cc");
+    assert.strictEqual(wOtel.source_marker, "source: otel (live)", "otel: watch marker");
+    assert.strictEqual(wOtel.pillars.output, 20000, "otel: watch uses collector pillars");
+    assert.strictEqual(wOtel.cascade.yield, cascade(o7.pillars).yield, "otel: cascade math unchanged on otel pillars");
+
+    // source: transcripts → never probes
+    const before = hits.length;
+    const wT = await callTool("watch_tokenpull", { window: "7d", source: "transcripts" }, { adapter: mockAdapter, otelUrl, now: NOW });
+    assert.strictEqual(hits.length, before, "otel: transcripts mode never probes the collector");
+    assert.strictEqual(wT.source, "transcripts", "otel: transcripts tag");
+
+    // unreachable → auto falls back to transcripts (same numbers as a plain transcript pull)
+    const plain = await callTool("watch_tokenpull", { window: "7d" }, { adapter: mockAdapter, now: NOW });
+    const wDead = await callTool("watch_tokenpull", { window: "7d" }, { adapter: mockAdapter, otelUrl: deadUrl, now: NOW });
+    assert.strictEqual(wDead.source, "transcripts", "otel: unreachable → transcripts fallback");
+    assert.ok(wDead.otel_fallback, "otel: fallback reason surfaced");
+    assert.deepStrictEqual(wDead.pillars, plain.pillars, "otel: fallback pillars identical to transcript path");
+    // forced otel + unreachable → error, never silently transcripts
+    await assert.rejects(
+      () => callTool("watch_tokenpull", { window: "7d", source: "otel" }, { adapter: mockAdapter, otelUrl: deadUrl, now: NOW }),
+      /collector unavailable/,
+      "otel: --source otel + unreachable → error",
+    );
+
+    // timeout (≤300 ms probe) → fallback
+    mode = "slow";
+    const t0 = Date.now();
+    const slow = await pullWithSource("claude", { source: "auto", otelUrl }, async () => ({ platform: "claude", windows: [] }));
+    assert.strictEqual(slow.source, "transcripts", "otel: slow collector → fallback");
+    assert.match(slow.otelFallback, /timeout/, "otel: timeout reason");
+    assert.ok(Date.now() - t0 < 900, "otel: probe gives up within the short timeout");
+
+    // malformed JSON → fallback; bad shape → fallback
+    mode = "malformed";
+    const mal = await callTool("watch_tokenpull", { window: "7d" }, { adapter: mockAdapter, otelUrl, now: NOW });
+    assert.strictEqual(mal.source, "transcripts", "otel: malformed JSON → fallback");
+    assert.match(mal.otel_fallback, /malformed JSON/, "otel: malformed reason");
+    mode = "badshape";
+    const bad = await tokenpullOtel({ otelUrl });
+    assert.strictEqual(bad.ok, false, "otel: bad total shape rejected");
+    mode = "ok";
+
+    // non-claude platforms are never otel-backed
+    const cx = await pullWithSource("codex", { source: "otel", otelUrl }, async () => ({ platform: "codex", windows: [] }));
+    assert.strictEqual(cx.source, "transcripts", "otel: codex ignores otel");
+
+    // submit_verified (dry run, mocked fetch — nothing leaves the machine) signs otel pillars;
+    // payload schema unchanged (no new fields), source reported on the tool result only.
+    _clearDedupCache();
+    let posted = false;
+    const subOtel = await callTool(
+      "submit_verified",
+      { window: "7d", dry_run: true },
+      {
+        apiBase: "http://test.local",
+        fetchImpl: async () => { posted = true; throw new Error("no network in tests"); },
+        adapter: mockAdapter,
+        otelUrl,
+        identity: enrolledId,
+        now: NOW,
+      },
+    );
+    assert.strictEqual(posted, false, "otel: dry-run submit never POSTs");
+    assert.strictEqual(subOtel.source, "otel-cc", "otel: submit_verified reads otel pillars");
+    const pl = subOtel.windows[0].payload;
+    assert.strictEqual(pl.raw_telemetry.tokens_input_fresh, 1000, "otel: payload input = collector input");
+    assert.strictEqual(pl.raw_telemetry.tokens_cache_creation, 50000, "otel: payload cacheWrite → tokens_cache_creation");
+    assert.ok(verifyPayload(pl, subOtel.windows[0].signature, enrolledId.public_key), "otel: payload signature verifies");
+    assert.ok(!("source" in pl) && !("metadata" in pl), "otel: no new payload fields");
+    const subDead = await callTool(
+      "submit_verified",
+      { window: "7d", dry_run: true },
+      { apiBase: "http://test.local", adapter: mockAdapter, otelUrl: deadUrl, identity: enrolledId, now: NOW },
+    );
+    assert.strictEqual(subDead.source, "transcripts", "otel: submit falls back to transcripts");
+  } finally {
+    await new Promise((r) => srv.close(r));
+  }
+  console.log(
+    "✓ otel source: reachable → otel-cc pillars · transcripts never probes · unreachable/timeout/malformed → fallback · --source otel errors · submit dry-run signs otel pillars",
+  );
+}
+
 await runProxyTests();
 
 // omp-cache tests need SIGRANK_OMP_CACHE=1 to test the cache path

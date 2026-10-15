@@ -8,6 +8,7 @@ import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { ensureIdentity } from "../identity/keystore.mjs";
 import { submitSignedWindow } from "../submit/index.mjs";
 import { TOKENPULL_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
+import { normalizeSource, sourceMarker } from "../adapters/otel.mjs";
 import {
   pullByPlatform,
   WATCH_SUBMIT_COOLDOWN_MS,
@@ -42,6 +43,12 @@ export const TOOL_DEF = {
         description:
           "which window to watch (default: 7d — most sensitive to recent activity)",
       },
+      source: {
+        type: "string",
+        enum: ["auto", "otel", "transcripts"],
+        description:
+          "pillar source for claude (default: auto). auto = live sigrank-otel collector (127.0.0.1:4318 / SIGRANK_OTEL_URL) when reachable, else local transcripts; otel = collector required; transcripts = never probe. Other platforms always read transcripts.",
+      },
       submit: {
         type: "boolean",
         description:
@@ -64,7 +71,8 @@ export async function handleWatchTokenpull(args, ctx) {
   const watchWindow = args?.window || "7d";
   const intervalS = Math.max(10, Number(args?.interval_s) || 60);
 
-  const pulled = await pullByPlatform(platform, ctx.opts);
+  const source = normalizeSource(args?.source ?? ctx.opts.source);
+  const pulled = await pullByPlatform(platform, { ...ctx.opts, source });
   const win = pulled.windows.find((w) => w.window === watchWindow);
   if (!win)
     throw new Error(
@@ -128,6 +136,9 @@ export async function handleWatchTokenpull(args, ctx) {
     card,
     generatedAt: pulled.generatedAt,
     poll_interval_s: intervalS,
+    source: pulled.source,
+    source_marker: sourceMarker(pulled),
+    ...(pulled.otelFallback ? { otel_fallback: pulled.otelFallback } : {}),
     auth_submit,
     note: "One snapshot per call — re-call at your poll interval to detect changes.",
   };

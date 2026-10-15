@@ -188,6 +188,7 @@ Options
   --refresh   poll interval in seconds (default: 30)
   --once      print once and exit (board only)
   --port      proxy port (default: 8787)
+  --source    auto · otel · transcripts  (watch/submit; default auto — see "Live pillars from sigrank-otel")
 
 For AI clients (not typeable)
   In a piped/non-TTY context, sigrank is an MCP stdio server.
@@ -260,6 +261,27 @@ sigrank submit --dry-run  # inspect the exact signed payload without sending any
 
 Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit.
 
+### Live pillars from sigrank-otel (`--source`)
+
+`watch`, `submit`, the TUI **Watch** tab, and the MCP tools `watch_tokenpull` / `submit_verified`
+can read Claude pillars live from a local **sigrank-otel** collector instead of re-walking
+`~/.claude/projects` transcripts. The collector serves
+`GET /api/pillars?window=7d|30d|90d|all` at `http://127.0.0.1:4318` (override with
+`SIGRANK_OTEL_URL`, loopback only). Its `input` is logged API input tokens — the canonical pillar.
+
+```bash
+sigrank watch                      # auto (default): collector if it answers in ≤300 ms, else transcripts
+sigrank watch --source otel        # require the collector (error if it isn't running)
+sigrank submit --source transcripts --dry-run   # never probe the collector
+```
+
+Watch rows show `source: otel (live)` when the collector supplied the numbers, or
+`source: transcripts` (with `(otel unreachable)` on a fallback). Fallback is all-or-nothing: any
+timeout, non-200, malformed JSON, or bad shape on any window → the whole pull uses transcripts.
+Only Claude is otel-backed; other platforms always read their local logs. The signed payload is
+unchanged (same Schema 1.0 fields); the source is reported on the tool/CLI result only. The TUI's
+`[S]` submit keeps using transcripts so what it previews is exactly what it sends.
+
 ---
 
 ## MCP Server mode
@@ -305,8 +327,8 @@ Or if installed globally:
 | `rank_windows`                        | `{platform?, window?}`                                                           | Multi-window cascade from local logs                                                                                                                                       |
 | `get_sigrank_standard_record`         | `{input, output, cache_write?, cache_read?}`                                     | Builds the portable `sigrank/0.1-draft` compatibility record (legacy alias under TTEOP authority) — canonical cascade, computed locally                                   |
 | `discover_peers`                      | `{codename?}`                                                                    | Find mentors, peers, and complementary operators on the leaderboard                                                                                                        |
-| `watch_tokenpull`                     | `{platform?, interval_s?}`                                                       | One cascade snapshot per call (interval_s advisory)                                                                                                                        |
-| `submit_verified`                     | `{window?, platform?, dry_run?}`                                                 | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
+| `watch_tokenpull`                     | `{platform?, interval_s?, source?}`                                              | One cascade snapshot per call (interval_s advisory)                                                                                                                        |
+| `submit_verified`                     | `{window?, platform?, dry_run?, source?}`                                        | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
 | `enroll`                              | `{code, device_label?}`                                                          | Bind this device with a connect code from signalaf.com → Settings                                                                                                          |
 | `diagnose_cascade`                    | `{text?}`                                                                        | Diagnoses where your token cascade is leaking efficiency — ranked findings with severity + estimated Υ impact                                                              |
 | `simulate_change`                     | `{text?, changes}`                                                               | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing                                                           |
