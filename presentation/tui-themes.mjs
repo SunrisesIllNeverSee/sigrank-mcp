@@ -133,27 +133,29 @@ export function getThemeNames() {
 // Monochrome theme returns no color (bold only) — colorblind-safe.
 //
 
-// Brand-matched where the company has a clear brand color (owner 2026-10-15:
-// "claude orange, devin blue, etc"): claude = Anthropic/Claude orange (#D97757),
-// codex = OpenAI/ChatGPT green, gemini = Google blue, devin = Cognition blue,
-// copilot = GitHub Copilot purple, qwen = Qwen purple, kilo = Kilo Code yellow,
-// grok = xAI silver (monochrome brand), openclaw = lobster red,
-// antigravity = Google green (distinct from gemini). Others keep their
-// previous distinct hues until confirmed.
+// Brand-matched (owner 2026-10-15: "claude orange, devin blue, etc"):
+//   claude Anthropic orange · codex OpenAI green · gemini Google blue ·
+//   antigravity Google green · devin Cognition blue · copilot GitHub purple ·
+//   qwen purple · kilo yellow · grok xAI silver · openclaw lobster red ·
+//   amp red · kimi Moonshot blue · hermes Nous blue · droid Factory orange ·
+//   codebuff acid green · pi gold (π palette) · zcode Z.ai blue.
+//   goose / opencode have monochrome brands → distinct neutral greys.
+//   omp keeps its gold. Codes nudged where the nearest brand code collided
+//   with another platform (amp 196 vs openclaw 203, droid 208 vs 202, …).
 const PLATFORM_COLORS_DARK = {
-  claude: 173, codex: 36, amp: 179, gemini: 69, kimi: 213,
-  qwen: 63, goose: 142, kilo: 227, hermes: 96, droid: 167,
-  codebuff: 72, copilot: 98, openclaw: 203, pi: 177, omp: 220,
-  opencode: 60, devin: 39, proxy: 245, other: 245,
-  antigravity: 71, grok: 250, zcode: 67,
+  claude: 173, codex: 36, amp: 196, gemini: 69, kimi: 33,
+  qwen: 63, goose: 245, kilo: 227, hermes: 27, droid: 208,
+  codebuff: 48, copilot: 98, openclaw: 203, pi: 179, omp: 220,
+  opencode: 252, devin: 39, proxy: 240, other: 240,
+  antigravity: 71, grok: 250, zcode: 111,
 };
 
 // Light theme: darker shades of the same hues for contrast on white
 const PLATFORM_COLORS_LIGHT = {
-  claude: 130, codex: 29, amp: 130, gemini: 26, kimi: 90,
-  qwen: 56, goose: 100, kilo: 136, hermes: 54, droid: 124,
-  codebuff: 23, copilot: 55, openclaw: 124, pi: 90, omp: 130,
-  opencode: 19, devin: 25, proxy: 242, other: 242,
+  claude: 130, codex: 29, amp: 160, gemini: 26, kimi: 27,
+  qwen: 56, goose: 243, kilo: 136, hermes: 21, droid: 94,
+  codebuff: 29, copilot: 55, openclaw: 124, pi: 136, omp: 136,
+  opencode: 243, devin: 25, proxy: 242, other: 242,
   antigravity: 28, grok: 240, zcode: 24,
 };
 
