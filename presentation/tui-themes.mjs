@@ -132,40 +132,29 @@ export function getThemeNames() {
 // (the default theme). For light theme, darker 256-color variants are used.
 // Monochrome theme returns no color (bold only) — colorblind-safe.
 //
-// Color assignments (dark theme 256-color codes):
-//   claude    = 75  (blue-cyan)
-//   codex     = 114 (green)
-//   amp       = 179 (orange)
-//   gemini    = 129 (purple-magenta)
-//   kimi      = 213 (pink)
-//   qwen      = 68  (steel blue)
-//   goose     = 142 (olive)
-//   kilo      = 166 (dark orange)
-//   hermes    = 96  (plum)
-//   droid     = 167 (salmon)
-//   codebuff  = 72  (teal-green)
-//   copilot   = 33  (bright blue)
-//   openclaw  = 136 (gold-brown)
-//   pi        = 177 (light purple)
-//   omp       = 220 (gold — the "oh my pi" platform gets gold)
-//   opencode  = 60  (slate)
-//   devin     = 30  (teal)
-//   proxy     = 245 (gray — synthetic passthrough)
-//   other     = 245 (gray — catch-all)
 
+// Brand-matched where the company has a clear brand color (owner 2026-10-15:
+// "claude orange, devin blue, etc"): claude = Anthropic/Claude orange (#D97757),
+// codex = OpenAI/ChatGPT green, gemini = Google blue, devin = Cognition blue,
+// copilot = GitHub Copilot purple, qwen = Qwen purple, kilo = Kilo Code yellow,
+// grok = xAI silver (monochrome brand), openclaw = lobster red,
+// antigravity = Google green (distinct from gemini). Others keep their
+// previous distinct hues until confirmed.
 const PLATFORM_COLORS_DARK = {
-  claude: 75, codex: 114, amp: 179, gemini: 129, kimi: 213,
-  qwen: 68, goose: 142, kilo: 166, hermes: 96, droid: 167,
-  codebuff: 72, copilot: 33, openclaw: 136, pi: 177, omp: 220,
-  opencode: 60, devin: 30, proxy: 245, other: 245,
+  claude: 173, codex: 36, amp: 179, gemini: 69, kimi: 213,
+  qwen: 63, goose: 142, kilo: 227, hermes: 96, droid: 167,
+  codebuff: 72, copilot: 98, openclaw: 203, pi: 177, omp: 220,
+  opencode: 60, devin: 39, proxy: 245, other: 245,
+  antigravity: 71, grok: 250, zcode: 67,
 };
 
 // Light theme: darker shades of the same hues for contrast on white
 const PLATFORM_COLORS_LIGHT = {
-  claude: 24, codex: 28, amp: 130, gemini: 54, kimi: 90,
-  qwen: 19, goose: 100, kilo: 130, hermes: 54, droid: 124,
-  codebuff: 23, copilot: 19, openclaw: 130, pi: 90, omp: 130,
-  opencode: 19, devin: 23, proxy: 242, other: 242,
+  claude: 130, codex: 29, amp: 130, gemini: 26, kimi: 90,
+  qwen: 56, goose: 100, kilo: 136, hermes: 54, droid: 124,
+  codebuff: 23, copilot: 55, openclaw: 124, pi: 90, omp: 130,
+  opencode: 19, devin: 25, proxy: 242, other: 242,
+  antigravity: 28, grok: 240, zcode: 24,
 };
 
 /**
@@ -185,5 +174,29 @@ export function platformColor(platform) {
     // Unknown platform — fall back to cyan
     return (s) => `${currentTheme.cyan}${s}${currentTheme.reset}`;
   }
+  return (s) => `${ESC}38;5;${code}m${s}${currentTheme.reset}`;
+}
+
+// ── Build archetype colors ──────────────────────────────────────────────────
+// Hues follow signalaf.com/field (build archetypes), mapped to 256-color codes.
+// Keys match classifyArchetype().key in presentation/narrate.mjs.
+const ARCHETYPE_COLORS_DARK = {
+  convergent: 140, kinetic: 204, amplifier: 209, recursive: 178, builder: 214,
+  archivist: 35, "deep-reader": 41, contextual: 79, priming: 74, "input-bound": 33,
+};
+const ARCHETYPE_COLORS_LIGHT = {
+  convergent: 97, kinetic: 161, amplifier: 166, recursive: 136, builder: 130,
+  archivist: 29, "deep-reader": 28, contextual: 30, priming: 31, "input-bound": 25,
+};
+
+/** Paint function for a build archetype key, theme-aware (monochrome → bold). */
+export function archetypeColor(key) {
+  const themeName = currentTheme.name;
+  if (themeName === "monochrome") {
+    return (s) => `${currentTheme.bold}${s}${currentTheme.reset}`;
+  }
+  const map = themeName === "light" ? ARCHETYPE_COLORS_LIGHT : ARCHETYPE_COLORS_DARK;
+  const code = map[key];
+  if (code == null) return (s) => `${currentTheme.cyan}${s}${currentTheme.reset}`;
   return (s) => `${ESC}38;5;${code}m${s}${currentTheme.reset}`;
 }

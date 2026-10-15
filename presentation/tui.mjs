@@ -54,7 +54,9 @@ export function dashboardEnabledPlatforms({
 // The `c` object is a live proxy to the current theme — changing the theme
 // via setTheme() updates all colors. Supports dark/light/high-contrast/monochrome.
 import * as _themeMod from "./tui-themes.mjs";
-import { platformColor } from "./tui-themes.mjs";
+import { platformColor, archetypeColor } from "./tui-themes.mjs";
+import { classifyArchetype } from "./narrate.mjs";
+import { _computeReportBlock } from "../tools/_report.mjs";
 const ESC = "\x1b[";
 // `c` is a live proxy — reads currentTheme at access time so theme switches
 // take effect immediately. The helper functions below (paint/bold/dim/etc.)
@@ -154,15 +156,44 @@ function flushScreen() {
 function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
+// Terminal cell width of one code point: 0 for combining marks / zero-width /
+// variation selectors, 2 for East Asian wide + emoji, else 1. Counting UTF-16
+// units (.length) miscounts these and pushes columns out of line.
+function cpWidth(cp) {
+  if (cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0xfeff) return 0;
+  if ((cp >= 0x0300 && cp <= 0x036f) || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0;
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  )
+    return 2;
+  return 1;
+}
+// Visible width in terminal cells (ANSI escapes stripped).
+function visW(s) {
+  let w = 0;
+  for (const ch of stripAnsi(s)) w += cpWidth(ch.codePointAt(0));
+  return w;
+}
 // ANSI-aware truncate: cut to `w` VISIBLE columns while keeping color escapes
 // intact (escapes don't count toward width, and we never slice mid-sequence).
 // Replaces raw `.slice(0, w)`, which corrupts color codes + miscounts width.
 function ansiTrunc(s, w) {
-  if (stripAnsi(s).length <= w) return s;
+  if (visW(s) <= w) return s;
+  if (w <= 0) return "";
+  // Leave one cell for "…" so a cut line reads as cut, not as complete.
+  const room = w - 1;
   let out = "",
     vis = 0,
     i = 0;
-  while (i < s.length && vis < w) {
+  while (i < s.length) {
     if (s[i] === "\x1b") {
       const m = s.slice(i).match(/^\x1b\[[0-9;]*m/);
       if (m) {
@@ -171,22 +202,63 @@ function ansiTrunc(s, w) {
         continue;
       }
     }
-    out += s[i];
-    vis++;
-    i++;
+    const cp = s.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = cpWidth(cp);
+    if (vis + cw > room) break;
+    out += ch;
+    vis += cw;
+    i += ch.length;
   }
-  return out + c.reset; // reset so a cut mid-color doesn't bleed into next line
+  return out + c.reset + dim("…"); // reset so a cut mid-color doesn't bleed into next line
 }
 function padEnd(s, w) {
-  const v = stripAnsi(s).length;
+  const v = visW(s);
   return v >= w ? s : s + " ".repeat(w - v);
 }
 function padStart(s, w) {
-  const v = stripAnsi(s).length;
+  const v = visW(s);
   return v >= w ? s : " ".repeat(w - v) + s;
 }
 function trunc(s, w) {
-  return stripAnsi(s).length <= w ? s : s.slice(0, w - 1) + "…";
+  return visW(s) <= w ? s : ansiTrunc(s, w);
+}
+
+// Footer keybar that degrades in steps instead of being cut off: full hints on one line → wrap to two lines → compact
+// "[K]" keys only → drop the lowest-priority hints. items: [{ k, label, pri }]
+// where k is the key text ("[R]", "← →"), label the words after it, and pri
+// 1 (always keep) … 3 (first to go). Returns 1–2 lines, each prefixed "  ".
+function fitHints(items, w = W()) {
+  const room = Math.max(10, w - 2);
+  const fmt = (it, compact) =>
+    compact || !it.label ? dim(it.k) : `${dim(it.k)} ${it.label}`;
+  const join = (list, compact) => list.map((it) => fmt(it, compact)).join("   ");
+  const pack = (list, compact) => {
+    const lines = [];
+    let cur = [];
+    for (const it of list) {
+      const next = [...cur, it];
+      if (cur.length && visW(join(next, compact)) > room) {
+        lines.push(cur);
+        cur = [it];
+      } else cur = next;
+    }
+    if (cur.length) lines.push(cur);
+    return lines.map((l) => join(l, compact));
+  };
+  for (const compact of [false, true]) {
+    let list = items.slice();
+    for (;;) {
+      const lines = pack(list, compact);
+      if (lines.length <= (compact ? 1 : 2) && lines.every((l) => visW(l) <= room))
+        return lines.map((l) => `  ${l}`);
+      const worst = Math.max(...list.map((it) => it.pri ?? 2));
+      if (worst <= 1) break;
+      const idx = list.map((it) => it.pri ?? 2).lastIndexOf(worst);
+      list.splice(idx, 1);
+    }
+  }
+  return [`  ${ansiTrunc(join(items.filter((it) => (it.pri ?? 2) <= 1), true), room)}`];
 }
 // Wrap a plain-text string into dim'd lines that fit within `maxW` columns.
 // Used for no-data/empty-state messages that can be long on narrow terminals.
@@ -217,7 +289,11 @@ function hr(ch = "─") {
 const fmtY = (y) =>
   y == null
     ? "—"
-    : y >= 10000
+    : y >= 1e9
+      ? `${(y / 1e9).toFixed(1)}B`
+      : y >= 1e6
+        ? `${(y / 1e6).toFixed(1)}M`
+        : y >= 10000
       ? `${(y / 1000).toFixed(1)}K`
       : y >= 1000
         ? `${(y / 1000).toFixed(2)}K`
@@ -536,18 +612,20 @@ const TABS = [
   { key: "6", label: "Connect", short: "N" }, // sign in / switch device — the whole app is the TUI
 ];
 
-// Four Degrees of Leverage — reference values matching signalaf.com/wiki/four-degrees.
+// Four Degrees of Leverage — reference values from signalaf.com/wiki/four-degrees
+// (table as published 2026-10-15).
 //   base  = AA baseline (7:2:1 modeled reference, static)
-//   hcm   = Human Center of Mass (median of all real operators)
-//   power = Power users (median of top 100 real operators)
-//   top   = Top Evals (single top real operator)
-// STATIC fallback values match the web app's GoldColumn fallbacks (lib/marketing/top-operator-column.ts).
-// Goes live (hcm/power/top computed from the board) once there's real user volume.
+//   hcm   = Operator Center of Mass (median of the screened operator cohort)
+//   power = Power users (median of the top 100 by yield)
+//   top   = Top Evals (single leading operator to date)
+// These are field references. The operator's OWN numbers must never be
+// substituted in here — comparing someone against themselves made every
+// metric read "top tier" (fixed 2026-10-15).
 const TD = {
-  base:  { yield: 1.75, snr: 0.33, vel: 0.50, lev: 3.5,   d10: 0.54 },
-  hcm:   { yield: 1.57, snr: 0.33, vel: 0.50, lev: 3.2,   d10: 0.50 },
-  power: { yield: 1.51, snr: 0.07, vel: 0.08, lev: 22.3,  d10: 1.35 },
-  top:   { yield: 488.65, snr: 0.58, vel: 1.36, lev: 360.2, d10: 2.56 },
+  base:  { yield: 1.75,   snr: 0.33, vel: 0.50, lev: 3.5,   d10: 0.54 },
+  hcm:   { yield: 1.90,   snr: 0.09, vel: 0.10, lev: 20.3,  d10: 1.31 },
+  power: { yield: 239.61, snr: 0.51, vel: 1.04, lev: 241.6, d10: 2.38 },
+  top:   { yield: 941.23, snr: 0.63, vel: 1.70, lev: 553.2, d10: 2.74 },
 };
 
 function renderTabBar(activeIdx) {
@@ -557,27 +635,137 @@ function renderTabBar(activeIdx) {
   // logo
   const logo = `  ${gold("⊙ SigRank")}`;
   // tabs
-  const tabStr = TABS.map((t, i) => {
-    const lbl = ` ${t.key}:${t.label} `;
-    return i === activeIdx
-      ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
-      : `${c.bgDim}${c.dim}${lbl}${c.reset}`;
-  }).join("");
   // right side — version (single source of truth) · site · clock
   const right = dim(
     `${gold("v" + VERSION)}${c.reset}${c.dim}  ·  signalaf.com  ·  ${ts}`,
   );
 
-  const logoVis = stripAnsi(logo).length;
-  const tabsVis = TABS.reduce((a, t) => a + t.label.length + 4, 0);
-  const rightVis = stripAnsi(right).length;
-  const gap = Math.max(1, w - logoVis - tabsVis - rightVis - 2);
-
-  writeln(`${logo}  ${tabStr}${" ".repeat(gap)}${right}`);
+  // Narrow terminals: shed the right-hand meta first (clock → site → version),
+  // then shorten INACTIVE tab labels (1:Dashboard → 1D → 1). The active tab
+  // always keeps its full name so you know where you are.
+  const tabLbl = (t, i, mode) =>
+    i === activeIdx || mode === 0
+      ? ` ${t.key}:${t.label} `
+      : mode === 1
+        ? ` ${t.key}${t.short} `
+        : ` ${t.key} `;
+  const tabsFor = (mode) =>
+    TABS.map((t, i) => {
+      const lbl = tabLbl(t, i, mode);
+      return i === activeIdx
+        ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
+        : `${c.bgDim}${c.dim}${lbl}${c.reset}`;
+    }).join("");
+  const rights = [
+    right,
+    dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  ·  signalaf.com`),
+    gold("v" + VERSION),
+    "",
+  ];
+  const logoVis = visW(logo);
+  let line = null;
+  outer: for (const mode of [0, 1, 2]) {
+    for (const r of rights) {
+      const t = tabsFor(mode);
+      const used = logoVis + 2 + visW(t) + (r ? visW(r) + 1 : 0);
+      if (used <= w) {
+        const gap = r ? Math.max(1, w - used) : 0;
+        line = `${logo}  ${t}${" ".repeat(gap)}${r}`;
+        break outer;
+      }
+    }
+  }
+  writeln(line ?? `${logo}  ${tabsFor(2)}`);
   writeln(`  ${hr()}`);
 }
 
 // ── GRAPHICS helpers ─────────────────────────────────────────────────────────
+
+// Build archetype pixel glyphs (5×5, same art as the SignalAF promo graphics),
+// drawn with half-blocks so 5 rows fit in 3 terminal lines.
+const ARCH_GLYPH = {
+  "input-bound": ["10000", "10000", "10000", "10000", "11111"],
+  priming: ["00000", "00000", "00100", "01110", "11111"],
+  contextual: ["00000", "01110", "01010", "01110", "00000"],
+  "deep-reader": ["11111", "10001", "10101", "10001", "11111"],
+  archivist: ["11111", "11111", "00000", "11111", "11111"],
+  builder: ["00011", "00011", "01111", "01111", "11111"],
+  recursive: ["11111", "10000", "10111", "10101", "11101"],
+  amplifier: ["00100", "01110", "11111", "00100", "00100"],
+  convergent: ["10001", "01010", "00100", "00100", "00100"],
+  kinetic: ["00110", "01100", "11111", "00110", "01100"],
+};
+const ARCH_SHORT = {
+  "input-bound": "fresh input carries the workload",
+  priming: "reuse is beginning to form",
+  contextual: "retained context supports the work",
+  "deep-reader": "draws deep from accumulated context",
+  archivist: "a deep context library carries it",
+  builder: "creating material for future reuse",
+  recursive: "building on top of its own base",
+  amplifier: "reuse and construction at scale",
+  convergent: "elite on all three axes at once",
+  kinetic: "output breaks out past input",
+};
+function archGlyphLines(key) {
+  const g = ARCH_GLYPH[key];
+  if (!g) return ["", "", ""];
+  const half = (a, b = "00000") =>
+    [...a]
+      .map((x, i) =>
+        x === "1" && b[i] === "1" ? "██" : x === "1" ? "▀▀" : b[i] === "1" ? "▄▄" : "  ",
+      )
+      .join("");
+  return [half(g[0], g[1]), half(g[2], g[3]), half(g[4])];
+}
+// cache : in : out, normalized to input = 1
+function fmtOpRatio(p) {
+  if (!p?.input) return "—";
+  const lev = (p.cacheRead ?? 0) / p.input,
+    vel = (p.output ?? 0) / p.input;
+  const fl = lev >= 100 ? Math.round(lev).toLocaleString("en-US") : lev.toFixed(1);
+  return `${fl} : 1 : ${vel.toFixed(2)}`;
+}
+// Operator's combined all-time pillars across every active platform.
+function combinedAllPillars(active) {
+  const p = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+  for (const d of active ?? []) {
+    const all = d.windows?.find((x) => x.window === "all");
+    if (!all?.pillars) continue;
+    p.input += all.pillars.input ?? 0;
+    p.output += all.pillars.output ?? 0;
+    p.cacheCreate += all.pillars.cacheCreate ?? 0;
+    p.cacheRead += all.pillars.cacheRead ?? 0;
+  }
+  return p.input > 0 ? p : null;
+}
+// Identity block at the top of the Dashboard: archetype (shape), Υ, operating
+// ratio, class (scale). Full 3-line version with the pixel glyph when there's
+// room; one line on short/narrow terminals so the cascade table keeps its rows.
+function heroLines(active, w, h) {
+  const p = combinedAllPillars(active);
+  if (!p) return [];
+  const cas = cascadeFrom(p);
+  if (!cas) return [];
+  const arch = classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p });
+  const ac = archetypeColor(arch.key);
+  const clsFn = CLS[cas.class] ?? ((s) => s);
+  const ratio = fmtOpRatio(p);
+  if (h < 46 || w < 96) {
+    return [
+      `  ${ac("■")} ${ac(bold(arch.name))}  ${dim("·")}  ${dim("Υ")} ${bold(fmtY(cas.yield))}  ${dim("·")}  ${ratio}  ${dim("·")}  ${clsFn(cas.class)}`,
+    ];
+  }
+  const g = archGlyphLines(arch.key);
+  const col = (lbl, val, sub, width) => [padEnd(dim(lbl), width), padEnd(val, width), padEnd(sub, width)];
+  const cols = [
+    col("ARCHETYPE", ac(bold(arch.name)), dim(ARCH_SHORT[arch.key] ?? arch.familyLabel), 38),
+    col("Υ YIELD", bold(paint(c.boldGold, fmtY(cas.yield))), dim("all-time · all platforms"), 26),
+    col("OP RATIO", bold(ratio), dim("cache : in : out"), 22),
+    col("CLASS", clsFn(cas.class), dim("scale"), 12),
+  ];
+  return [0, 1, 2].map((r) => `   ${ac(g[r])}   ${cols.map((cc) => cc[r]).join("")}`);
+}
 
 // Horizontal stacked bar: input | cacheW | cacheR | output
 function tokenBar(p, width = 40) {
@@ -702,6 +890,9 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const budget = H() - 4; // 2 tab bar + 2 footer
   const WINS = ["7d", "30d", "90d", "all"];
   let used = 0;
+  // Sections that didn't fit whole are listed on one "▾ … below" line instead
+  // of being cut mid-table (height-budget policy).
+  const hidden = [];
   const emit = (s = "") => {
     if (used < budget) {
       writeln(s);
@@ -731,6 +922,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const narrow = w < 124;
   const veryNarrow = w < 100;
   const ultraNarrow = w < 90;
+  // Wide terminals (≥136) get a Build column: the archetype for that window.
+  const wide = w >= 136;
   const gap = narrow ? " " : "  ";
   const cwLabel = veryNarrow ? "CW" : "CacheW";
   const crLabel = veryNarrow ? "CR" : "CacheR";
@@ -762,9 +955,24 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
             padStart(cas.dev10x?.toFixed(2) ?? "—", 6),
           ]),
       ...(veryNarrow ? [] : [padEnd(clsFn(cas.class), 13)]),
+      ...(wide
+        ? [
+            (() => {
+              const a = classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p });
+              return padEnd(archetypeColor(a.key)(a.name), 12);
+            })(),
+          ]
+        : []),
     ];
     emit(`    ${cols.join(gap)}`);
   };
+
+  // ── Identity: archetype · Υ · op ratio · class
+  const hero = heroLines(active, w, H());
+  if (hero.length) {
+    emit();
+    for (const ln of hero) emit(ln);
+  }
 
   // ── Cascade table
   emit();
@@ -784,9 +992,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     ...(ultraNarrow ? [] : [padStart(hdr("Lev"), 7)]),
     ...(narrow ? [] : [padStart(hdr("Vel"), 6), padStart(hdr("10x"), 6)]),
     ...(veryNarrow ? [] : [padEnd(hdr("Class"), 13)]),
+    ...(wide ? [padEnd(hdr("Build"), 12)] : []),
   ];
   emit(`    ${CH.join(gap)}`);
-  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? (ultraNarrow ? 70 : veryNarrow ? 80 : 96) : 114))))}`);
+  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? (ultraNarrow ? 70 : veryNarrow ? 80 : 96) : wide ? 128 : 114))))}`);
 
   if (active.length === 0) {
     // Count is derived from the registry — a hardcoded number drifts every time an
@@ -796,15 +1005,29 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     );
   }
 
+  // When 7d, 30d and 90d are identical but "all" is larger, the logs simply
+  // have no activity between 7 and 90 days ago — say so, so it doesn't read as
+  // a windowing bug (it was reported as one, 2026-10-15).
+  const gapNote = (platform) => {
+    const d = active.find((x) => x.platform === platform);
+    const pick = (wk) => d?.windows?.find((x) => x.window === wk)?.pillars;
+    const [a, b, c90, all] = ["7d", "30d", "90d", "all"].map(pick);
+    const same = (x, y) =>
+      x && y && ["input", "output", "cacheCreate", "cacheRead"].every((k) => (x[k] ?? 0) === (y[k] ?? 0));
+    if (!a || !(a.input > 0) || !same(a, b) || !same(a, c90) || !all || same(a, all)) return null;
+    return `    ${dim(`↳ 7d = 30d = 90d: no ${platform} activity logged between 7 and 90 days ago`)}`;
+  };
+
   // Calculate how many cascade rows we can fit — reserve space for lower sections.
   // (Υ-trend section moved to the Trends tab; its old `sparkLines` reservation is gone,
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
   const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
   // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + Lifetime Tokens (blank+hr+header+platforms+combined+note = ~7) + status
-  const boardLines = 24;
+  const boardLines = 26; // +2: "Where you sit" line (blank + line)
   const sectionsBelow = barLines + boardLines;
-  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow);
+  const gapNotes = active.filter((d) => gapNote(d.platform)).length;
+  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow - gapNotes);
 
   // SCROLL-VIEW (2026-06-27): Build the full list of cascade rows first, then
   // slice by [scrollOffset, scrollOffset + maxCascadeRows]. This gives a real
@@ -850,7 +1073,11 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // Render the visible slice — group by platform (emit a blank line between platforms)
   let lastPlatform = null;
   for (const row of visibleRows) {
-    if (lastPlatform !== null && row.platform !== lastPlatform) emit();
+    if (lastPlatform !== null && row.platform !== lastPlatform) {
+      const note = gapNote(lastPlatform);
+      if (note) emit(note);
+      emit();
+    }
     renderRow(
       row.platform,
       (s) => {
@@ -862,6 +1089,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       row.estimated,
     );
     lastPlatform = row.platform;
+  }
+  if (lastPlatform !== null) {
+    const note = gapNote(lastPlatform);
+    if (note) emit(note);
   }
   if (visibleRows.length > 0) emit();
 
@@ -900,6 +1131,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
 
   // ── Token bar charts (skip if no room)
+  if (used >= budget - boardLines && active.length) hidden.push("Token Composition");
   if (used < budget - boardLines) {
     emit(`  ${hr()}`);
     emit(
@@ -973,29 +1205,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   })();
 
   if (used < budget - 8) {
-    // Compute the operator's combined "all" cascade for live Four Degrees.
-    // TD.top is overridden with the live metrics so the "Top Evals" column
-    // reflects the actual top operator instead of a static snapshot.
-    const combinedAll = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
-    for (const d of active) {
-      const all = d.windows?.find((w) => w.window === "all");
-      if (!all) continue;
-      combinedAll.input += all.pillars.input ?? 0;
-      combinedAll.output += all.pillars.output ?? 0;
-      combinedAll.cacheCreate += all.pillars.cacheCreate ?? 0;
-      combinedAll.cacheRead += all.pillars.cacheRead ?? 0;
-    }
-    const liveTop = cascadeFrom(combinedAll);
-    const tdLive = { ...TD };
-    if (liveTop && (liveTop.yield ?? 0) > 0) {
-      tdLive.top = {
-        yield: liveTop.yield,
-        snr: liveTop.snr,
-        vel: liveTop.velocity ?? TD.top.vel,
-        lev: liveTop.leverage ?? TD.top.lev,
-        d10: liveTop.dev10x ?? TD.top.d10,
-      };
-    }
+    // Field references for Your Read + Four Degrees. Previously TD.top was
+    // overwritten with the operator's own combined "all" cascade, so users were
+    // compared against themselves; the published field values are used instead.
+    const tdLive = TD;
     // ── Custom insights — comparison vs the field + a concrete tip for the weakest metric
     emit(`  ${hr()}`);
     emit(
@@ -1092,7 +1305,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         const hcmStr = `${aboveHcm}/${totalMetrics}`;
         const pwrStr = `${abovePower}/${totalMetrics}`;
         emit(
-          `    ${dim(`above HCM on ${bold(hcmStr)} · above Power on ${bold(pwrStr)}`)}`,
+          `    ${dim(`above field on ${bold(hcmStr)} · above Power on ${bold(pwrStr)}`)}`,
         );
       }
     } else {
@@ -1101,15 +1314,18 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
 
     // ── Four Degrees — AA baseline · Human Center of Mass · Power users · Top Evals
     // Matches signalaf.com/wiki/four-degrees (expanded from 3 → 4 degrees 2026-07-17).
+    // Needs 12 rows (blank+hr+title+header+5 rows+note+blank+where-you-sit).
+    if (budget - used < 12) hidden.push("Four Degrees");
+    else {
     emit();
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Four Degrees")}  ${dim("AA · HCM · Power · Top Evals — signalaf.com/wiki")}`,
+      `  ${bold("Four Degrees")}  ${dim("AA · Field · Power · Top Evals — signalaf.com/wiki")}`,
     );
     const tdHead = [
       padEnd(hdr("Metric"), 10),
       padStart(hdr("AA base"), 9),
-      padStart(hdr("HCM"), 9),
+      padStart(hdr("Field"), 9),
       padStart(hdr("Power"), 9),
       padStart(hdr("Top"), 9),
     ];
@@ -1134,15 +1350,47 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     );
     tdRow("10xDEV", tdLive.base.d10, tdLive.hcm.d10, tdLive.power.d10, tdLive.top.d10, (v) => v.toFixed(2));
     emit(
-      `    ${dim("Top live · HCM/Power calibrate with volume")}`,
+      `    ${dim("Field = operator center of mass · published field references")}`,
     );
+    // Where you sit: field references + you on one Υ line, ordered by value,
+    // spacing proportional to log distance (fits any width — labels never collide).
+    const youP = combinedAllPillars(active);
+    const youCas = youP && cascadeFrom(youP);
+    if (youCas?.yield > 0 && used < budget - 2) {
+      const youArch = classifyArchetype({ velocity: youCas.velocity, leverage: youCas.leverage, pillars: youP });
+      const ac = archetypeColor(youArch.key);
+      const pts = [
+        { v: tdLive.base.yield, s: dim(`AA ${fmtY(tdLive.base.yield)}`) },
+        { v: tdLive.hcm.yield, s: `Field ${fmtY(tdLive.hcm.yield)}` },
+        { v: tdLive.power.yield, s: `Power ${fmtY(tdLive.power.yield)}` },
+        { v: tdLive.top.yield, s: gold(`Top ${fmtY(tdLive.top.yield)}`) },
+        { v: youCas.yield, s: ac(bold(`▲ YOU ${fmtY(youCas.yield)}`)) },
+      ].sort((x, y) => x.v - y.v);
+      const lead = `    ${bold("Where you sit")}  ${dim("Υ")}  `;
+      const labels = pts.reduce((n, pt) => n + visW(pt.s), 0);
+      const avail = Math.max(pts.length - 1, w - visW(lead) - labels - 2 * (pts.length - 1) - 2);
+      const lg = (v) => Math.log10(Math.max(v, 0.01));
+      const span = Math.max(0.001, lg(pts[pts.length - 1].v) - lg(pts[0].v));
+      let line = lead + pts[0].s;
+      for (let i = 1; i < pts.length; i++) {
+        const n = Math.max(1, Math.round(((lg(pts[i].v) - lg(pts[i - 1].v)) / span) * avail));
+        line += ` ${dim("─".repeat(n))} ${pts[i].s}`;
+      }
+      emit();
+      emit(line);
+    }
+    }
   }
 
   // ── Lifetime Tokens — submission-based rolled-forward totals (never decrease)
   // Shows when the operator is signed in and has submission history. The batched
   // data comes from the server (computeBatchedWindows over snapshot_submissions).
   const batched = data?.batchedData;
-  if (batched && used < budget - 4) {
+  const lifetimeRows = batched
+    ? 4 + Object.keys(batched.per_platform ?? {}).filter((k) => k !== "multi").length + 2
+    : 0;
+  if (batched && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
+  if (batched && budget - used >= lifetimeRows) {
     const fmtT = (n) => {
       if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
       if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -1183,6 +1431,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     }
   }
 
+  if (hidden.length && used < budget)
+    emit(`  ${dim(`▾ ${hidden.join(" · ")} below — make the window taller to see`)}`);
   if (status && used < budget) emit(`  ${dim(status)}`);
 }
 
@@ -1238,6 +1488,9 @@ const TREND_METRICS = [
         : null,
     fmt: (v) => {
       const i = v.input || 1;
+      // Narrow terminals: compact "1.1K:1:4.0" (fits the 10-col window cells,
+      // the spaced form overflowed at 80×24).
+      if (W() < 120) return `${fmtLev(v.cacheRead / i)}:1:${(v.output / i).toFixed(1)}`;
       return `${(v.cacheRead / i).toFixed(1)} : 1 : ${(v.output / i).toFixed(2)}`;
     },
   },
@@ -1329,27 +1582,20 @@ function renderTrends(data, subIdx = 0) {
       // FIX G1: window column headers (mirror renderCompare) — one header row, then
       // values in fixed-width columns below. No per-value `w:` prefix.
       emit(`    ${trendHeader()}`);
+      // Metrics that aren't computed client-side yet (m.stub) + Rank are listed
+      // on one "coming later" line instead of rows stuck on "calculating…".
+      const live = TREND_METRICS.filter((m) => !m.stub);
       let mi = 0;
-      for (; mi < TREND_METRICS.length; mi++) {
-        const m = TREND_METRICS[mi];
+      for (; mi < live.length; mi++) {
+        const m = live[mi];
         if (used >= budget - 2) break;
-        if (m.stub) {
-          emit(
-            `    ${padEnd(dim(m.label), 10)}  ${dim("    calculating… (" + m.stub + ")")}`,
-          );
-        } else {
-          emit(
-            `    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`,
-          );
-        }
-      }
-      trendsDropped += TREND_METRICS.length - mi; // metrics this block couldn't fit
-      // rank trend — wired later; honest placeholder for now
-      if (used < budget - 1)
         emit(
-          `    ${padEnd(dim("Rank"), 10)}  ${dim("    calculating… (rank history wires post-ingest)")}`,
+          `    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`,
         );
-      else trendsDropped += 1;
+      }
+      trendsDropped += live.length - mi; // metrics this block couldn't fit
+      const later = [...TREND_METRICS.filter((m) => m.stub).map((m) => m.label), "Rank"];
+      if (used < budget - 1) emit(`    ${dim(`coming later: ${later.join(" · ")}`)}`);
       emit();
     }
     // A3: surface the dropped count instead of hiding it.
@@ -1426,11 +1672,7 @@ function renderCompare(data) {
     `  ${bold("Source Comparison")}  ${dim(`platform: ${platform}`)}  ${dim(`·  ${sourceList}`)}`,
   );
 
-  if (!tpData) {
-    emit(
-      `  ${dim("tokenpull: no JSONL data found — check ~/.claude/projects/")}`,
-    );
-  } else {
+  if (tpData) {
     const all = tpPillars["all"];
     if (all) {
       emit(
@@ -1441,22 +1683,28 @@ function renderCompare(data) {
   // FIX (2026-08-18): surface WHY external verifiers are absent so the user knows
   // it's a missing-tool issue, not a bug. Each verifier is null when its CLI/DB
   // isn't installed or returned no data for this platform.
-  const missing = [];
-  if (!cc) missing.push("ccusage (npm i -g ccusage)");
-  if (!td) missing.push("token-dashboard (~/.claude/token-dashboard.db)");
-  if (!ts) missing.push("tokscale (not installed, or scan timed out)");
-  if (missing.length)
-    for (const ln of wrapDim(`no data from: ${missing.join(" · ")}`)) emit(ln);
+  // Source checklist: ✓ found / ✗ missing + how to get it. Only shown when
+  // something is missing (a full house needs no explanation).
+  const srcStatus = [
+    { ok: !!tpData, name: "tokenpull", how: "reads your local session logs (~/.claude/projects/)" },
+    { ok: !!cc, name: "ccusage", how: "npm i -g ccusage" },
+    { ok: !!td, name: "token-dashboard", how: "~/.claude/token-dashboard.db" },
+    { ok: !!ts, name: "tokscale", how: "not installed, or scan timed out" },
+  ];
+  if (srcStatus.some((x) => !x.ok)) {
+    emit();
+    for (const x of srcStatus)
+      emit(
+        `    ${x.ok ? green("✓") : paint(c.red, "✗")} ${padEnd(x.ok ? x.name : dim(x.name), 16)} ${dim(x.ok ? "found" : x.how)}`,
+      );
+  }
   emit();
 
   // FIX (2026-08-18): if ALL sources are empty (tokenpull has no windows AND all
   // verifiers are null), show a clear empty-state message instead of bare headers
   // with zero data rows.
   if (SOURCES.length === 0) {
-    for (const ln of wrapDim(
-      "no source data available for this platform — install a verifier or check ~/.claude/projects/",
-    ))
-      emit(ln);
+    emit(`  ${dim(`nothing to compare for ${platform} yet — [P] tries another platform`)}`);
     return;
   }
 
@@ -1535,7 +1783,11 @@ function renderCompare(data) {
     }
   }
 
-  if (used < budget - 4) {
+  // Whole-section rule: hr + title + header + dots + one row per source.
+  const metricsRows = 4 + SOURCES.length;
+  if (budget - used < metricsRows) {
+    if (used < budget) emit(`  ${dim("▾ Cascade Metrics below — make the window taller to see")}`);
+  } else {
     emit(`  ${hr()}`);
     emit(
       `  ${bold("Cascade Metrics")}  ${dim("all-time · computed from each source")}`,
@@ -1585,6 +1837,7 @@ function renderSubmissions(
   window = "30d",
   filterCodename = null,
   highlightCodename = null,
+  uniqueOnly = false,
 ) {
   const rows =
     boardData?.submissions ??
@@ -1618,9 +1871,10 @@ function renderSubmissions(
       : "";
   emit();
   // Shorten the header on narrow terminals to avoid overflow.
+  const scope = uniqueOnly ? "best per operator" : "all submissions";
   const boardHeader = w < 90
-    ? `window: ${window}  ·  ranked by Υ Yield`
-    : `window: ${window}  ·  all submissions ranked by Υ Yield  ·  signalaf.com`;
+    ? `window: ${window}  ·  ${uniqueOnly ? "best per operator" : "ranked by Υ Yield"}`
+    : `window: ${window}  ·  ${scope} ranked by Υ Yield  ·  signalaf.com`;
   emit(
     `  ${bold("Submissions")}  ${dim(boardHeader)}${modeLabel}`,
   );
@@ -1632,6 +1886,17 @@ function renderSubmissions(
   }
 
   let sorted = [...rows].sort((a, b) => (gYield(b) ?? 0) - (gYield(a) ?? 0));
+  // [U]: one row per operator — their best submission (rows are already
+  // sorted by Υ, so the first one seen is the best).
+  if (uniqueOnly) {
+    const seen = new Set();
+    sorted = sorted.filter((e) => {
+      const key = (gName(e) ?? "").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   if (filterCodename) {
     sorted = sorted.filter(
       (e) => (gName(e) ?? "").toLowerCase() === filterCodename.toLowerCase(),
@@ -1644,14 +1909,16 @@ function renderSubmissions(
   }
 
   // op_ratio may arrive as a preformatted string ("3.5 : 1 : 0.50") or a number — render either.
-  const fmtOp = (v) =>
-    v == null
-      ? "—"
-      : typeof v === "string"
-        ? v
-        : typeof v === "number"
-          ? v.toFixed(2)
-          : String(v);
+  // "200958:1:525.9" → "200,958 : 1 : 525.9" (same shape as the Dashboard ratio).
+  const fmtOp = (v) => {
+    if (v == null) return "—";
+    if (typeof v === "number") return v.toFixed(2);
+    const parts = String(v).split(":").map((x) => x.trim());
+    if (parts.length !== 3 || parts.some((x) => x === "" || isNaN(Number(x)))) return String(v);
+    const [cr, inp, out] = parts.map(Number);
+    const crS = cr >= 1000 ? Math.round(cr).toLocaleString("en-US") : String(parts[0]);
+    return `${crS} : ${inp} : ${parts[2]}`;
+  };
 
   // Responsive column hiding — the full table is 106 cols wide. Hide columns
   // at narrower terminals so rows never overflow/wrap/garble.
@@ -1670,12 +1937,12 @@ function renderSubmissions(
     padEnd(hdr("Platform"), 10),
     padEnd(hdr("Win"), 6),
     padStart(hdr("Υ Yield"), 9),
-    ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 18)] : []),
+    ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 20)] : []),
     ...(showClass ? [padEnd(hdr("Class"), 12)] : []),
     ...(showTokens ? [padStart(hdr("Tokens"), 9)] : []),
   ];
   emit(`    ${SH.join("  ")}`);
-  emit(`  ${dim("·".repeat(Math.min(w - 4, 100)))}`);
+  emit(`  ${dim("·".repeat(Math.min(w - 4, 102)))}`);
 
   let shown = 0;
   for (let idx = 0; idx < sorted.length; idx++) {
@@ -1708,7 +1975,7 @@ function renderSubmissions(
       padEnd(platformColor(gPlat(e))(trunc(gPlat(e), 10)), 10),
       padEnd(dim(trunc(gWin(e), 6)), 6),
       yld,
-      ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 18)] : []),
+      ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 20)] : []),
       ...(showClass ? [cls] : []),
       ...(showTokens ? [padStart(tk != null ? fmtTok(tk) : "—", 9)] : []),
     ];
@@ -1733,12 +2000,13 @@ function renderBoard(
   window = "30d",
   filterCodename = null,
   highlightCodename = null,
+  uniqueOnly = false,
 ) {
   // #8 (2026-06-27): when the data came from the NEW /api/v1/submissions endpoint, render ALL
   // submissions ranked (raw rows). Otherwise fall through to the existing leaderboard render
   // (pre-deploy fallback). loadBoardData tags the payload with `_source`.
   if (boardData?._source === "submissions") {
-    renderSubmissions(boardData, window, filterCodename, highlightCodename);
+    renderSubmissions(boardData, window, filterCodename, highlightCodename, uniqueOnly);
     return;
   }
   const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? [];
@@ -2116,7 +2384,7 @@ async function renderWatch(platform = "all", win = "all-windows") {
 // Renders a platform × window grid of what submit_verified WOULD send, using the
 // already-loaded dashData. [Enter] confirms → fires submit_verified per platform;
 // [Esc] cancels → back to the read tab. Mirrors the Connect focused-field pattern.
-function renderSubmitPreview(dashData, id) {
+function renderSubmitPreview(dashData, id, page = 0) {
   const budget = H() - 4;
   let used = 0;
   const emit = (s = "") => {
@@ -2127,43 +2395,83 @@ function renderSubmitPreview(dashData, id) {
   };
   const WINS = ["7d", "30d", "90d", "all"];
   const COL_W = 14;
+  const LBL_W = 14;
 
   emit();
-  emit(`  ${bold("Submit Preview")}  ${dim("what will publish to the board")}`);
+  emit(`  ${bold("Submit Preview")}  ${dim("everything that will be sent, per platform × window")}`);
   emit(
-    `  ${dim(`signed in as ${id?.codename ?? "—"} · device ${id?.device_id?.slice(0, 8) ?? "—"}…`)}`,
-  );
-  emit();
-  // header row: platform | 7d | 30d | 90d | all
-  const hcols = [
-    padEnd(hdr("Platform"), 12),
-    ...WINS.map((w) => padStart(hdr(w), COL_W)),
-  ];
-  emit(`    ${hcols.join("  ")}`);
-  emit(
-    `  ${dim("·".repeat(Math.min(W() - 4, 12 + WINS.length * (COL_W + 2))))}`,
+    `  ${dim(`signed in as ${id?.codename ?? "—"} · device ${id?.device_id?.slice(0, 8) ?? "—"}… · ed25519-signed · token counts only, never prompt content`)}`,
   );
 
-  const active = dashData?.active ?? [];
-  for (const d of active) {
-    if (used >= budget - 3) break;
-    const cells = WINS.map((w) => {
-      const wd = d.windows?.find((x) => x.window === w);
-      if (!wd || wd.pillars.input + wd.pillars.output === 0)
-        return padStart(dim("—"), COL_W);
-      const cas = cascadeFrom(wd.pillars);
-      if (!cas) return padStart(dim("—"), COL_W);
-      return padStart(gold(fmtY(cas.yield)), COL_W);
-    });
-    emit(`    ${padEnd(cyan(d.platform), 12)}  ${cells.join("  ")}`);
-  }
+  // One block per platform, plus the combined "multi" submission when 2+ are active
+  // (mirrors the [Enter] handler: submit_verified per platform, then 'multi').
+  const active = (dashData?.active ?? []).filter((d) =>
+    d.windows?.some((w) => w.pillars && w.pillars.input + w.pillars.output > 0),
+  );
   if (active.length === 0) {
+    emit();
     emit(`  ${dim("  no platforms with data — press [R] to refresh")}`);
+    return { pages: 0 };
+  }
+  const blocks = active.map((d) => ({ platform: d.platform, windows: d.windows }));
+  if (active.length >= 2) {
+    const multi = WINS.map((wk) => {
+      const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+      let messages = 0;
+      for (const d of active) {
+        const w = d.windows?.find((x) => x.window === wk);
+        if (!w?.pillars) continue;
+        for (const k of Object.keys(sum)) sum[k] += w.pillars[k] ?? 0;
+        messages += w.messages || 0;
+      }
+      return { window: wk, pillars: sum, messages };
+    });
+    blocks.push({ platform: "multi", windows: multi, combined: active.map((d) => d.platform).join("+") });
+  }
+
+  const BLOCK_ROWS = 17;
+  const perPage = Math.max(1, Math.floor((budget - used - 3) / BLOCK_ROWS));
+  const pages = Math.ceil(blocks.length / perPage);
+  const pg = Math.min(page, pages - 1);
+  const cell = (v) => padStart(v, COL_W);
+  const row = (label, vals) => emit(`    ${padEnd(label, LBL_W)}${vals.map(cell).join("")}`);
+
+  for (const b of blocks.slice(pg * perPage, pg * perPage + perPage)) {
+    const ws = WINS.map((wk) => {
+      const w = b.windows?.find((x) => x.window === wk);
+      const p = w?.pillars;
+      if (!p || p.input + p.output === 0) return null; // empty windows are skipped by submit
+      const cas = cascadeFrom(p);
+      const rep = _computeReportBlock(p);
+      const arch = cas ? classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p }) : null;
+      return { p, cas, rep, arch, messages: w.messages };
+    });
+    const pc = b.platform === "multi" ? (s) => bold(s) : platformColor(b.platform);
+    emit();
+    emit(
+      `  ${pc(b.platform)}${b.combined ? dim(`  combined: ${b.combined}`) : ""}${" ".repeat(Math.max(1, LBL_W + 2 - visW(b.platform) - (b.combined ? visW(`  combined: ${b.combined}`) : 0)))}${WINS.map((wk) => cell(hdr(wk))).join("")}`,
+    );
+    const v = (f) => ws.map((x) => (x ? f(x) : dim("— skipped")));
+    emit(`    ${dim("sent · token pillars")}`);
+    row("input", v((x) => fmtTok(x.p.input)));
+    row("output", v((x) => fmtTok(x.p.output)));
+    row("cache write", v((x) => fmtTok(x.p.cacheCreate ?? 0)));
+    row("cache read", v((x) => fmtTok(x.p.cacheRead ?? 0)));
+    row("messages", v((x) => (x.messages != null ? fmtTok(x.messages) : dim("—"))));
+    emit(`    ${dim("sent · report block")}`);
+    row("mode", v((x) => `${x.rep.current_mode} ${Math.round((x.rep.mode_confidence ?? 0) * 100)}%`));
+    row("health", v((x) => String(x.rep.health_score)));
+    row("badges", v((x) => `${x.rep.badges?.earned_this_week?.length ?? 0} earned`));
+    emit(`    ${dim("what the board shows from these")}`);
+    row("Υ yield", v((x) => gold(fmtY(x.cas?.yield))));
+    row("op ratio", v((x) => fmtOpRatio(x.p).replace(/ : /g, ":")));
+    row("class", v((x) => (CLS[x.cas?.class] ?? ((s) => s))(x.cas?.class ?? "—")));
+    row("archetype", v((x) => (x.arch ? archetypeColor(x.arch.key)(x.arch.name) : "—")));
   }
   emit();
-  emit(
-    `  ${dim("[Enter]")} confirm + submit all platforms   ${dim("[Esc]")} cancel`,
-  );
+  if (pages > 1) emit(`  ${dim(`page ${pg + 1}/${pages} · [P] next platform`)}`);
+  emit(`  ${dim("values are re-read when you press [Enter], so an active session may move them slightly")}`);
+  return { pages };
 }
 
 // ── DEBUG: render a tab once (no TTY/alt-screen) + audit each line's visible
@@ -2471,7 +2779,10 @@ export async function runTui({
   let connectMsg = ""; // [6] Connect last-action message (signed in / invalid code)
   let submitMsg = ""; // [S] in-place submit result, shown in the read-tab footer
   let submitPreview = false; // FIX I1: [S] opens a preview grid before sending (see→confirm→send)
+  let previewPage = 0; // submit preview: which page of platform blocks ([P] cycles)
+  let previewPages = 0;
   let boardYouOnly = false; // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
+  let boardUnique = false; // [U] Board: every submission (default, unchanged) ↔ best row per operator
   let cascadeScroll = 0; // SCROLL-VIEW (2026-06-27): cascade-section scroll offset (Dashboard only)
   let ompEnabled = false; // Session-only Dashboard toggle; deliberately OFF on every launch.
 
@@ -2480,21 +2791,38 @@ export async function runTui({
     startBuffer();
     renderTabBar(activeTab);
 
-    const hint = `  ${dim("← → or 1-6")} switch tabs   ${dim("[R]")} refresh   ${dim("[Q]")} quit`;
-    const submitHint = `   ${dim("[S]")} submit to board · ${dim("[C]")} sign in`;
-    // Read-tab footer: hr + hint, plus the in-place submit result line when present.
-    const readFooter = (hintLine) =>
-      submitMsg
-        ? [`  ${hr()}`, hintLine, `  ${submitMsg}`]
-        : [`  ${hr()}`, hintLine];
+    // Footer hints as prioritized items (1 = always keep … 3 = first to drop);
+    // fitHints() wraps / compacts / drops them to fit the terminal width.
+    const H_NAV = [
+      { k: "← → or 1-6", label: "switch tabs", pri: 2 },
+      { k: "[R]", label: "refresh", pri: 2 },
+      { k: "[Q]", label: "quit", pri: 1 },
+    ];
+    const H_SUBMIT = [
+      { k: "[S]", label: "submit to board", pri: 2 },
+      { k: "[C]", label: "sign in", pri: 3 },
+    ];
+    // Read-tab footer: hr + hints, plus the in-place submit result line when present.
+    const readFooter = (items) => {
+      const lines = fitHints(items);
+      return submitMsg
+        ? [`  ${hr()}`, ...lines, `  ${submitMsg}`]
+        : [`  ${hr()}`, ...lines];
+    };
 
     // FIX I1: submit preview is a focused overlay — renders INSTEAD of the tab
     // content, with its own footer. [Enter] sends, [Esc] cancels.
     if (submitPreview) {
-      renderSubmitPreview(dashData, loadIdentity());
+      const pv = renderSubmitPreview(dashData, loadIdentity(), previewPage);
+      previewPages = pv?.pages ?? 0;
       setFooter([
         `  ${hr()}`,
-        `  ${dim("[Enter]")} submit all platforms   ${dim("[Esc]")} cancel   ${dim("[Q]")} quit`,
+        ...fitHints([
+          { k: "[Enter]", label: "submit all platforms", pri: 1 },
+          ...(previewPages > 1 ? [{ k: "[P]", label: "next platform", pri: 1 }] : []),
+          { k: "[Esc]", label: "cancel", pri: 1 },
+          { k: "[Q]", label: "quit", pri: 1 },
+        ]),
       ]);
       flushScreen();
       return;
@@ -2509,18 +2837,16 @@ export async function runTui({
       }
       // SCROLL-VIEW: show ↑↓ hint only when there are cascade rows to scroll
       const scrollHint =
-        dashData && Array.isArray(dashData.active)
-          ? cascadeScrollableCount(dashData.active) >
-            maxCascadeRowsFor(dashData.active)
-            ? `   ${dim("↑↓ scroll cascade")}`
-            : ""
-          : "";
+        dashData && Array.isArray(dashData.active) &&
+        cascadeScrollableCount(dashData.active) > maxCascadeRowsFor(dashData.active)
+          ? [{ k: "↑↓", label: "scroll cascade", pri: 2 }]
+          : [];
       const ompHint = !dashData?._ompAvailable
-        ? ""
+        ? []
         : dashData._ompLoading
-          ? `   ${dim(ompEnabled ? "omp: on · scanning…" : "omp: off · finishing scan…")}`
-          : `   ${dim("[O]")} omp: ${ompEnabled ? "on" : "off"}`;
-      setFooter(readFooter(`${hint}${scrollHint}${ompHint}${submitHint}`));
+          ? [{ k: ompEnabled ? "omp: on · scanning…" : "omp: off · finishing scan…", pri: 3 }]
+          : [{ k: "[O]", label: `omp: ${ompEnabled ? "on" : "off"}`, pri: 3 }];
+      setFooter(readFooter([...H_NAV, ...scrollHint, ...ompHint, ...H_SUBMIT]));
     } else if (activeTab === 1) {
       // Trends
       if (!dashData) {
@@ -2528,7 +2854,7 @@ export async function runTui({
       } else {
         renderTrends(dashData, trendSub);
       }
-      setFooter(readFooter(`${hint}   ${dim("[T]")} view${submitHint}`));
+      setFooter(readFooter([...H_NAV, { k: "[T]", label: "view", pri: 1 }, ...H_SUBMIT]));
     } else if (activeTab === 2) {
       // Compare
       if (!compareData) {
@@ -2545,7 +2871,7 @@ export async function runTui({
         renderCompare(compareData);
       }
       setFooter(
-        readFooter(`${hint}   ${dim("[P]")} switch platform${submitHint}`),
+        readFooter([...H_NAV, { k: "[P]", label: "switch platform", pri: 1 }, ...H_SUBMIT]),
       );
     } else if (activeTab === 3) {
       // Board
@@ -2561,28 +2887,38 @@ export async function runTui({
           boardWindow,
           boardYouOnly ? id?.codename : null,
           id?.codename ?? null,
+          boardUnique,
         );
       }
       const youHint = isSignedIn(loadIdentity())
-        ? `   ${dim("[Y]")} ${boardYouOnly ? "all" : "just me"}`
-        : "";
+        ? [{ k: "[Y]", label: boardYouOnly ? "all" : "just me", pri: 2 }]
+        : [];
       setFooter(
-        readFooter(`${hint}   ${dim("[W]")} window${youHint}${submitHint}`),
+        readFooter([
+          ...H_NAV,
+          { k: "[W]", label: "window", pri: 1 },
+          { k: "[U]", label: boardUnique ? "all submissions" : "best per operator", pri: 2 },
+          ...youHint,
+          ...H_SUBMIT,
+        ]),
       );
     } else if (activeTab === 4) {
       // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh);
-      setFooter(readFooter(`${hint}${submitHint}`));
+      setFooter(readFooter([...H_NAV, ...H_SUBMIT]));
     } else if (activeTab === 5) {
       // Connect
       const connectId = loadIdentity();
       renderConnect(connectId, codeBuf, connectMsg);
-      const signOutHint = isSignedIn(connectId)
-        ? `   ${dim("[X]")} sign out`
-        : "   " + dim("[X]") + " reset device";
       setFooter([
         `  ${hr()}`,
-        `  ${dim("[Enter]")} sign in   ${dim("[Esc]")} clear/back${signOutHint}   ${dim("← →")} tabs   ${dim("[Q]")} quit`,
+        ...fitHints([
+          { k: "[Enter]", label: "sign in", pri: 1 },
+          { k: "[Esc]", label: "clear/back", pri: 2 },
+          { k: "[X]", label: isSignedIn(connectId) ? "sign out" : "reset device", pri: 2 },
+          { k: "← →", label: "tabs", pri: 2 },
+          { k: "[Q]", label: "quit", pri: 1 },
+        ]),
       ]);
     }
     flushScreen();
@@ -2958,6 +3294,11 @@ export async function runTui({
           await redraw();
           return;
         }
+        if ((key === "p" || key === "P") && previewPages > 1) {
+          previewPage = (previewPage + 1) % previewPages;
+          await redraw();
+          return;
+        }
         return; // swallow all other keys while the preview is open
       }
 
@@ -3306,6 +3647,7 @@ export async function runTui({
           return;
         }
         submitPreview = true;
+        previewPage = 0;
         submitMsg = "";
         await redraw();
         return;
@@ -3315,6 +3657,12 @@ export async function runTui({
       // (hybrid model — owner decision 2026-06-26). Only when signed in.
       if (k === "y" && activeTab === 3 && isSignedIn(loadIdentity())) {
         boardYouOnly = !boardYouOnly;
+        await redraw();
+        return;
+      }
+
+      if (k === "u" && activeTab === 3) {
+        boardUnique = !boardUnique;
         await redraw();
         return;
       }
