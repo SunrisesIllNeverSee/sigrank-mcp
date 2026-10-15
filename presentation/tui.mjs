@@ -726,6 +726,79 @@ function fmtOpRatio(p) {
   const fl = lev >= 100 ? Math.round(lev).toLocaleString("en-US") : lev.toFixed(1);
   return `${fl} : 1 : ${vel.toFixed(2)}`;
 }
+// Build archetype field medians (signalaf.com/field "Build Archetypes"; field
+// snapshot — share of field, median leverage and velocity per archetype).
+const FIELD_ARCH = [
+  { key: "input-bound", name: "INPUT-BOUND", n: 6.8, lev: 2.7, vel: 0.02 },
+  { key: "priming", name: "PRIMING", n: 9.4, lev: 7.7, vel: 0.042 },
+  { key: "contextual", name: "CONTEXTUAL", n: 11.7, lev: 12.7, vel: 0.066 },
+  { key: "deep-reader", name: "DEEP READER", n: 10.7, lev: 18.4, vel: 0.081 },
+  { key: "archivist", name: "ARCHIVIST", n: 11.7, lev: 29.8, vel: 0.124 },
+  { key: "builder", name: "BUILDER", n: 17.5, lev: 13.7, vel: 0.077 },
+  { key: "recursive", name: "RECURSIVE", n: 8.3, lev: 38.9, vel: 0.191 },
+  { key: "amplifier", name: "AMPLIFIER", n: 10.2, lev: 77.2, vel: 0.329 },
+  { key: "convergent", name: "CONVERGENT", n: 6.6, lev: 245.3, vel: 1.049 },
+  { key: "kinetic", name: "KINETIC", n: 7.1, lev: 361.5, vel: 1.52 },
+];
+// Field map: the 10 archetype medians on log leverage × log velocity, plus
+// ▲ YOU. Returns lines (no emit) so callers can budget them as one block.
+function fieldMapLines(you, w, rows) {
+  const PH = Math.max(8, Math.min(14, rows - 5));
+  const PW = Math.max(40, Math.min(78, w - 14));
+  const X0 = Math.log10(1.5), X1 = Math.log10(900);
+  const Y0 = Math.log10(0.012), Y1 = Math.log10(4);
+  const gx = (lev) => Math.round(((Math.log10(Math.max(lev, 1.5)) - X0) / (X1 - X0)) * (PW - 1));
+  const gy = (vel) =>
+    PH - 1 - Math.round(((Math.log10(Math.min(Math.max(vel, 0.012), 4)) - Y0) / (Y1 - Y0)) * (PH - 1));
+  // cell grid: { ch, paint }
+  const grid = Array.from({ length: PH }, () => Array.from({ length: PW }, () => ({ ch: " ", p: null })));
+  const put = (x, y, ch, p) => {
+    if (y >= 0 && y < PH && x >= 0 && x < PW) grid[y][x] = { ch, p };
+  };
+  const free = (x, y, len) => {
+    if (y < 0 || y >= PH || x < 0 || x + len > PW) return false;
+    for (let i = 0; i < len; i++) if (grid[y][x + i].ch !== " " && grid[y][x + i].ch !== "┄") return false;
+    return true;
+  };
+  // output = input reference line
+  const yOne = gy(1);
+  for (let x = 0; x < PW; x++) put(x, yOne, "┄", dim);
+  const marks = FIELD_ARCH.map((a) => ({ x: gx(a.lev), y: gy(a.vel), a }));
+  const youMark = you ? { x: gx(you.lev), y: gy(you.vel) } : null;
+  for (const m of marks) put(m.x, m.y, "■", archetypeColor(m.a.key));
+  if (youMark) put(youMark.x, youMark.y, "▲", (s) => bold(paint(c.boldGold, s)));
+  const label = (x, y, txt, p) => {
+    for (const [lx, ly] of [[x + 2, y], [x - txt.length - 1, y], [x + 2, y - 1], [x + 2, y + 1], [x - txt.length - 1, y + 1]]) {
+      if (free(lx, ly, txt.length)) {
+        [...txt].forEach((ch, i) => put(lx + i, ly, ch, p));
+        return;
+      }
+    }
+  };
+  if (youMark) label(youMark.x, youMark.y, "YOU", (s) => bold(paint(c.boldGold, s)));
+  for (const m of marks) label(m.x, m.y, m.a.name, archetypeColor(m.a.key));
+  if (yOne >= 0 && yOne < PH && free(1, yOne, 14)) [..."output = input"].forEach((ch, i) => put(1 + i, yOne, ch, dim));
+  const yTick = { [gy(1)]: "1.0", [gy(0.1)]: "0.1", [gy(0.01)]: "0.01" };
+  const out = grid.map((row, y) => {
+    let line = "";
+    for (const cell of row) line += cell.p ? cell.p(cell.ch) : cell.ch;
+    return `  ${dim(padStart(yTick[y] ?? "", 5))} ${dim("│")}${line}`;
+  });
+  let axis = " ".repeat(PW).split("");
+  for (const [v, t] of [[2, "2×"], [10, "10×"], [100, "100×"], [500, "500×"]]) {
+    const x = gx(v);
+    [...t].forEach((ch, i) => { if (x + i < PW) axis[x + i] = ch; });
+  }
+  out.push(`  ${" ".repeat(5)} ${dim("└" + "─".repeat(PW))}`);
+  out.push(`  ${" ".repeat(6)}${dim(axis.join(""))}`);
+  out.push(
+    w >= 112
+      ? `  ${dim("velocity ↑ output per input · leverage → cache reads per input · ■ field median per archetype · signalaf.com/field")}`
+      : `  ${dim("↑ velocity · → leverage · ■ archetype median · signalaf.com/field")}`,
+  );
+  return out;
+}
+
 // Operator's combined all-time pillars across every active platform.
 function combinedAllPillars(active) {
   const p = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -764,7 +837,14 @@ function heroLines(active, w, h) {
     col("OP RATIO", bold(ratio), dim("cache : in : out"), 22),
     col("CLASS", clsFn(cas.class), dim("scale"), 12),
   ];
-  return [0, 1, 2].map((r) => `   ${ac(g[r])}   ${cols.map((cc) => cc[r]).join("")}`);
+  // Cascade flow: what one unit of fresh input turns into.
+  const lev = (p.cacheRead ?? 0) / p.input, vel = (p.output ?? 0) / p.input;
+  const arrow = dim(" ──▶ ");
+  const flow =
+    `   ${dim("flow")}   ${paint(c.cyan, `1 fresh input`)}${arrow}` +
+    `${paint(c.blue, `${fmtTok(Math.round((p.cacheCreate ?? 0) / p.input))} written`)}${dim(" · ")}` +
+    `${paint(c.boldGold, `${fmtLev(lev)} read back`)}${arrow}${paint(c.green, `${vel.toFixed(2)} output`)}`;
+  return [...[0, 1, 2].map((r) => `   ${ac(g[r])}   ${cols.map((cc) => cc[r]).join("")}`), "", flow];
 }
 
 // Horizontal stacked bar: input | cacheW | cacheR | output
@@ -1604,11 +1684,17 @@ function renderTrends(data, subIdx = 0) {
     if (trendsDropped > 0)
       emit(`  ${dim(`  +${trendsDropped} more — resize to see more`)}`);
   } else {
-    // Field
-    emit(`  ${dim("  Field-wide trends — calculating…")}`);
+    // Field — where your build sits among the 10 build archetypes.
+    const p = combinedAllPillars(active);
+    const you = p ? { lev: (p.cacheRead ?? 0) / p.input, vel: (p.output ?? 0) / p.input } : null;
+    const arch = p ? classifyArchetype({ velocity: you.vel, leverage: you.lev, pillars: p }) : null;
     emit(
-      `  ${dim("  (needs per-window board history; materializes once live ingest lands)")}`,
+      `  ${bold("Field map")}  ${arch ? `${dim("you:")} ${archetypeColor(arch.key)(bold(arch.name))}  ${dim(fmtOpRatio(p))}` : dim("reading your cascade…")}`,
     );
+    emit();
+    for (const ln of fieldMapLines(you, W(), budget - used)) emit(ln);
+    emit();
+    emit(`  ${dim("Field-wide trends over time: coming later (needs per-window board history)")}`);
   }
 }
 
@@ -1940,6 +2026,10 @@ function renderSubmissions(
   //   w < 90:   hide Tokens + Class + Op Ratio, shorten Codename 20→16 → 61 cols
   const showTokens = w >= 120;
   const showClass = w >= 100;
+  // Wide terminals: a log-scale Υ bar per row so the gaps read at a glance.
+  const showBar = w >= 132;
+  const BAR_W = 16;
+  const maxYLog = Math.max(1, ...rows.map((e) => Math.log10(Math.max(gYield(e) ?? 1, 1))));
   const showOpRatio = w >= 90;
   const nameWidth = w < 90 ? 16 : 20;
 
@@ -1952,6 +2042,7 @@ function renderSubmissions(
     ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 20)] : []),
     ...(showClass ? [padEnd(hdr("Class"), 12)] : []),
     ...(showTokens ? [padStart(hdr("Tokens"), 9)] : []),
+    ...(showBar ? [padEnd(hdr("Υ (log)"), BAR_W)] : []),
   ];
   emit(`    ${SH.join("  ")}`);
   emit(`  ${dim("·".repeat(Math.min(w - 4, 102)))}`);
@@ -1990,6 +2081,9 @@ function renderSubmissions(
       ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 20)] : []),
       ...(showClass ? [cls] : []),
       ...(showTokens ? [padStart(tk != null ? fmtTok(tk) : "—", 9)] : []),
+      ...(showBar
+        ? [padEnd(logBar(Math.max(yv ?? 0, 1), maxYLog, BAR_W, idx === 0 ? c.boldGold : isYou ? c.boldCyan : c.green).bar, BAR_W)]
+        : []),
     ];
     emit(`    ${cells.join("  ")}${youMark}`);
     shown++;
