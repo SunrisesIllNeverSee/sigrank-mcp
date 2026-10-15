@@ -1692,11 +1692,18 @@ function renderCompare(data) {
     { ok: !!ts, name: "tokscale", how: "not installed, or scan timed out" },
   ];
   if (srcStatus.some((x) => !x.ok)) {
-    emit();
-    for (const x of srcStatus)
+    // Short terminals: one line (names only) so the comparison table keeps its rows.
+    if (budget - used < 16) {
       emit(
-        `    ${x.ok ? green("✓") : paint(c.red, "✗")} ${padEnd(x.ok ? x.name : dim(x.name), 16)} ${dim(x.ok ? "found" : x.how)}`,
+        `  ${dim("sources:")} ${srcStatus.map((x) => `${x.ok ? green("✓") : paint(c.red, "✗")} ${x.ok ? x.name : dim(x.name)}`).join("  ")}`,
       );
+    } else {
+      emit();
+      for (const x of srcStatus)
+        emit(
+          `    ${x.ok ? green("✓") : paint(c.red, "✗")} ${padEnd(x.ok ? x.name : dim(x.name), 16)} ${dim(x.ok ? "found" : x.how)}`,
+        );
+    }
   }
   emit();
 
