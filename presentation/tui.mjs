@@ -1301,15 +1301,19 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
 
   // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
 
-  // ── Token bar charts (skip if no room)
-  if (used >= budget - boardLines && active.length) hidden.push("Token Composition");
-  if (used < budget - boardLines) {
+  // ── Token bar charts — per-platform horizontal bars + the combined row.
+  // Owner must-keep (2026-10-15): these show whenever they fit on their own,
+  // ahead of Your Read / Four Degrees (which drop to "▾ … below" first).
+  const tcPlatforms = active.filter((d) => d.windows?.some((w) => w.window === "all")).length;
+  const tcRows = 2 + tcPlatforms + (active.length > 1 ? 1 : 0);
+  if (active.length && budget - used < tcRows) hidden.push("Token Composition");
+  if (active.length && budget - used >= tcRows) {
     emit(`  ${hr()}`);
     emit(
       `  ${bold("Token Composition")}  ${dim("█")}${paint(c.cyan, "I")}${dim(" in  █")}${paint(c.blue, "W")}${dim(" cW  █")}${paint(c.boldGold, "R")}${dim(" cR  █")}${paint(c.green, "O")}${dim(" out")}`,
     );
     for (const d of active) {
-      if (used >= budget - boardLines) break;
+      if (used >= budget - 1) break;
       const all = d.windows?.find((w) => w.window === "all");
       if (!all) continue;
       emit(
