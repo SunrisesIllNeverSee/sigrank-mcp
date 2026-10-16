@@ -1202,7 +1202,12 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // (Υ-trend section moved to the Trends tab; its old `sparkLines` reservation is gone,
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
-  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
+  // Token Composition: hr + header + one row per platform (local ∪ lifetime) + combined + submissions note
+  const tcPlatCount = new Set([
+    ...active.map((d) => d.platform),
+    ...Object.keys(data?.batchedData?.per_platform ?? {}).filter((k) => k !== "multi"),
+  ]).size;
+  const barLines = 4 + tcPlatCount + (tcPlatCount > 1 ? 1 : 0);
   // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + Lifetime Tokens (blank+hr+header+platforms+combined+note = ~7) + status
   // +2: "Where you sit" line. Two-column layout (≥130 cols) needs fewer rows.
   const boardLines = w >= 130 ? 20 : 26;
@@ -1311,39 +1316,72 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
 
   // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
 
-  // ── Token bar charts — per-platform horizontal bars + the combined row.
-  // Owner must-keep (2026-10-15): these show whenever they fit on their own,
-  // ahead of Your Read / Four Degrees (which drop to "▾ … below" first).
-  const tcPlatforms = active.filter((d) => d.windows?.some((w) => w.window === "all")).length;
-  const tcRows = 2 + tcPlatforms + (active.length > 1 ? 1 : 0);
-  if (active.length && budget - used < tcRows) hidden.push("Token Composition");
-  if (active.length && budget - used >= tcRows) {
+  // ── Token Composition — lifetime per platform (owner 2026-10-15: "combine token
+  // composition with lifetime" + "split up i o cw"). Each row: stacked bar + the
+  // four pillars as separate numbers (cache read swamps the bar, so the small
+  // pillars need their own figures) + total. Lifetime = archived submissions
+  // (never decreases) when signed in; local all-time otherwise / for local-only
+  // platforms. Replaces the separate Lifetime Tokens section.
+  const batchedTC = data?.batchedData;
+  const tcList = [];
+  const seenTC = new Set();
+  for (const [plat, pw] of Object.entries(batchedTC?.per_platform ?? {})) {
+    if (plat === "multi" || !pw?.all) continue;
+    tcList.push({ plat, p: pw.all, d90: pw["90d"], src: "lifetime" });
+    seenTC.add(plat);
+  }
+  const samePillars = (a, b) =>
+    ["input", "output", "cacheCreate", "cacheRead"].every((k) => (a?.[k] ?? 0) === (b?.[k] ?? 0));
+  for (const d of active) {
+    if (seenTC.has(d.platform)) continue;
+    const all = d.windows?.find((x) => x.window === "all");
+    // A local-only platform whose totals exactly match a lifetime row was
+    // already submitted under that row's name (e.g. antigravity → "other").
+    if (all?.pillars && !tcList.some((r) => samePillars(r.p, all.pillars)))
+      tcList.push({ plat: d.platform, p: all.pillars, src: "local" });
+  }
+  const tot = (p) => (p?.input ?? 0) + (p?.output ?? 0) + (p?.cacheCreate ?? 0) + (p?.cacheRead ?? 0);
+  tcList.sort((a, b) => tot(b.p) - tot(a.p));
+  let tcCombined = batchedTC?.combined?.all ?? null;
+  if (!tcCombined && tcList.length > 1) {
+    tcCombined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+    for (const r of tcList) for (const k of Object.keys(tcCombined)) tcCombined[k] += r.p[k] ?? 0;
+  }
+  const subsTC = Object.entries(batchedTC?.per_platform ?? {})
+    .filter(([k]) => k !== "multi")
+    .reduce((n, [, pw]) => n + (pw.submission_count ?? 0), 0);
+  const baseTC = Object.values(batchedTC?.per_platform ?? {})
+    .map((pw) => pw.baseline_date)
+    .filter(Boolean)
+    .sort()[0];
+  const tcRows = 2 + tcList.length + (tcCombined ? 1 : 0) + (subsTC ? 1 : 0);
+  if (tcList.length && budget - used < tcRows) hidden.push("Token Composition");
+  if (tcList.length && budget - used >= tcRows) {
+    const showSplit = w >= 100;
+    const NAME_W = 13;
+    const splitW = 44; // "in 15.3M  out 24.9M  cw 238.7M  cr 6.7B"
+    const barW = showSplit ? Math.max(12, Math.min(36, w - 4 - NAME_W - 2 - splitW - 18)) : 50;
+    const split = (p) =>
+      `${paint(c.cyan, "in")} ${padStart(fmtTok(p.input ?? 0), 6)}  ${paint(c.green, "out")} ${padStart(fmtTok(p.output ?? 0), 6)}  ${paint(c.blue, "cw")} ${padStart(fmtTok(p.cacheCreate ?? 0), 6)}  ${paint(c.boldGold, "cr")} ${padStart(fmtTok(p.cacheRead ?? 0), 6)}`;
+    const row = (name, p, extra = "") =>
+      emit(
+        `    ${padEnd(name, NAME_W)}${tokenBar(p, barW)}  ${showSplit ? split(p) + "  " : ""}${bold(padStart(fmtTok(tot(p)), 6))}${extra}`,
+      );
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Token Composition")}  ${dim("█")}${paint(c.cyan, "I")}${dim(" in  █")}${paint(c.blue, "W")}${dim(" cW  █")}${paint(c.boldGold, "R")}${dim(" cR  █")}${paint(c.green, "O")}${dim(" out")}`,
+      `  ${bold("Token Composition")}  ${dim(batchedTC ? "lifetime · archived submissions, never decreases" : "all-time · local logs")}   ${dim("█")}${paint(c.cyan, "in")} ${dim("█")}${paint(c.blue, "cw")} ${dim("█")}${paint(c.boldGold, "cr")} ${dim("█")}${paint(c.green, "out")}`,
     );
-    for (const d of active) {
+    for (const r of tcList) {
       if (used >= budget - 1) break;
-      const all = d.windows?.find((w) => w.window === "all");
-      if (!all) continue;
-      emit(
-        `    ${padEnd(platformColor(d.platform)(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input ?? 0) + (all.pillars.output ?? 0) + (all.pillars.cacheCreate ?? 0) + (all.pillars.cacheRead ?? 0)))}`,
-      );
+      const d90 = r.d90 && w >= 132 ? dim(`  ${fmtTok(tot(r.d90))} in 90d`) : r.src === "local" && batchedTC ? dim("  local") : "";
+      row(platformColor(r.plat)(r.plat), r.p, d90);
     }
-    if (active.length > 1) {
-      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
-      for (const d of active) {
-        const all = d.windows?.find((w) => w.window === "all");
-        if (!all) continue;
-        cp.input += all.pillars.input ?? 0;
-        cp.output += all.pillars.output ?? 0;
-        cp.cacheCreate += all.pillars.cacheCreate ?? 0;
-        cp.cacheRead += all.pillars.cacheRead ?? 0;
-      }
-      emit(
-        `    ${padEnd(bold(active.map((d) => d.platform).join("+")), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input + cp.output + cp.cacheCreate + cp.cacheRead))}`,
-      );
+    if (tcCombined && used < budget) {
+      const d90 = batchedTC?.combined?.["90d"] && w >= 132 ? dim(`  ${fmtTok(tot(batchedTC.combined["90d"]))} in 90d`) : "";
+      row(bold("combined"), tcCombined, d90);
     }
+    if (subsTC && used < budget)
+      emit(`    ${dim(`${subsTC} submission${subsTC !== 1 ? "s" : ""} archived${baseTC ? ` · baseline ${String(baseTC).slice(0, 10)}` : ""}`)}`);
     // Log-scale per-pillar breakdown — companion to the linear stacked bar above.
     // The linear bar erases small pillars when one dominates by 1000× (MOSES-class:
     // cacheRead 2.5B vs input 1.25M → input gets 0 width). The log view shows every
@@ -1587,7 +1625,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       emit(youLine);
     }
     }
-  }
+  } else hidden.push("Your Read · Four Degrees");
 
   if (twoCol) {
     if (!parts.read) parts.read = colBuf;
@@ -1602,8 +1640,11 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const lifetimeRows = batched
     ? 4 + Object.keys(batched.per_platform ?? {}).filter((k) => k !== "multi").length + 2
     : 0;
-  if (batched && !twoCol && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
-  if (batched && (twoCol || budget - used >= lifetimeRows)) {
+  // Lifetime is now shown inside Token Composition (per-platform lifetime rows);
+  // this standalone section only renders if that section had to be hidden.
+  const lifetimeMerged = !hidden.includes("Token Composition");
+  if (batched && !lifetimeMerged && !twoCol && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
+  if (batched && !lifetimeMerged && (twoCol || budget - used >= lifetimeRows)) {
     const fmtT = (n) => {
       if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
       if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
