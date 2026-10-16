@@ -281,8 +281,10 @@ function wrapDim(text, indent = "  ", maxW) {
   if (line) lines.push(`${indent}${dim(line.trim())}`);
   return lines;
 }
+// _hrW: column width override while a section is rendered into a column.
+let _hrW = null;
 function hr(ch = "─") {
-  return dim(ch.repeat(Math.max(0, W() - 4)));
+  return dim(ch.repeat(Math.max(0, _hrW ?? W() - 4)));
 }
 
 // ── Number formatters ───────────────────────────────────────────────────────
@@ -1064,7 +1066,14 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // Sections that didn't fit whole are listed on one "▾ … below" line instead
   // of being cut mid-table (height-budget policy).
   const hidden = [];
+  // colBuf: when set, emit() collects lines for the two-column layout instead
+  // of writing them (the lower report sections on wide terminals).
+  let colBuf = null;
   const emit = (s = "") => {
+    if (colBuf) {
+      colBuf.push(s);
+      return;
+    }
     if (used < budget) {
       writeln(s);
       used++;
@@ -1195,7 +1204,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const platformCount = active.length;
   const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
   // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + Lifetime Tokens (blank+hr+header+platforms+combined+note = ~7) + status
-  const boardLines = 26; // +2: "Where you sit" line (blank + line)
+  // +2: "Where you sit" line. Two-column layout (≥130 cols) needs fewer rows.
+  const boardLines = w >= 130 ? 20 : 26;
   const sectionsBelow = barLines + boardLines;
   const gapNotes = active.filter((d) => gapNote(d.platform)).length;
   const maxCascadeRows = Math.max(8, budget - used - sectionsBelow - gapNotes);
@@ -1379,6 +1389,44 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     return null;
   })();
 
+  // "Where you sit": field references + you on one Υ line, ordered by value,
+  // spacing proportional to log distance (fits any width — labels never collide).
+  function whereYouSitLine() {
+    const youP = combinedAllPillars(active);
+    const youCas = youP && cascadeFrom(youP);
+    if (!(youCas?.yield > 0)) return null;
+    const youArch = classifyArchetype({ velocity: youCas.velocity, leverage: youCas.leverage, pillars: youP });
+    const ac = archetypeColor(youArch.key);
+    const pts = [
+      { v: TD.base.yield, s: dim(`AA ${fmtY(TD.base.yield)}`) },
+      { v: TD.hcm.yield, s: `Field ${fmtY(TD.hcm.yield)}` },
+      { v: TD.power.yield, s: `Power ${fmtY(TD.power.yield)}` },
+      { v: TD.top.yield, s: gold(`Top ${fmtY(TD.top.yield)}`) },
+      { v: youCas.yield, s: ac(bold(`▲ YOU ${fmtY(youCas.yield)}`)) },
+    ].sort((x, y) => x.v - y.v);
+    const lead = `    ${bold("Where you sit")}  ${dim("Υ")}  `;
+    const labels = pts.reduce((n, pt) => n + visW(pt.s), 0);
+    const avail = Math.max(pts.length - 1, w - visW(lead) - labels - 2 * (pts.length - 1) - 2);
+    const lg = (v) => Math.log10(Math.max(v, 0.01));
+    const span = Math.max(0.001, lg(pts[pts.length - 1].v) - lg(pts[0].v));
+    let line = lead + pts[0].s;
+    for (let i = 1; i < pts.length; i++) {
+      const n = Math.max(1, Math.round(((lg(pts[i].v) - lg(pts[i - 1].v)) / span) * avail));
+      line += ` ${dim("─".repeat(n))} ${pts[i].s}`;
+    }
+    return line;
+  }
+
+  // ── Lower report: two columns on wide terminals (owner 2026-10-15: "after all
+  // the tokens load we should go into two columns"). Left = Your Read + Lifetime
+  // Tokens, right = Four Degrees, then "Where you sit" full width underneath.
+  const twoCol = w >= 130;
+  const colW = Math.floor((w - 2) / 2);
+  const parts = {};
+  if (twoCol) {
+    colBuf = [];
+    _hrW = colW - 4;
+  }
   if (used < budget - 8) {
     // Field references for Your Read + Four Degrees. Previously TD.top was
     // overwritten with the operator's own combined "all" cascade, so users were
@@ -1490,7 +1538,11 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     // ── Four Degrees — AA baseline · Human Center of Mass · Power users · Top Evals
     // Matches signalaf.com/wiki/four-degrees (expanded from 3 → 4 degrees 2026-07-17).
     // Needs 12 rows (blank+hr+title+header+5 rows+note+blank+where-you-sit).
-    if (budget - used < 12) hidden.push("Four Degrees");
+    if (twoCol) {
+      parts.read = colBuf;
+      colBuf = [];
+    }
+    if (!twoCol && budget - used < 12) hidden.push("Four Degrees");
     else {
     emit();
     emit(`  ${hr()}`);
@@ -1527,34 +1579,20 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     emit(
       `    ${dim("Field = operator center of mass · published field references")}`,
     );
-    // Where you sit: field references + you on one Υ line, ordered by value,
-    // spacing proportional to log distance (fits any width — labels never collide).
-    const youP = combinedAllPillars(active);
-    const youCas = youP && cascadeFrom(youP);
-    if (youCas?.yield > 0 && used < budget - 2) {
-      const youArch = classifyArchetype({ velocity: youCas.velocity, leverage: youCas.leverage, pillars: youP });
-      const ac = archetypeColor(youArch.key);
-      const pts = [
-        { v: tdLive.base.yield, s: dim(`AA ${fmtY(tdLive.base.yield)}`) },
-        { v: tdLive.hcm.yield, s: `Field ${fmtY(tdLive.hcm.yield)}` },
-        { v: tdLive.power.yield, s: `Power ${fmtY(tdLive.power.yield)}` },
-        { v: tdLive.top.yield, s: gold(`Top ${fmtY(tdLive.top.yield)}`) },
-        { v: youCas.yield, s: ac(bold(`▲ YOU ${fmtY(youCas.yield)}`)) },
-      ].sort((x, y) => x.v - y.v);
-      const lead = `    ${bold("Where you sit")}  ${dim("Υ")}  `;
-      const labels = pts.reduce((n, pt) => n + visW(pt.s), 0);
-      const avail = Math.max(pts.length - 1, w - visW(lead) - labels - 2 * (pts.length - 1) - 2);
-      const lg = (v) => Math.log10(Math.max(v, 0.01));
-      const span = Math.max(0.001, lg(pts[pts.length - 1].v) - lg(pts[0].v));
-      let line = lead + pts[0].s;
-      for (let i = 1; i < pts.length; i++) {
-        const n = Math.max(1, Math.round(((lg(pts[i].v) - lg(pts[i - 1].v)) / span) * avail));
-        line += ` ${dim("─".repeat(n))} ${pts[i].s}`;
-      }
+    // Where you sit — inline in the single-column layout (two-column puts it
+    // full width under the columns).
+    const youLine = !twoCol ? whereYouSitLine() : null;
+    if (youLine && used < budget - 2) {
       emit();
-      emit(line);
+      emit(youLine);
     }
     }
+  }
+
+  if (twoCol) {
+    if (!parts.read) parts.read = colBuf;
+    else parts.four = colBuf;
+    colBuf = [];
   }
 
   // ── Lifetime Tokens — submission-based rolled-forward totals (never decrease)
@@ -1564,8 +1602,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const lifetimeRows = batched
     ? 4 + Object.keys(batched.per_platform ?? {}).filter((k) => k !== "multi").length + 2
     : 0;
-  if (batched && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
-  if (batched && budget - used >= lifetimeRows) {
+  if (batched && !twoCol && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
+  if (batched && (twoCol || budget - used >= lifetimeRows)) {
     const fmtT = (n) => {
       if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
       if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -1603,6 +1641,32 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       emit(
         `    ${dim(`${totalSubs} submission${totalSubs !== 1 ? "s" : ""} archived · baseline ${baselineDates[0].slice(0, 10)}`)}`,
       );
+    }
+  }
+
+  if (twoCol) {
+    parts.life = colBuf;
+    colBuf = null;
+    _hrW = null;
+    const trim = (a) => {
+      const x = [...(a ?? [])];
+      while (x.length && !stripAnsi(x[0]).trim()) x.shift();
+      while (x.length && !stripAnsi(x[x.length - 1]).trim()) x.pop();
+      return x;
+    };
+    // Lifetime's own divider line separates it from Your Read — no blank row.
+    const left = [...trim(parts.read), ...trim(parts.life)];
+    const right = trim(parts.four);
+    const rows = Math.max(left.length, right.length);
+    const fit = (ln) => padEnd(ansiTrunc(ln ?? "", colW), colW);
+    const where = whereYouSitLine();
+    const room = budget - used - (where ? 2 : 0) - (hidden.length ? 1 : 0) - (status ? 1 : 0);
+    const shown = Math.min(rows, Math.max(0, room));
+    for (let i = 0; i < shown; i++) emit(`${fit(left[i])}  ${fit(right[i])}`.replace(/\s+$/, ""));
+    if (shown < rows) hidden.push("rest of the report");
+    if (where && used < budget - 1) {
+      emit();
+      emit(where);
     }
   }
 
