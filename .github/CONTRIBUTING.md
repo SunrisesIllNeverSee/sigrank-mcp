@@ -40,7 +40,7 @@ CI also runs (in addition to the above + cross-repo contract + pack-check):
 1. Add the adapter to `adapters/index.mjs` following the existing pattern, and
    register it in `ADAPTERS`.
 2. Add a test case to `test.mjs` (adapter registry + shape contract).
-3. Update the platform table in `README.md`.
+3. Update the platform table in `docs/CLI-MCP-REFERENCE.md`.
 
 ## Pull requests
 
