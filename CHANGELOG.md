@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### TUI
+
+* Dashboard identity block: build archetype (pixel glyph + name), Υ, operating ratio and class for your combined all-time cascade; one-line form on small terminals
+* Cascade table: Build (archetype) column per window on wide terminals; note when 7d/30d/90d are identical because no activity was logged between 7 and 90 days ago
+* Four Degrees: values match signalaf.com/wiki/four-degrees; "Your Read" and the Top column no longer compare you against your own all-time numbers; new "Where you sit" Υ line
+* Submit preview ([S]): shows every stat that will be sent per platform × window (token pillars, messages, mode, health, badges) plus what the board derives (Υ, op ratio, class, archetype), including the combined multi submission; [P] pages platforms
+* Board: [U] toggles all submissions ↔ best row per operator; large Υ shown as M/B; spaced operating ratios
+* Trends: unimplemented metrics folded into one "coming later" line; compact op ratio on narrow terminals
+* Compare: source checklist (found / how to install) instead of a wall of text; sections render whole or not at all
+* Narrow windows: footer hints wrap/compact instead of being cut off; tab bar sheds the clock/site/version before overflowing; terminal-cell-accurate widths; cut lines end in "…"; sections that don't fit are listed on a "▾ … below" line
+* Platform colors follow brand colors (Claude orange, OpenAI green, Google blue/green, Devin blue, Copilot/Qwen purple, Kilo yellow, xAI silver, OpenClaw red)
+
 ## 1.0.46
 
 ### Security / privacy

@@ -19,7 +19,7 @@ import { freshVerifierPillars } from "../tokenpull.mjs";
 import { isSignedIn, isCodeChar } from "../connect.mjs";
 import { loadIdentity, clearIdentity } from "../keystore.mjs";
 import { execFile } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { pathToFileURL } from "node:url";
@@ -54,7 +54,9 @@ export function dashboardEnabledPlatforms({
 // The `c` object is a live proxy to the current theme — changing the theme
 // via setTheme() updates all colors. Supports dark/light/high-contrast/monochrome.
 import * as _themeMod from "./tui-themes.mjs";
-import { platformColor } from "./tui-themes.mjs";
+import { platformColor, archetypeColor } from "./tui-themes.mjs";
+import { classifyArchetype } from "./narrate.mjs";
+import { _computeReportBlock } from "../tools/_report.mjs";
 const ESC = "\x1b[";
 // `c` is a live proxy — reads currentTheme at access time so theme switches
 // take effect immediately. The helper functions below (paint/bold/dim/etc.)
@@ -154,15 +156,44 @@ function flushScreen() {
 function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
+// Terminal cell width of one code point: 0 for combining marks / zero-width /
+// variation selectors, 2 for East Asian wide + emoji, else 1. Counting UTF-16
+// units (.length) miscounts these and pushes columns out of line.
+function cpWidth(cp) {
+  if (cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0xfeff) return 0;
+  if ((cp >= 0x0300 && cp <= 0x036f) || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0;
+  if (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  )
+    return 2;
+  return 1;
+}
+// Visible width in terminal cells (ANSI escapes stripped).
+function visW(s) {
+  let w = 0;
+  for (const ch of stripAnsi(s)) w += cpWidth(ch.codePointAt(0));
+  return w;
+}
 // ANSI-aware truncate: cut to `w` VISIBLE columns while keeping color escapes
 // intact (escapes don't count toward width, and we never slice mid-sequence).
 // Replaces raw `.slice(0, w)`, which corrupts color codes + miscounts width.
 function ansiTrunc(s, w) {
-  if (stripAnsi(s).length <= w) return s;
+  if (visW(s) <= w) return s;
+  if (w <= 0) return "";
+  // Leave one cell for "…" so a cut line reads as cut, not as complete.
+  const room = w - 1;
   let out = "",
     vis = 0,
     i = 0;
-  while (i < s.length && vis < w) {
+  while (i < s.length) {
     if (s[i] === "\x1b") {
       const m = s.slice(i).match(/^\x1b\[[0-9;]*m/);
       if (m) {
@@ -171,22 +202,63 @@ function ansiTrunc(s, w) {
         continue;
       }
     }
-    out += s[i];
-    vis++;
-    i++;
+    const cp = s.codePointAt(i);
+    const ch = String.fromCodePoint(cp);
+    const cw = cpWidth(cp);
+    if (vis + cw > room) break;
+    out += ch;
+    vis += cw;
+    i += ch.length;
   }
-  return out + c.reset; // reset so a cut mid-color doesn't bleed into next line
+  return out + c.reset + dim("…"); // reset so a cut mid-color doesn't bleed into next line
 }
 function padEnd(s, w) {
-  const v = stripAnsi(s).length;
+  const v = visW(s);
   return v >= w ? s : s + " ".repeat(w - v);
 }
 function padStart(s, w) {
-  const v = stripAnsi(s).length;
+  const v = visW(s);
   return v >= w ? s : " ".repeat(w - v) + s;
 }
 function trunc(s, w) {
-  return stripAnsi(s).length <= w ? s : s.slice(0, w - 1) + "…";
+  return visW(s) <= w ? s : ansiTrunc(s, w);
+}
+
+// Footer keybar that degrades in steps instead of being cut off: full hints on one line → wrap to two lines → compact
+// "[K]" keys only → drop the lowest-priority hints. items: [{ k, label, pri }]
+// where k is the key text ("[R]", "← →"), label the words after it, and pri
+// 1 (always keep) … 3 (first to go). Returns 1–2 lines, each prefixed "  ".
+function fitHints(items, w = W()) {
+  const room = Math.max(10, w - 2);
+  const fmt = (it, compact) =>
+    compact || !it.label ? dim(it.k) : `${dim(it.k)} ${it.label}`;
+  const join = (list, compact) => list.map((it) => fmt(it, compact)).join("   ");
+  const pack = (list, compact) => {
+    const lines = [];
+    let cur = [];
+    for (const it of list) {
+      const next = [...cur, it];
+      if (cur.length && visW(join(next, compact)) > room) {
+        lines.push(cur);
+        cur = [it];
+      } else cur = next;
+    }
+    if (cur.length) lines.push(cur);
+    return lines.map((l) => join(l, compact));
+  };
+  for (const compact of [false, true]) {
+    let list = items.slice();
+    for (;;) {
+      const lines = pack(list, compact);
+      if (lines.length <= (compact ? 1 : 2) && lines.every((l) => visW(l) <= room))
+        return lines.map((l) => `  ${l}`);
+      const worst = Math.max(...list.map((it) => it.pri ?? 2));
+      if (worst <= 1) break;
+      const idx = list.map((it) => it.pri ?? 2).lastIndexOf(worst);
+      list.splice(idx, 1);
+    }
+  }
+  return [`  ${ansiTrunc(join(items.filter((it) => (it.pri ?? 2) <= 1), true), room)}`];
 }
 // Wrap a plain-text string into dim'd lines that fit within `maxW` columns.
 // Used for no-data/empty-state messages that can be long on narrow terminals.
@@ -209,15 +281,21 @@ function wrapDim(text, indent = "  ", maxW) {
   if (line) lines.push(`${indent}${dim(line.trim())}`);
   return lines;
 }
+// _hrW: column width override while a section is rendered into a column.
+let _hrW = null;
 function hr(ch = "─") {
-  return dim(ch.repeat(Math.max(0, W() - 4)));
+  return dim(ch.repeat(Math.max(0, _hrW ?? W() - 4)));
 }
 
 // ── Number formatters ───────────────────────────────────────────────────────
 const fmtY = (y) =>
   y == null
     ? "—"
-    : y >= 10000
+    : y >= 1e9
+      ? `${(y / 1e9).toFixed(1)}B`
+      : y >= 1e6
+        ? `${(y / 1e6).toFixed(1)}M`
+        : y >= 10000
       ? `${(y / 1000).toFixed(1)}K`
       : y >= 1000
         ? `${(y / 1000).toFixed(2)}K`
@@ -331,7 +409,7 @@ function sparkline(values) {
 // (tools.mjs keeps its own `_ccusagePillars`/`_tokscalePillars`/`_tokenDashPillars` —
 // still used by the `tokenpull_compare` MCP tool.)
 
-async function loadDashboardData({ includeOmp = false } = {}) {
+async function loadDashboardData({ includeOmp = false, onPrimary } = {}) {
   const boardPromise = Promise.race([
     fetch(`${DEFAULT_API_BASE}/api/v1/leaderboard?window=30d&metric=${LEADERBOARD_METRIC}`, {
       headers: { accept: "application/json" },
@@ -363,6 +441,16 @@ async function loadDashboardData({ includeOmp = false } = {}) {
   const active = await pullActivePlatforms({ platforms: ["claude"] }).catch(
     () => [],
   );
+  // PERF: hand the primary platform to the TUI the moment it lands, so Trends (and the cascade)
+  // can paint without waiting on the board/batched fetches (up to 5s each) below. The batched
+  // "all" override further down mutates these same objects in place.
+  if (active.length) {
+    try {
+      await onPrimary?.(active);
+    } catch {
+      /* paint hook is best-effort */
+    }
+  }
 
   const boardData = await boardPromise;
   const batchedData = await batchedPromise;
@@ -490,6 +578,87 @@ async function loadCompareData(platform = "claude") {
   };
 }
 
+// PERF (2026-10-15): Compare cache. The fresh verifier pull above takes seconds to minutes, so
+// the Compare tab shows the LAST SUCCESSFUL result for the platform immediately (with a dim
+// "updated Ns ago · refreshing…" note) and refreshes in the background. Kept in memory for the
+// session and mirrored to ~/.sigrank-mcp/compare-cache.json (dir 0700, file 0600 — same
+// conventions as identity/keystore.mjs) so a fresh launch also paints instantly. Only the
+// aggregated pillar numbers already shown on screen are stored. Never consulted off the TUI.
+const COMPARE_CACHE_PATH = () =>
+  path.join(os.homedir(), ".sigrank-mcp", "compare-cache.json");
+let _compareCache = null; // { [platform]: { at: epochMs, data } }
+
+function _compareCacheAll() {
+  if (_compareCache) return _compareCache;
+  _compareCache = {};
+  try {
+    const raw = JSON.parse(readFileSync(COMPARE_CACHE_PATH(), "utf-8"));
+    if (raw && typeof raw === "object" && raw.v === 1 && raw.platforms) {
+      for (const [p, e] of Object.entries(raw.platforms)) {
+        if (e && Number.isFinite(e.at) && e.data && typeof e.data === "object")
+          _compareCache[p] = { at: e.at, data: { ...e.data, platform: p } };
+      }
+    }
+  } catch {
+    /* absent / corrupt cache → start empty */
+  }
+  return _compareCache;
+}
+
+function getCachedCompare(platform) {
+  return _compareCacheAll()[platform] ?? null;
+}
+
+// A result is worth caching only if at least one source produced data.
+function _compareHasData(d) {
+  return !!(d && ((d.tpData?.windows?.length ?? 0) > 0 || d.cc || d.ts || d.td));
+}
+
+function putCachedCompare(platform, data) {
+  if (!_compareHasData(data)) return;
+  const all = _compareCacheAll();
+  // Keep only what renderCompare reads: per-window pillars from each source.
+  const slim = {
+    tpData: data.tpData
+      ? {
+          windows: (data.tpData.windows ?? []).map((w) => ({
+            window: w.window,
+            pillars: w.pillars,
+          })),
+        }
+      : null,
+    cc: data.cc ?? null,
+    ts: data.ts ?? null,
+    td: data.td ?? null,
+    platform,
+  };
+  all[platform] = { at: Date.now(), data: slim };
+  try {
+    const dir = path.dirname(COMPARE_CACHE_PATH());
+    mkdirSync(dir, { recursive: true });
+    try {
+      chmodSync(dir, 0o700);
+    } catch {
+      /* best-effort */
+    }
+    const tmp = `${COMPARE_CACHE_PATH()}.tmp-${process.pid}`;
+    writeFileSync(tmp, JSON.stringify({ v: 1, platforms: all }), { mode: 0o600 });
+    renameSync(tmp, COMPARE_CACHE_PATH());
+  } catch {
+    /* disk cache is best-effort — the in-memory cache still works */
+  }
+}
+
+function fmtAgo(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
 // #8 (2026-06-27): the Board tab shows ALL SUBMISSIONS ranked (raw submission rows), not operator
 // aggregates. Try the NEW GET /api/v1/submissions first; if it's not deployed yet (non-200 / 404),
 // FALL BACK to the existing /api/v1/leaderboard so nothing breaks pre-deploy. The return is tagged
@@ -536,18 +705,20 @@ const TABS = [
   { key: "6", label: "Connect", short: "N" }, // sign in / switch device — the whole app is the TUI
 ];
 
-// Four Degrees of Leverage — reference values matching signalaf.com/wiki/four-degrees.
+// Four Degrees of Leverage — reference values from signalaf.com/wiki/four-degrees
+// (table as published 2026-10-15).
 //   base  = AA baseline (7:2:1 modeled reference, static)
-//   hcm   = Human Center of Mass (median of all real operators)
-//   power = Power users (median of top 100 real operators)
-//   top   = Top Evals (single top real operator)
-// STATIC fallback values match the web app's GoldColumn fallbacks (lib/marketing/top-operator-column.ts).
-// Goes live (hcm/power/top computed from the board) once there's real user volume.
+//   hcm   = Operator Center of Mass (median of the screened operator cohort)
+//   power = Power users (median of the top 100 by yield)
+//   top   = Top Evals (single leading operator to date)
+// These are field references. The operator's OWN numbers must never be
+// substituted in here — comparing someone against themselves made every
+// metric read "top tier" (fixed 2026-10-15).
 const TD = {
-  base:  { yield: 1.75, snr: 0.33, vel: 0.50, lev: 3.5,   d10: 0.54 },
-  hcm:   { yield: 1.57, snr: 0.33, vel: 0.50, lev: 3.2,   d10: 0.50 },
-  power: { yield: 1.51, snr: 0.07, vel: 0.08, lev: 22.3,  d10: 1.35 },
-  top:   { yield: 488.65, snr: 0.58, vel: 1.36, lev: 360.2, d10: 2.56 },
+  base:  { yield: 1.75,   snr: 0.33, vel: 0.50, lev: 3.5,   d10: 0.54 },
+  hcm:   { yield: 1.90,   snr: 0.09, vel: 0.10, lev: 20.3,  d10: 1.31 },
+  power: { yield: 239.61, snr: 0.51, vel: 1.04, lev: 241.6, d10: 2.38 },
+  top:   { yield: 941.23, snr: 0.63, vel: 1.70, lev: 553.2, d10: 2.74 },
 };
 
 function renderTabBar(activeIdx) {
@@ -557,27 +728,217 @@ function renderTabBar(activeIdx) {
   // logo
   const logo = `  ${gold("⊙ SigRank")}`;
   // tabs
-  const tabStr = TABS.map((t, i) => {
-    const lbl = ` ${t.key}:${t.label} `;
-    return i === activeIdx
-      ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
-      : `${c.bgDim}${c.dim}${lbl}${c.reset}`;
-  }).join("");
   // right side — version (single source of truth) · site · clock
   const right = dim(
     `${gold("v" + VERSION)}${c.reset}${c.dim}  ·  signalaf.com  ·  ${ts}`,
   );
 
-  const logoVis = stripAnsi(logo).length;
-  const tabsVis = TABS.reduce((a, t) => a + t.label.length + 4, 0);
-  const rightVis = stripAnsi(right).length;
-  const gap = Math.max(1, w - logoVis - tabsVis - rightVis - 2);
-
-  writeln(`${logo}  ${tabStr}${" ".repeat(gap)}${right}`);
+  // Narrow terminals: shed the right-hand meta first (clock → site → version),
+  // then shorten INACTIVE tab labels (1:Dashboard → 1D → 1). The active tab
+  // always keeps its full name so you know where you are.
+  const tabLbl = (t, i, mode) =>
+    i === activeIdx || mode === 0
+      ? ` ${t.key}:${t.label} `
+      : mode === 1
+        ? ` ${t.key}${t.short} `
+        : ` ${t.key} `;
+  const tabsFor = (mode) =>
+    TABS.map((t, i) => {
+      const lbl = tabLbl(t, i, mode);
+      return i === activeIdx
+        ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
+        : `${c.bgDim}${c.dim}${lbl}${c.reset}`;
+    }).join("");
+  const rights = [
+    right,
+    dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  ·  signalaf.com`),
+    gold("v" + VERSION),
+    "",
+  ];
+  const logoVis = visW(logo);
+  let line = null;
+  outer: for (const mode of [0, 1, 2]) {
+    for (const r of rights) {
+      const t = tabsFor(mode);
+      const used = logoVis + 2 + visW(t) + (r ? visW(r) + 1 : 0);
+      if (used <= w) {
+        const gap = r ? Math.max(1, w - used) : 0;
+        line = `${logo}  ${t}${" ".repeat(gap)}${r}`;
+        break outer;
+      }
+    }
+  }
+  writeln(line ?? `${logo}  ${tabsFor(2)}`);
   writeln(`  ${hr()}`);
 }
 
 // ── GRAPHICS helpers ─────────────────────────────────────────────────────────
+
+// Build archetype pixel glyphs (5×5, same art as the SignalAF promo graphics),
+// drawn with half-blocks so 5 rows fit in 3 terminal lines.
+const ARCH_GLYPH = {
+  "input-bound": ["10000", "10000", "10000", "10000", "11111"],
+  priming: ["00000", "00000", "00100", "01110", "11111"],
+  contextual: ["00000", "01110", "01010", "01110", "00000"],
+  "deep-reader": ["11111", "10001", "10101", "10001", "11111"],
+  archivist: ["11111", "11111", "00000", "11111", "11111"],
+  builder: ["00011", "00011", "01111", "01111", "11111"],
+  recursive: ["11111", "10000", "10111", "10101", "11101"],
+  amplifier: ["00100", "01110", "11111", "00100", "00100"],
+  convergent: ["10001", "01010", "00100", "00100", "00100"],
+  kinetic: ["00110", "01100", "11111", "00110", "01100"],
+};
+const ARCH_SHORT = {
+  "input-bound": "fresh input carries the workload",
+  priming: "reuse is beginning to form",
+  contextual: "retained context supports the work",
+  "deep-reader": "draws deep from accumulated context",
+  archivist: "a deep context library carries it",
+  builder: "creating material for future reuse",
+  recursive: "building on top of its own base",
+  amplifier: "reuse and construction at scale",
+  convergent: "elite on all three axes at once",
+  kinetic: "output breaks out past input",
+};
+function archGlyphLines(key) {
+  const g = ARCH_GLYPH[key];
+  if (!g) return ["", "", ""];
+  const half = (a, b = "00000") =>
+    [...a]
+      .map((x, i) =>
+        x === "1" && b[i] === "1" ? "██" : x === "1" ? "▀▀" : b[i] === "1" ? "▄▄" : "  ",
+      )
+      .join("");
+  return [half(g[0], g[1]), half(g[2], g[3]), half(g[4])];
+}
+// cache : in : out, normalized to input = 1
+function fmtOpRatio(p) {
+  if (!p?.input) return "—";
+  const lev = (p.cacheRead ?? 0) / p.input,
+    vel = (p.output ?? 0) / p.input;
+  const fl = lev >= 100 ? Math.round(lev).toLocaleString("en-US") : lev.toFixed(1);
+  return `${fl} : 1 : ${vel.toFixed(2)}`;
+}
+// Build archetype field medians (signalaf.com/field "Build Archetypes"; field
+// snapshot — share of field, median leverage and velocity per archetype).
+const FIELD_ARCH = [
+  { key: "input-bound", name: "INPUT-BOUND", n: 6.8, lev: 2.7, vel: 0.02 },
+  { key: "priming", name: "PRIMING", n: 9.4, lev: 7.7, vel: 0.042 },
+  { key: "contextual", name: "CONTEXTUAL", n: 11.7, lev: 12.7, vel: 0.066 },
+  { key: "deep-reader", name: "DEEP READER", n: 10.7, lev: 18.4, vel: 0.081 },
+  { key: "archivist", name: "ARCHIVIST", n: 11.7, lev: 29.8, vel: 0.124 },
+  { key: "builder", name: "BUILDER", n: 17.5, lev: 13.7, vel: 0.077 },
+  { key: "recursive", name: "RECURSIVE", n: 8.3, lev: 38.9, vel: 0.191 },
+  { key: "amplifier", name: "AMPLIFIER", n: 10.2, lev: 77.2, vel: 0.329 },
+  { key: "convergent", name: "CONVERGENT", n: 6.6, lev: 245.3, vel: 1.049 },
+  { key: "kinetic", name: "KINETIC", n: 7.1, lev: 361.5, vel: 1.52 },
+];
+// Field map: the 10 archetype medians on log leverage × log velocity, plus
+// ▲ YOU. Returns lines (no emit) so callers can budget them as one block.
+function fieldMapLines(you, w, rows) {
+  const PH = Math.max(8, Math.min(14, rows - 5));
+  const PW = Math.max(40, Math.min(78, w - 14));
+  const X0 = Math.log10(1.5), X1 = Math.log10(900);
+  const Y0 = Math.log10(0.012), Y1 = Math.log10(4);
+  const gx = (lev) => Math.round(((Math.log10(Math.max(lev, 1.5)) - X0) / (X1 - X0)) * (PW - 1));
+  const gy = (vel) =>
+    PH - 1 - Math.round(((Math.log10(Math.min(Math.max(vel, 0.012), 4)) - Y0) / (Y1 - Y0)) * (PH - 1));
+  // cell grid: { ch, paint }
+  const grid = Array.from({ length: PH }, () => Array.from({ length: PW }, () => ({ ch: " ", p: null })));
+  const put = (x, y, ch, p) => {
+    if (y >= 0 && y < PH && x >= 0 && x < PW) grid[y][x] = { ch, p };
+  };
+  const free = (x, y, len) => {
+    if (y < 0 || y >= PH || x < 0 || x + len > PW) return false;
+    for (let i = 0; i < len; i++) if (grid[y][x + i].ch !== " " && grid[y][x + i].ch !== "┄") return false;
+    return true;
+  };
+  // output = input reference line
+  const yOne = gy(1);
+  for (let x = 0; x < PW; x++) put(x, yOne, "┄", dim);
+  const marks = FIELD_ARCH.map((a) => ({ x: gx(a.lev), y: gy(a.vel), a }));
+  const youMark = you ? { x: gx(you.lev), y: gy(you.vel) } : null;
+  for (const m of marks) put(m.x, m.y, "■", archetypeColor(m.a.key));
+  if (youMark) put(youMark.x, youMark.y, "▲", (s) => bold(paint(c.boldGold, s)));
+  const label = (x, y, txt, p) => {
+    for (const [lx, ly] of [[x + 2, y], [x - txt.length - 1, y], [x + 2, y - 1], [x + 2, y + 1], [x - txt.length - 1, y + 1]]) {
+      if (free(lx, ly, txt.length)) {
+        [...txt].forEach((ch, i) => put(lx + i, ly, ch, p));
+        return;
+      }
+    }
+  };
+  if (youMark) label(youMark.x, youMark.y, "YOU", (s) => bold(paint(c.boldGold, s)));
+  for (const m of marks) label(m.x, m.y, m.a.name, archetypeColor(m.a.key));
+  if (yOne >= 0 && yOne < PH && free(1, yOne, 14)) [..."output = input"].forEach((ch, i) => put(1 + i, yOne, ch, dim));
+  const yTick = { [gy(1)]: "1.0", [gy(0.1)]: "0.1", [gy(0.01)]: "0.01" };
+  const out = grid.map((row, y) => {
+    let line = "";
+    for (const cell of row) line += cell.p ? cell.p(cell.ch) : cell.ch;
+    return `  ${dim(padStart(yTick[y] ?? "", 5))} ${dim("│")}${line}`;
+  });
+  let axis = " ".repeat(PW).split("");
+  for (const [v, t] of [[2, "2×"], [10, "10×"], [100, "100×"], [500, "500×"]]) {
+    const x = gx(v);
+    [...t].forEach((ch, i) => { if (x + i < PW) axis[x + i] = ch; });
+  }
+  out.push(`  ${" ".repeat(5)} ${dim("└" + "─".repeat(PW))}`);
+  out.push(`  ${" ".repeat(6)}${dim(axis.join(""))}`);
+  out.push(
+    w >= 112
+      ? `  ${dim("velocity ↑ output per input · leverage → cache reads per input · ■ field median per archetype · signalaf.com/field")}`
+      : `  ${dim("↑ velocity · → leverage · ■ archetype median · signalaf.com/field")}`,
+  );
+  return out;
+}
+
+// Operator's combined all-time pillars across every active platform.
+function combinedAllPillars(active) {
+  const p = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+  for (const d of active ?? []) {
+    const all = d.windows?.find((x) => x.window === "all");
+    if (!all?.pillars) continue;
+    p.input += all.pillars.input ?? 0;
+    p.output += all.pillars.output ?? 0;
+    p.cacheCreate += all.pillars.cacheCreate ?? 0;
+    p.cacheRead += all.pillars.cacheRead ?? 0;
+  }
+  return p.input > 0 ? p : null;
+}
+// Identity block at the top of the Dashboard: archetype (shape), Υ, operating
+// ratio, class (scale). Full 3-line version with the pixel glyph when there's
+// room; one line on short/narrow terminals so the cascade table keeps its rows.
+function heroLines(active, w, h) {
+  const p = combinedAllPillars(active);
+  if (!p) return [];
+  const cas = cascadeFrom(p);
+  if (!cas) return [];
+  const arch = classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p });
+  const ac = archetypeColor(arch.key);
+  const clsFn = CLS[cas.class] ?? ((s) => s);
+  const ratio = fmtOpRatio(p);
+  if (h < 46 || w < 96) {
+    return [
+      `  ${ac("■")} ${ac(bold(arch.name))}  ${dim("·")}  ${dim("Υ")} ${bold(fmtY(cas.yield))}  ${dim("·")}  ${ratio}  ${dim("·")}  ${clsFn(cas.class)}`,
+    ];
+  }
+  const g = archGlyphLines(arch.key);
+  const col = (lbl, val, sub, width) => [padEnd(dim(lbl), width), padEnd(val, width), padEnd(sub, width)];
+  const cols = [
+    col("ARCHETYPE", ac(bold(arch.name)), dim(ARCH_SHORT[arch.key] ?? arch.familyLabel), 38),
+    col("Υ YIELD", bold(paint(c.boldGold, fmtY(cas.yield))), dim("all-time · all platforms"), 26),
+    col("OP RATIO", bold(ratio), dim("cache : in : out"), 22),
+    col("CLASS", clsFn(cas.class), dim("scale"), 12),
+  ];
+  // Cascade flow: what one unit of fresh input turns into.
+  const lev = (p.cacheRead ?? 0) / p.input, vel = (p.output ?? 0) / p.input;
+  const arrow = dim(" ──▶ ");
+  const flow =
+    `   ${dim("flow")}   ${paint(c.cyan, `1 fresh input`)}${arrow}` +
+    `${paint(c.blue, `${fmtTok(Math.round((p.cacheCreate ?? 0) / p.input))} written`)}${dim(" · ")}` +
+    `${paint(c.boldGold, `${fmtLev(lev)} read back`)}${arrow}${paint(c.green, `${vel.toFixed(2)} output`)}`;
+  return [...[0, 1, 2].map((r) => `   ${ac(g[r])}   ${cols.map((cc) => cc[r]).join("")}`), "", flow];
+}
 
 // Horizontal stacked bar: input | cacheW | cacheR | output
 function tokenBar(p, width = 40) {
@@ -702,7 +1063,17 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const budget = H() - 4; // 2 tab bar + 2 footer
   const WINS = ["7d", "30d", "90d", "all"];
   let used = 0;
+  // Sections that didn't fit whole are listed on one "▾ … below" line instead
+  // of being cut mid-table (height-budget policy).
+  const hidden = [];
+  // colBuf: when set, emit() collects lines for the two-column layout instead
+  // of writing them (the lower report sections on wide terminals).
+  let colBuf = null;
   const emit = (s = "") => {
+    if (colBuf) {
+      colBuf.push(s);
+      return;
+    }
     if (used < budget) {
       writeln(s);
       used++;
@@ -731,6 +1102,8 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   const narrow = w < 124;
   const veryNarrow = w < 100;
   const ultraNarrow = w < 90;
+  // Wide terminals (≥136) get a Build column: the archetype for that window.
+  const wide = w >= 136;
   const gap = narrow ? " " : "  ";
   const cwLabel = veryNarrow ? "CW" : "CacheW";
   const crLabel = veryNarrow ? "CR" : "CacheR";
@@ -762,9 +1135,24 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
             padStart(cas.dev10x?.toFixed(2) ?? "—", 6),
           ]),
       ...(veryNarrow ? [] : [padEnd(clsFn(cas.class), 13)]),
+      ...(wide
+        ? [
+            (() => {
+              const a = classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p });
+              return padEnd(archetypeColor(a.key)(a.name), 12);
+            })(),
+          ]
+        : []),
     ];
     emit(`    ${cols.join(gap)}`);
   };
+
+  // ── Identity: archetype · Υ · op ratio · class
+  const hero = heroLines(active, w, H());
+  if (hero.length) {
+    emit();
+    for (const ln of hero) emit(ln);
+  }
 
   // ── Cascade table
   emit();
@@ -784,9 +1172,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     ...(ultraNarrow ? [] : [padStart(hdr("Lev"), 7)]),
     ...(narrow ? [] : [padStart(hdr("Vel"), 6), padStart(hdr("10x"), 6)]),
     ...(veryNarrow ? [] : [padEnd(hdr("Class"), 13)]),
+    ...(wide ? [padEnd(hdr("Build"), 12)] : []),
   ];
   emit(`    ${CH.join(gap)}`);
-  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? (ultraNarrow ? 70 : veryNarrow ? 80 : 96) : 114))))}`);
+  emit(`  ${dim("·".repeat(Math.max(0, Math.min(w - 4, narrow ? (ultraNarrow ? 70 : veryNarrow ? 80 : 96) : wide ? 128 : 114))))}`);
 
   if (active.length === 0) {
     // Count is derived from the registry — a hardcoded number drifts every time an
@@ -796,15 +1185,35 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     );
   }
 
+  // When 7d, 30d and 90d are identical but "all" is larger, the logs simply
+  // have no activity between 7 and 90 days ago — say so, so it doesn't read as
+  // a windowing bug (it was reported as one, 2026-10-15).
+  const gapNote = (platform) => {
+    const d = active.find((x) => x.platform === platform);
+    const pick = (wk) => d?.windows?.find((x) => x.window === wk)?.pillars;
+    const [a, b, c90, all] = ["7d", "30d", "90d", "all"].map(pick);
+    const same = (x, y) =>
+      x && y && ["input", "output", "cacheCreate", "cacheRead"].every((k) => (x[k] ?? 0) === (y[k] ?? 0));
+    if (!a || !(a.input > 0) || !same(a, b) || !same(a, c90) || !all || same(a, all)) return null;
+    return `    ${dim(`↳ 7d = 30d = 90d: no ${platform} activity logged between 7 and 90 days ago`)}`;
+  };
+
   // Calculate how many cascade rows we can fit — reserve space for lower sections.
   // (Υ-trend section moved to the Trends tab; its old `sparkLines` reservation is gone,
   // which is what was starving codex's cascade rows after the Your-Read/Three-Degrees panels landed.)
   const platformCount = active.length;
-  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0); // Token Composition: hr + header + platforms + combined + note
+  // Token Composition: hr + header + one row per platform (local ∪ lifetime) + combined + submissions note
+  const tcPlatCount = new Set([
+    ...active.map((d) => d.platform),
+    ...Object.keys(data?.batchedData?.per_platform ?? {}).filter((k) => k !== "multi"),
+  ]).size;
+  const barLines = 4 + tcPlatCount + (tcPlatCount > 1 ? 1 : 0);
   // Your Read (hr+header+up to 4 wins+up to 5 gaps+summary = 13) + Four Degrees (blank+hr+header+col-header+5 rows+note = 10) + Lifetime Tokens (blank+hr+header+platforms+combined+note = ~7) + status
-  const boardLines = 24;
+  // +2: "Where you sit" line. Two-column layout (≥130 cols) needs fewer rows.
+  const boardLines = w >= 130 ? 20 : 26;
   const sectionsBelow = barLines + boardLines;
-  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow);
+  const gapNotes = active.filter((d) => gapNote(d.platform)).length;
+  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow - gapNotes);
 
   // SCROLL-VIEW (2026-06-27): Build the full list of cascade rows first, then
   // slice by [scrollOffset, scrollOffset + maxCascadeRows]. This gives a real
@@ -850,7 +1259,11 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // Render the visible slice — group by platform (emit a blank line between platforms)
   let lastPlatform = null;
   for (const row of visibleRows) {
-    if (lastPlatform !== null && row.platform !== lastPlatform) emit();
+    if (lastPlatform !== null && row.platform !== lastPlatform) {
+      const note = gapNote(lastPlatform);
+      if (note) emit(note);
+      emit();
+    }
     renderRow(
       row.platform,
       (s) => {
@@ -862,6 +1275,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
       row.estimated,
     );
     lastPlatform = row.platform;
+  }
+  if (lastPlatform !== null) {
+    const note = gapNote(lastPlatform);
+    if (note) emit(note);
   }
   if (visibleRows.length > 0) emit();
 
@@ -899,34 +1316,72 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
 
   // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
 
-  // ── Token bar charts (skip if no room)
-  if (used < budget - boardLines) {
+  // ── Token Composition — lifetime per platform (owner 2026-10-15: "combine token
+  // composition with lifetime" + "split up i o cw"). Each row: stacked bar + the
+  // four pillars as separate numbers (cache read swamps the bar, so the small
+  // pillars need their own figures) + total. Lifetime = archived submissions
+  // (never decreases) when signed in; local all-time otherwise / for local-only
+  // platforms. Replaces the separate Lifetime Tokens section.
+  const batchedTC = data?.batchedData;
+  const tcList = [];
+  const seenTC = new Set();
+  for (const [plat, pw] of Object.entries(batchedTC?.per_platform ?? {})) {
+    if (plat === "multi" || !pw?.all) continue;
+    tcList.push({ plat, p: pw.all, d90: pw["90d"], src: "lifetime" });
+    seenTC.add(plat);
+  }
+  const samePillars = (a, b) =>
+    ["input", "output", "cacheCreate", "cacheRead"].every((k) => (a?.[k] ?? 0) === (b?.[k] ?? 0));
+  for (const d of active) {
+    if (seenTC.has(d.platform)) continue;
+    const all = d.windows?.find((x) => x.window === "all");
+    // A local-only platform whose totals exactly match a lifetime row was
+    // already submitted under that row's name (e.g. antigravity → "other").
+    if (all?.pillars && !tcList.some((r) => samePillars(r.p, all.pillars)))
+      tcList.push({ plat: d.platform, p: all.pillars, src: "local" });
+  }
+  const tot = (p) => (p?.input ?? 0) + (p?.output ?? 0) + (p?.cacheCreate ?? 0) + (p?.cacheRead ?? 0);
+  tcList.sort((a, b) => tot(b.p) - tot(a.p));
+  let tcCombined = batchedTC?.combined?.all ?? null;
+  if (!tcCombined && tcList.length > 1) {
+    tcCombined = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+    for (const r of tcList) for (const k of Object.keys(tcCombined)) tcCombined[k] += r.p[k] ?? 0;
+  }
+  const subsTC = Object.entries(batchedTC?.per_platform ?? {})
+    .filter(([k]) => k !== "multi")
+    .reduce((n, [, pw]) => n + (pw.submission_count ?? 0), 0);
+  const baseTC = Object.values(batchedTC?.per_platform ?? {})
+    .map((pw) => pw.baseline_date)
+    .filter(Boolean)
+    .sort()[0];
+  const tcRows = 2 + tcList.length + (tcCombined ? 1 : 0) + (subsTC ? 1 : 0);
+  if (tcList.length && budget - used < tcRows) hidden.push("Token Composition");
+  if (tcList.length && budget - used >= tcRows) {
+    const showSplit = w >= 100;
+    const NAME_W = 13;
+    const splitW = 44; // "in 15.3M  out 24.9M  cw 238.7M  cr 6.7B"
+    const barW = showSplit ? Math.max(12, Math.min(36, w - 4 - NAME_W - 2 - splitW - 18)) : 50;
+    const split = (p) =>
+      `${paint(c.cyan, "in")} ${padStart(fmtTok(p.input ?? 0), 6)}  ${paint(c.green, "out")} ${padStart(fmtTok(p.output ?? 0), 6)}  ${paint(c.blue, "cw")} ${padStart(fmtTok(p.cacheCreate ?? 0), 6)}  ${paint(c.boldGold, "cr")} ${padStart(fmtTok(p.cacheRead ?? 0), 6)}`;
+    const row = (name, p, extra = "") =>
+      emit(
+        `    ${padEnd(name, NAME_W)}${tokenBar(p, barW)}  ${showSplit ? split(p) + "  " : ""}${bold(padStart(fmtTok(tot(p)), 6))}${extra}`,
+      );
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Token Composition")}  ${dim("█")}${paint(c.cyan, "I")}${dim(" in  █")}${paint(c.blue, "W")}${dim(" cW  █")}${paint(c.boldGold, "R")}${dim(" cR  █")}${paint(c.green, "O")}${dim(" out")}`,
+      `  ${bold("Token Composition")}  ${dim(batchedTC ? "lifetime · archived submissions, never decreases" : "all-time · local logs")}   ${dim("█")}${paint(c.cyan, "in")} ${dim("█")}${paint(c.blue, "cw")} ${dim("█")}${paint(c.boldGold, "cr")} ${dim("█")}${paint(c.green, "out")}`,
     );
-    for (const d of active) {
-      if (used >= budget - boardLines) break;
-      const all = d.windows?.find((w) => w.window === "all");
-      if (!all) continue;
-      emit(
-        `    ${padEnd(platformColor(d.platform)(d.platform), 10)}  ${tokenBar(all.pillars, 50)}  ${dim(fmtTok((all.pillars.input ?? 0) + (all.pillars.output ?? 0) + (all.pillars.cacheCreate ?? 0) + (all.pillars.cacheRead ?? 0)))}`,
-      );
+    for (const r of tcList) {
+      if (used >= budget - 1) break;
+      const d90 = r.d90 && w >= 132 ? dim(`  ${fmtTok(tot(r.d90))} in 90d`) : r.src === "local" && batchedTC ? dim("  local") : "";
+      row(platformColor(r.plat)(r.plat), r.p, d90);
     }
-    if (active.length > 1) {
-      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
-      for (const d of active) {
-        const all = d.windows?.find((w) => w.window === "all");
-        if (!all) continue;
-        cp.input += all.pillars.input ?? 0;
-        cp.output += all.pillars.output ?? 0;
-        cp.cacheCreate += all.pillars.cacheCreate ?? 0;
-        cp.cacheRead += all.pillars.cacheRead ?? 0;
-      }
-      emit(
-        `    ${padEnd(bold(active.map((d) => d.platform).join("+")), 10)}  ${tokenBar(cp, 50)}  ${dim(fmtTok(cp.input + cp.output + cp.cacheCreate + cp.cacheRead))}`,
-      );
+    if (tcCombined && used < budget) {
+      const d90 = batchedTC?.combined?.["90d"] && w >= 132 ? dim(`  ${fmtTok(tot(batchedTC.combined["90d"]))} in 90d`) : "";
+      row(bold("combined"), tcCombined, d90);
     }
+    if (subsTC && used < budget)
+      emit(`    ${dim(`${subsTC} submission${subsTC !== 1 ? "s" : ""} archived${baseTC ? ` · baseline ${String(baseTC).slice(0, 10)}` : ""}`)}`);
     // Log-scale per-pillar breakdown — companion to the linear stacked bar above.
     // The linear bar erases small pillars when one dominates by 1000× (MOSES-class:
     // cacheRead 2.5B vs input 1.25M → input gets 0 width). The log view shows every
@@ -972,30 +1427,49 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     return null;
   })();
 
+  // "Where you sit": field references + you on one Υ line, ordered by value,
+  // spacing proportional to log distance (fits any width — labels never collide).
+  function whereYouSitLine() {
+    const youP = combinedAllPillars(active);
+    const youCas = youP && cascadeFrom(youP);
+    if (!(youCas?.yield > 0)) return null;
+    const youArch = classifyArchetype({ velocity: youCas.velocity, leverage: youCas.leverage, pillars: youP });
+    const ac = archetypeColor(youArch.key);
+    const pts = [
+      { v: TD.base.yield, s: dim(`AA ${fmtY(TD.base.yield)}`) },
+      { v: TD.hcm.yield, s: `Field ${fmtY(TD.hcm.yield)}` },
+      { v: TD.power.yield, s: `Power ${fmtY(TD.power.yield)}` },
+      { v: TD.top.yield, s: gold(`Top ${fmtY(TD.top.yield)}`) },
+      { v: youCas.yield, s: ac(bold(`▲ YOU ${fmtY(youCas.yield)}`)) },
+    ].sort((x, y) => x.v - y.v);
+    const lead = `    ${bold("Where you sit")}  ${dim("Υ")}  `;
+    const labels = pts.reduce((n, pt) => n + visW(pt.s), 0);
+    const avail = Math.max(pts.length - 1, w - visW(lead) - labels - 2 * (pts.length - 1) - 2);
+    const lg = (v) => Math.log10(Math.max(v, 0.01));
+    const span = Math.max(0.001, lg(pts[pts.length - 1].v) - lg(pts[0].v));
+    let line = lead + pts[0].s;
+    for (let i = 1; i < pts.length; i++) {
+      const n = Math.max(1, Math.round(((lg(pts[i].v) - lg(pts[i - 1].v)) / span) * avail));
+      line += ` ${dim("─".repeat(n))} ${pts[i].s}`;
+    }
+    return line;
+  }
+
+  // ── Lower report: two columns on wide terminals (owner 2026-10-15: "after all
+  // the tokens load we should go into two columns"). Left = Your Read + Lifetime
+  // Tokens, right = Four Degrees, then "Where you sit" full width underneath.
+  const twoCol = w >= 130;
+  const colW = Math.floor((w - 2) / 2);
+  const parts = {};
+  if (twoCol) {
+    colBuf = [];
+    _hrW = colW - 4;
+  }
   if (used < budget - 8) {
-    // Compute the operator's combined "all" cascade for live Four Degrees.
-    // TD.top is overridden with the live metrics so the "Top Evals" column
-    // reflects the actual top operator instead of a static snapshot.
-    const combinedAll = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
-    for (const d of active) {
-      const all = d.windows?.find((w) => w.window === "all");
-      if (!all) continue;
-      combinedAll.input += all.pillars.input ?? 0;
-      combinedAll.output += all.pillars.output ?? 0;
-      combinedAll.cacheCreate += all.pillars.cacheCreate ?? 0;
-      combinedAll.cacheRead += all.pillars.cacheRead ?? 0;
-    }
-    const liveTop = cascadeFrom(combinedAll);
-    const tdLive = { ...TD };
-    if (liveTop && (liveTop.yield ?? 0) > 0) {
-      tdLive.top = {
-        yield: liveTop.yield,
-        snr: liveTop.snr,
-        vel: liveTop.velocity ?? TD.top.vel,
-        lev: liveTop.leverage ?? TD.top.lev,
-        d10: liveTop.dev10x ?? TD.top.d10,
-      };
-    }
+    // Field references for Your Read + Four Degrees. Previously TD.top was
+    // overwritten with the operator's own combined "all" cascade, so users were
+    // compared against themselves; the published field values are used instead.
+    const tdLive = TD;
     // ── Custom insights — comparison vs the field + a concrete tip for the weakest metric
     emit(`  ${hr()}`);
     emit(
@@ -1092,7 +1566,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
         const hcmStr = `${aboveHcm}/${totalMetrics}`;
         const pwrStr = `${abovePower}/${totalMetrics}`;
         emit(
-          `    ${dim(`above HCM on ${bold(hcmStr)} · above Power on ${bold(pwrStr)}`)}`,
+          `    ${dim(`above field on ${bold(hcmStr)} · above Power on ${bold(pwrStr)}`)}`,
         );
       }
     } else {
@@ -1101,15 +1575,22 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
 
     // ── Four Degrees — AA baseline · Human Center of Mass · Power users · Top Evals
     // Matches signalaf.com/wiki/four-degrees (expanded from 3 → 4 degrees 2026-07-17).
+    // Needs 12 rows (blank+hr+title+header+5 rows+note+blank+where-you-sit).
+    if (twoCol) {
+      parts.read = colBuf;
+      colBuf = [];
+    }
+    if (!twoCol && budget - used < 12) hidden.push("Four Degrees");
+    else {
     emit();
     emit(`  ${hr()}`);
     emit(
-      `  ${bold("Four Degrees")}  ${dim("AA · HCM · Power · Top Evals — signalaf.com/wiki")}`,
+      `  ${bold("Four Degrees")}  ${dim("AA · Field · Power · Top Evals — signalaf.com/wiki")}`,
     );
     const tdHead = [
       padEnd(hdr("Metric"), 10),
       padStart(hdr("AA base"), 9),
-      padStart(hdr("HCM"), 9),
+      padStart(hdr("Field"), 9),
       padStart(hdr("Power"), 9),
       padStart(hdr("Top"), 9),
     ];
@@ -1134,15 +1615,36 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     );
     tdRow("10xDEV", tdLive.base.d10, tdLive.hcm.d10, tdLive.power.d10, tdLive.top.d10, (v) => v.toFixed(2));
     emit(
-      `    ${dim("Top live · HCM/Power calibrate with volume")}`,
+      `    ${dim("Field = operator center of mass · published field references")}`,
     );
+    // Where you sit — inline in the single-column layout (two-column puts it
+    // full width under the columns).
+    const youLine = !twoCol ? whereYouSitLine() : null;
+    if (youLine && used < budget - 2) {
+      emit();
+      emit(youLine);
+    }
+    }
+  } else hidden.push("Your Read · Four Degrees");
+
+  if (twoCol) {
+    if (!parts.read) parts.read = colBuf;
+    else parts.four = colBuf;
+    colBuf = [];
   }
 
   // ── Lifetime Tokens — submission-based rolled-forward totals (never decrease)
   // Shows when the operator is signed in and has submission history. The batched
   // data comes from the server (computeBatchedWindows over snapshot_submissions).
   const batched = data?.batchedData;
-  if (batched && used < budget - 4) {
+  const lifetimeRows = batched
+    ? 4 + Object.keys(batched.per_platform ?? {}).filter((k) => k !== "multi").length + 2
+    : 0;
+  // Lifetime is now shown inside Token Composition (per-platform lifetime rows);
+  // this standalone section only renders if that section had to be hidden.
+  const lifetimeMerged = !hidden.includes("Token Composition");
+  if (batched && !lifetimeMerged && !twoCol && budget - used < lifetimeRows) hidden.push("Lifetime Tokens");
+  if (batched && !lifetimeMerged && (twoCol || budget - used >= lifetimeRows)) {
     const fmtT = (n) => {
       if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
       if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
@@ -1183,6 +1685,34 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     }
   }
 
+  if (twoCol) {
+    parts.life = colBuf;
+    colBuf = null;
+    _hrW = null;
+    const trim = (a) => {
+      const x = [...(a ?? [])];
+      while (x.length && !stripAnsi(x[0]).trim()) x.shift();
+      while (x.length && !stripAnsi(x[x.length - 1]).trim()) x.pop();
+      return x;
+    };
+    // Lifetime's own divider line separates it from Your Read — no blank row.
+    const left = [...trim(parts.read), ...trim(parts.life)];
+    const right = trim(parts.four);
+    const rows = Math.max(left.length, right.length);
+    const fit = (ln) => padEnd(ansiTrunc(ln ?? "", colW), colW);
+    const where = whereYouSitLine();
+    const room = budget - used - (where ? 2 : 0) - (hidden.length ? 1 : 0) - (status ? 1 : 0);
+    const shown = Math.min(rows, Math.max(0, room));
+    for (let i = 0; i < shown; i++) emit(`${fit(left[i])}  ${fit(right[i])}`.replace(/\s+$/, ""));
+    if (shown < rows) hidden.push("rest of the report");
+    if (where && used < budget - 1) {
+      emit();
+      emit(where);
+    }
+  }
+
+  if (hidden.length && used < budget)
+    emit(`  ${dim(`▾ ${hidden.join(" · ")} below — make the window taller to see`)}`);
   if (status && used < budget) emit(`  ${dim(status)}`);
 }
 
@@ -1238,6 +1768,9 @@ const TREND_METRICS = [
         : null,
     fmt: (v) => {
       const i = v.input || 1;
+      // Narrow terminals: compact "1.1K:1:4.0" (fits the 10-col window cells,
+      // the spaced form overflowed at 80×24).
+      if (W() < 120) return `${fmtLev(v.cacheRead / i)}:1:${(v.output / i).toFixed(1)}`;
       return `${(v.cacheRead / i).toFixed(1)} : 1 : ${(v.output / i).toFixed(2)}`;
     },
   },
@@ -1270,6 +1803,11 @@ function renderTrends(data, subIdx = 0) {
   emit(
     `  ${bold("Trends")}  ${dim("every metric across windows (7d → all)")}    ${subBar}`,
   );
+  // PERF: Trends paints as soon as ANY platform is in (claude lands first); say so while the
+  // rest of the progressive scan is still filling dashData.active.
+  if (data?._loading && active?.length) {
+    emit(`  ${dim(`more platforms loading… (${active.length} in so far)`)}`);
+  }
   emit(`  ${dim("·".repeat(Math.min(W() - 4, 70)))}`);
   emit();
 
@@ -1329,27 +1867,20 @@ function renderTrends(data, subIdx = 0) {
       // FIX G1: window column headers (mirror renderCompare) — one header row, then
       // values in fixed-width columns below. No per-value `w:` prefix.
       emit(`    ${trendHeader()}`);
+      // Metrics that aren't computed client-side yet (m.stub) + Rank are listed
+      // on one "coming later" line instead of rows stuck on "calculating…".
+      const live = TREND_METRICS.filter((m) => !m.stub);
       let mi = 0;
-      for (; mi < TREND_METRICS.length; mi++) {
-        const m = TREND_METRICS[mi];
+      for (; mi < live.length; mi++) {
+        const m = live[mi];
         if (used >= budget - 2) break;
-        if (m.stub) {
-          emit(
-            `    ${padEnd(dim(m.label), 10)}  ${dim("    calculating… (" + m.stub + ")")}`,
-          );
-        } else {
-          emit(
-            `    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`,
-          );
-        }
-      }
-      trendsDropped += TREND_METRICS.length - mi; // metrics this block couldn't fit
-      // rank trend — wired later; honest placeholder for now
-      if (used < budget - 1)
         emit(
-          `    ${padEnd(dim("Rank"), 10)}  ${dim("    calculating… (rank history wires post-ingest)")}`,
+          `    ${padEnd(cyan(m.label), 10)}  ${metricSpark(d, m.pick, m.fmt)}`,
         );
-      else trendsDropped += 1;
+      }
+      trendsDropped += live.length - mi; // metrics this block couldn't fit
+      const later = [...TREND_METRICS.filter((m) => m.stub).map((m) => m.label), "Rank"];
+      if (used < budget - 1) emit(`    ${dim(`coming later: ${later.join(" · ")}`)}`);
       emit();
     }
     // A3: surface the dropped count instead of hiding it.
@@ -1358,11 +1889,17 @@ function renderTrends(data, subIdx = 0) {
     if (trendsDropped > 0)
       emit(`  ${dim(`  +${trendsDropped} more — resize to see more`)}`);
   } else {
-    // Field
-    emit(`  ${dim("  Field-wide trends — calculating…")}`);
+    // Field — where your build sits among the 10 build archetypes.
+    const p = combinedAllPillars(active);
+    const you = p ? { lev: (p.cacheRead ?? 0) / p.input, vel: (p.output ?? 0) / p.input } : null;
+    const arch = p ? classifyArchetype({ velocity: you.vel, leverage: you.lev, pillars: p }) : null;
     emit(
-      `  ${dim("  (needs per-window board history; materializes once live ingest lands)")}`,
+      `  ${bold("Field map")}  ${arch ? `${dim("you:")} ${archetypeColor(arch.key)(bold(arch.name))}  ${dim(fmtOpRatio(p))}` : dim("reading your cascade…")}`,
     );
+    emit();
+    for (const ln of fieldMapLines(you, W(), budget - used)) emit(ln);
+    emit();
+    emit(`  ${dim("Field-wide trends over time: coming later (needs per-window board history)")}`);
   }
 }
 
@@ -1375,14 +1912,19 @@ function renderCompare(data) {
   const platform = data?.platform ?? "claude";
   const WINS = ["7d", "30d", "90d", "all"];
   const w = W();
-  // Compare tab needs more vertical space — 4 sources × 4 pillars = 16 rows
-  // + headers + cascade metrics. Use full terminal height (not H()-4) and
-  // fall back to a generous fixed minimum when rows is undefined (--render mode).
-  const budget = Math.max(H() - 2, 40);
+  // Real height (tab bar + footer = 4 rows). The old 40-row floor rendered rows
+  // the frame then clipped, which the layout audit flags as silently dropped.
+  // When content runs out of room the last row says so instead.
+  const budget = Math.max(6, H() - 4);
   let used = 0;
+  let clipped = false;
   const emit = (s = "") => {
-    if (used < budget) {
+    if (used < budget - 1) {
       writeln(s);
+      used++;
+    } else if (!clipped) {
+      clipped = true;
+      writeln(`  ${dim("▾ more below — make the window taller to see")}`);
       used++;
     }
   };
@@ -1425,12 +1967,18 @@ function renderCompare(data) {
   emit(
     `  ${bold("Source Comparison")}  ${dim(`platform: ${platform}`)}  ${dim(`·  ${sourceList}`)}`,
   );
+  // PERF: cached result → say how old it is and whether a refresh is in flight.
+  if (data?._cachedAt) {
+    const ago = fmtAgo(Date.now() - data._cachedAt);
+    const tail = data._refreshing
+      ? "refreshing…"
+      : data._refreshFailed
+        ? "refresh failed · [R] retries"
+        : "[R] refreshes";
+    emit(`  ${dim(`updated ${ago} · ${tail}`)}`);
+  }
 
-  if (!tpData) {
-    emit(
-      `  ${dim("tokenpull: no JSONL data found — check ~/.claude/projects/")}`,
-    );
-  } else {
+  if (tpData) {
     const all = tpPillars["all"];
     if (all) {
       emit(
@@ -1441,22 +1989,35 @@ function renderCompare(data) {
   // FIX (2026-08-18): surface WHY external verifiers are absent so the user knows
   // it's a missing-tool issue, not a bug. Each verifier is null when its CLI/DB
   // isn't installed or returned no data for this platform.
-  const missing = [];
-  if (!cc) missing.push("ccusage (npm i -g ccusage)");
-  if (!td) missing.push("token-dashboard (~/.claude/token-dashboard.db)");
-  if (!ts) missing.push("tokscale (not installed, or scan timed out)");
-  if (missing.length)
-    for (const ln of wrapDim(`no data from: ${missing.join(" · ")}`)) emit(ln);
+  // Source checklist: ✓ found / ✗ missing + how to get it. Only shown when
+  // something is missing (a full house needs no explanation).
+  const srcStatus = [
+    { ok: !!tpData, name: "tokenpull", how: "reads your local session logs (~/.claude/projects/)" },
+    { ok: !!cc, name: "ccusage", how: "npm i -g ccusage" },
+    { ok: !!td, name: "token-dashboard", how: "~/.claude/token-dashboard.db" },
+    { ok: !!ts, name: "tokscale", how: "not installed, or scan timed out" },
+  ];
+  if (srcStatus.some((x) => !x.ok)) {
+    // Short terminals: one line (names only) so the comparison table keeps its rows.
+    if (budget - used < 16) {
+      emit(
+        `  ${dim("sources:")} ${srcStatus.map((x) => `${x.ok ? green("✓") : paint(c.red, "✗")} ${x.ok ? x.name : dim(x.name)}`).join("  ")}`,
+      );
+    } else {
+      emit();
+      for (const x of srcStatus)
+        emit(
+          `    ${x.ok ? green("✓") : paint(c.red, "✗")} ${padEnd(x.ok ? x.name : dim(x.name), 16)} ${dim(x.ok ? "found" : x.how)}`,
+        );
+    }
+  }
   emit();
 
   // FIX (2026-08-18): if ALL sources are empty (tokenpull has no windows AND all
   // verifiers are null), show a clear empty-state message instead of bare headers
   // with zero data rows.
   if (SOURCES.length === 0) {
-    for (const ln of wrapDim(
-      "no source data available for this platform — install a verifier or check ~/.claude/projects/",
-    ))
-      emit(ln);
+    emit(`  ${dim(`nothing to compare for ${platform} yet — [P] tries another platform`)}`);
     return;
   }
 
@@ -1535,7 +2096,11 @@ function renderCompare(data) {
     }
   }
 
-  if (used < budget - 4) {
+  // Whole-section rule: hr + title + header + dots + one row per source.
+  const metricsRows = 4 + SOURCES.length;
+  if (budget - used < metricsRows) {
+    if (used < budget) emit(`  ${dim("▾ Cascade Metrics below — make the window taller to see")}`);
+  } else {
     emit(`  ${hr()}`);
     emit(
       `  ${bold("Cascade Metrics")}  ${dim("all-time · computed from each source")}`,
@@ -1585,6 +2150,7 @@ function renderSubmissions(
   window = "30d",
   filterCodename = null,
   highlightCodename = null,
+  uniqueOnly = false,
 ) {
   const rows =
     boardData?.submissions ??
@@ -1618,9 +2184,10 @@ function renderSubmissions(
       : "";
   emit();
   // Shorten the header on narrow terminals to avoid overflow.
+  const scope = uniqueOnly ? "best per operator" : "all submissions";
   const boardHeader = w < 90
-    ? `window: ${window}  ·  ranked by Υ Yield`
-    : `window: ${window}  ·  all submissions ranked by Υ Yield  ·  signalaf.com`;
+    ? `window: ${window}  ·  ${uniqueOnly ? "best per operator" : "ranked by Υ Yield"}`
+    : `window: ${window}  ·  ${scope} ranked by Υ Yield  ·  signalaf.com`;
   emit(
     `  ${bold("Submissions")}  ${dim(boardHeader)}${modeLabel}`,
   );
@@ -1632,6 +2199,17 @@ function renderSubmissions(
   }
 
   let sorted = [...rows].sort((a, b) => (gYield(b) ?? 0) - (gYield(a) ?? 0));
+  // [U]: one row per operator — their best submission (rows are already
+  // sorted by Υ, so the first one seen is the best).
+  if (uniqueOnly) {
+    const seen = new Set();
+    sorted = sorted.filter((e) => {
+      const key = (gName(e) ?? "").toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
   if (filterCodename) {
     sorted = sorted.filter(
       (e) => (gName(e) ?? "").toLowerCase() === filterCodename.toLowerCase(),
@@ -1644,14 +2222,16 @@ function renderSubmissions(
   }
 
   // op_ratio may arrive as a preformatted string ("3.5 : 1 : 0.50") or a number — render either.
-  const fmtOp = (v) =>
-    v == null
-      ? "—"
-      : typeof v === "string"
-        ? v
-        : typeof v === "number"
-          ? v.toFixed(2)
-          : String(v);
+  // "200958:1:525.9" → "200,958 : 1 : 525.9" (same shape as the Dashboard ratio).
+  const fmtOp = (v) => {
+    if (v == null) return "—";
+    if (typeof v === "number") return v.toFixed(2);
+    const parts = String(v).split(":").map((x) => x.trim());
+    if (parts.length !== 3 || parts.some((x) => x === "" || isNaN(Number(x)))) return String(v);
+    const [cr, inp, out] = parts.map(Number);
+    const crS = cr >= 1000 ? Math.round(cr).toLocaleString("en-US") : String(parts[0]);
+    return `${crS} : ${inp} : ${parts[2]}`;
+  };
 
   // Responsive column hiding — the full table is 106 cols wide. Hide columns
   // at narrower terminals so rows never overflow/wrap/garble.
@@ -1661,6 +2241,10 @@ function renderSubmissions(
   //   w < 90:   hide Tokens + Class + Op Ratio, shorten Codename 20→16 → 61 cols
   const showTokens = w >= 120;
   const showClass = w >= 100;
+  // Wide terminals: a log-scale Υ bar per row so the gaps read at a glance.
+  const showBar = w >= 132;
+  const BAR_W = 16;
+  const maxYLog = Math.max(1, ...rows.map((e) => Math.log10(Math.max(gYield(e) ?? 1, 1))));
   const showOpRatio = w >= 90;
   const nameWidth = w < 90 ? 16 : 20;
 
@@ -1670,12 +2254,13 @@ function renderSubmissions(
     padEnd(hdr("Platform"), 10),
     padEnd(hdr("Win"), 6),
     padStart(hdr("Υ Yield"), 9),
-    ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 18)] : []),
+    ...(showOpRatio ? [padEnd(hdr("Op Ratio"), 20)] : []),
     ...(showClass ? [padEnd(hdr("Class"), 12)] : []),
     ...(showTokens ? [padStart(hdr("Tokens"), 9)] : []),
+    ...(showBar ? [padEnd(hdr("Υ (log)"), BAR_W)] : []),
   ];
   emit(`    ${SH.join("  ")}`);
-  emit(`  ${dim("·".repeat(Math.min(w - 4, 100)))}`);
+  emit(`  ${dim("·".repeat(Math.min(w - 4, 102)))}`);
 
   let shown = 0;
   for (let idx = 0; idx < sorted.length; idx++) {
@@ -1708,9 +2293,12 @@ function renderSubmissions(
       padEnd(platformColor(gPlat(e))(trunc(gPlat(e), 10)), 10),
       padEnd(dim(trunc(gWin(e), 6)), 6),
       yld,
-      ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 18)] : []),
+      ...(showOpRatio ? [padEnd(dim(fmtOp(gOpRatio(e))), 20)] : []),
       ...(showClass ? [cls] : []),
       ...(showTokens ? [padStart(tk != null ? fmtTok(tk) : "—", 9)] : []),
+      ...(showBar
+        ? [padEnd(logBar(Math.max(yv ?? 0, 1), maxYLog, BAR_W, idx === 0 ? c.boldGold : isYou ? c.boldCyan : c.green).bar, BAR_W)]
+        : []),
     ];
     emit(`    ${cells.join("  ")}${youMark}`);
     shown++;
@@ -1733,12 +2321,13 @@ function renderBoard(
   window = "30d",
   filterCodename = null,
   highlightCodename = null,
+  uniqueOnly = false,
 ) {
   // #8 (2026-06-27): when the data came from the NEW /api/v1/submissions endpoint, render ALL
   // submissions ranked (raw rows). Otherwise fall through to the existing leaderboard render
   // (pre-deploy fallback). loadBoardData tags the payload with `_source`.
   if (boardData?._source === "submissions") {
-    renderSubmissions(boardData, window, filterCodename, highlightCodename);
+    renderSubmissions(boardData, window, filterCodename, highlightCodename, uniqueOnly);
     return;
   }
   const entries = boardData?.entries ?? boardData?.operators ?? boardData ?? [];
@@ -2116,7 +2705,7 @@ async function renderWatch(platform = "all", win = "all-windows") {
 // Renders a platform × window grid of what submit_verified WOULD send, using the
 // already-loaded dashData. [Enter] confirms → fires submit_verified per platform;
 // [Esc] cancels → back to the read tab. Mirrors the Connect focused-field pattern.
-function renderSubmitPreview(dashData, id) {
+function renderSubmitPreview(dashData, id, page = 0) {
   const budget = H() - 4;
   let used = 0;
   const emit = (s = "") => {
@@ -2127,43 +2716,83 @@ function renderSubmitPreview(dashData, id) {
   };
   const WINS = ["7d", "30d", "90d", "all"];
   const COL_W = 14;
+  const LBL_W = 14;
 
   emit();
-  emit(`  ${bold("Submit Preview")}  ${dim("what will publish to the board")}`);
+  emit(`  ${bold("Submit Preview")}  ${dim("everything that will be sent, per platform × window")}`);
   emit(
-    `  ${dim(`signed in as ${id?.codename ?? "—"} · device ${id?.device_id?.slice(0, 8) ?? "—"}…`)}`,
-  );
-  emit();
-  // header row: platform | 7d | 30d | 90d | all
-  const hcols = [
-    padEnd(hdr("Platform"), 12),
-    ...WINS.map((w) => padStart(hdr(w), COL_W)),
-  ];
-  emit(`    ${hcols.join("  ")}`);
-  emit(
-    `  ${dim("·".repeat(Math.min(W() - 4, 12 + WINS.length * (COL_W + 2))))}`,
+    `  ${dim(`signed in as ${id?.codename ?? "—"} · device ${id?.device_id?.slice(0, 8) ?? "—"}… · ed25519-signed · token counts only, never prompt content`)}`,
   );
 
-  const active = dashData?.active ?? [];
-  for (const d of active) {
-    if (used >= budget - 3) break;
-    const cells = WINS.map((w) => {
-      const wd = d.windows?.find((x) => x.window === w);
-      if (!wd || wd.pillars.input + wd.pillars.output === 0)
-        return padStart(dim("—"), COL_W);
-      const cas = cascadeFrom(wd.pillars);
-      if (!cas) return padStart(dim("—"), COL_W);
-      return padStart(gold(fmtY(cas.yield)), COL_W);
-    });
-    emit(`    ${padEnd(cyan(d.platform), 12)}  ${cells.join("  ")}`);
-  }
+  // One block per platform, plus the combined "multi" submission when 2+ are active
+  // (mirrors the [Enter] handler: submit_verified per platform, then 'multi').
+  const active = (dashData?.active ?? []).filter((d) =>
+    d.windows?.some((w) => w.pillars && w.pillars.input + w.pillars.output > 0),
+  );
   if (active.length === 0) {
+    emit();
     emit(`  ${dim("  no platforms with data — press [R] to refresh")}`);
+    return { pages: 0 };
+  }
+  const blocks = active.map((d) => ({ platform: d.platform, windows: d.windows }));
+  if (active.length >= 2) {
+    const multi = WINS.map((wk) => {
+      const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+      let messages = 0;
+      for (const d of active) {
+        const w = d.windows?.find((x) => x.window === wk);
+        if (!w?.pillars) continue;
+        for (const k of Object.keys(sum)) sum[k] += w.pillars[k] ?? 0;
+        messages += w.messages || 0;
+      }
+      return { window: wk, pillars: sum, messages };
+    });
+    blocks.push({ platform: "multi", windows: multi, combined: active.map((d) => d.platform).join("+") });
+  }
+
+  const BLOCK_ROWS = 17;
+  const perPage = Math.max(1, Math.floor((budget - used - 3) / BLOCK_ROWS));
+  const pages = Math.ceil(blocks.length / perPage);
+  const pg = Math.min(page, pages - 1);
+  const cell = (v) => padStart(v, COL_W);
+  const row = (label, vals) => emit(`    ${padEnd(label, LBL_W)}${vals.map(cell).join("")}`);
+
+  for (const b of blocks.slice(pg * perPage, pg * perPage + perPage)) {
+    const ws = WINS.map((wk) => {
+      const w = b.windows?.find((x) => x.window === wk);
+      const p = w?.pillars;
+      if (!p || p.input + p.output === 0) return null; // empty windows are skipped by submit
+      const cas = cascadeFrom(p);
+      const rep = _computeReportBlock(p);
+      const arch = cas ? classifyArchetype({ velocity: cas.velocity, leverage: cas.leverage, pillars: p }) : null;
+      return { p, cas, rep, arch, messages: w.messages };
+    });
+    const pc = b.platform === "multi" ? (s) => bold(s) : platformColor(b.platform);
+    emit();
+    emit(
+      `  ${pc(b.platform)}${b.combined ? dim(`  combined: ${b.combined}`) : ""}${" ".repeat(Math.max(1, LBL_W + 2 - visW(b.platform) - (b.combined ? visW(`  combined: ${b.combined}`) : 0)))}${WINS.map((wk) => cell(hdr(wk))).join("")}`,
+    );
+    const v = (f) => ws.map((x) => (x ? f(x) : dim("— skipped")));
+    emit(`    ${dim("sent · token pillars")}`);
+    row("input", v((x) => fmtTok(x.p.input)));
+    row("output", v((x) => fmtTok(x.p.output)));
+    row("cache write", v((x) => fmtTok(x.p.cacheCreate ?? 0)));
+    row("cache read", v((x) => fmtTok(x.p.cacheRead ?? 0)));
+    row("messages", v((x) => (x.messages != null ? fmtTok(x.messages) : dim("—"))));
+    emit(`    ${dim("sent · report block")}`);
+    row("mode", v((x) => `${x.rep.current_mode} ${Math.round((x.rep.mode_confidence ?? 0) * 100)}%`));
+    row("health", v((x) => String(x.rep.health_score)));
+    row("badges", v((x) => `${x.rep.badges?.earned_this_week?.length ?? 0} earned`));
+    emit(`    ${dim("what the board shows from these")}`);
+    row("Υ yield", v((x) => gold(fmtY(x.cas?.yield))));
+    row("op ratio", v((x) => fmtOpRatio(x.p).replace(/ : /g, ":")));
+    row("class", v((x) => (CLS[x.cas?.class] ?? ((s) => s))(x.cas?.class ?? "—")));
+    row("archetype", v((x) => (x.arch ? archetypeColor(x.arch.key)(x.arch.name) : "—")));
   }
   emit();
-  emit(
-    `  ${dim("[Enter]")} confirm + submit all platforms   ${dim("[Esc]")} cancel`,
-  );
+  if (pages > 1) emit(`  ${dim(`page ${pg + 1}/${pages} · [P] next platform`)}`);
+  emit(`  ${dim("values are re-read when you press [Enter], so an active session may move them slightly")}`);
+  return { pages };
 }
 
 // ── DEBUG: render a tab once (no TTY/alt-screen) + audit each line's visible
@@ -2471,7 +3100,10 @@ export async function runTui({
   let connectMsg = ""; // [6] Connect last-action message (signed in / invalid code)
   let submitMsg = ""; // [S] in-place submit result, shown in the read-tab footer
   let submitPreview = false; // FIX I1: [S] opens a preview grid before sending (see→confirm→send)
+  let previewPage = 0; // submit preview: which page of platform blocks ([P] cycles)
+  let previewPages = 0;
   let boardYouOnly = false; // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
+  let boardUnique = false; // [U] Board: every submission (default, unchanged) ↔ best row per operator
   let cascadeScroll = 0; // SCROLL-VIEW (2026-06-27): cascade-section scroll offset (Dashboard only)
   let ompEnabled = false; // Session-only Dashboard toggle; deliberately OFF on every launch.
 
@@ -2480,21 +3112,38 @@ export async function runTui({
     startBuffer();
     renderTabBar(activeTab);
 
-    const hint = `  ${dim("← → or 1-6")} switch tabs   ${dim("[R]")} refresh   ${dim("[Q]")} quit`;
-    const submitHint = `   ${dim("[S]")} submit to board · ${dim("[C]")} sign in`;
-    // Read-tab footer: hr + hint, plus the in-place submit result line when present.
-    const readFooter = (hintLine) =>
-      submitMsg
-        ? [`  ${hr()}`, hintLine, `  ${submitMsg}`]
-        : [`  ${hr()}`, hintLine];
+    // Footer hints as prioritized items (1 = always keep … 3 = first to drop);
+    // fitHints() wraps / compacts / drops them to fit the terminal width.
+    const H_NAV = [
+      { k: "← → or 1-6", label: "switch tabs", pri: 2 },
+      { k: "[R]", label: "refresh", pri: 2 },
+      { k: "[Q]", label: "quit", pri: 1 },
+    ];
+    const H_SUBMIT = [
+      { k: "[S]", label: "submit to board", pri: 2 },
+      { k: "[C]", label: "sign in", pri: 3 },
+    ];
+    // Read-tab footer: hr + hints, plus the in-place submit result line when present.
+    const readFooter = (items) => {
+      const lines = fitHints(items);
+      return submitMsg
+        ? [`  ${hr()}`, ...lines, `  ${submitMsg}`]
+        : [`  ${hr()}`, ...lines];
+    };
 
     // FIX I1: submit preview is a focused overlay — renders INSTEAD of the tab
     // content, with its own footer. [Enter] sends, [Esc] cancels.
     if (submitPreview) {
-      renderSubmitPreview(dashData, loadIdentity());
+      const pv = renderSubmitPreview(dashData, loadIdentity(), previewPage);
+      previewPages = pv?.pages ?? 0;
       setFooter([
         `  ${hr()}`,
-        `  ${dim("[Enter]")} submit all platforms   ${dim("[Esc]")} cancel   ${dim("[Q]")} quit`,
+        ...fitHints([
+          { k: "[Enter]", label: "submit all platforms", pri: 1 },
+          ...(previewPages > 1 ? [{ k: "[P]", label: "next platform", pri: 1 }] : []),
+          { k: "[Esc]", label: "cancel", pri: 1 },
+          { k: "[Q]", label: "quit", pri: 1 },
+        ]),
       ]);
       flushScreen();
       return;
@@ -2509,18 +3158,16 @@ export async function runTui({
       }
       // SCROLL-VIEW: show ↑↓ hint only when there are cascade rows to scroll
       const scrollHint =
-        dashData && Array.isArray(dashData.active)
-          ? cascadeScrollableCount(dashData.active) >
-            maxCascadeRowsFor(dashData.active)
-            ? `   ${dim("↑↓ scroll cascade")}`
-            : ""
-          : "";
+        dashData && Array.isArray(dashData.active) &&
+        cascadeScrollableCount(dashData.active) > maxCascadeRowsFor(dashData.active)
+          ? [{ k: "↑↓", label: "scroll cascade", pri: 2 }]
+          : [];
       const ompHint = !dashData?._ompAvailable
-        ? ""
+        ? []
         : dashData._ompLoading
-          ? `   ${dim(ompEnabled ? "omp: on · scanning…" : "omp: off · finishing scan…")}`
-          : `   ${dim("[O]")} omp: ${ompEnabled ? "on" : "off"}`;
-      setFooter(readFooter(`${hint}${scrollHint}${ompHint}${submitHint}`));
+          ? [{ k: ompEnabled ? "omp: on · scanning…" : "omp: off · finishing scan…", pri: 3 }]
+          : [{ k: "[O]", label: `omp: ${ompEnabled ? "on" : "off"}`, pri: 3 }];
+      setFooter(readFooter([...H_NAV, ...scrollHint, ...ompHint, ...H_SUBMIT]));
     } else if (activeTab === 1) {
       // Trends
       if (!dashData) {
@@ -2528,7 +3175,7 @@ export async function runTui({
       } else {
         renderTrends(dashData, trendSub);
       }
-      setFooter(readFooter(`${hint}   ${dim("[T]")} view${submitHint}`));
+      setFooter(readFooter([...H_NAV, { k: "[T]", label: "view", pri: 1 }, ...H_SUBMIT]));
     } else if (activeTab === 2) {
       // Compare
       if (!compareData) {
@@ -2545,7 +3192,7 @@ export async function runTui({
         renderCompare(compareData);
       }
       setFooter(
-        readFooter(`${hint}   ${dim("[P]")} switch platform${submitHint}`),
+        readFooter([...H_NAV, { k: "[P]", label: "switch platform", pri: 1 }, ...H_SUBMIT]),
       );
     } else if (activeTab === 3) {
       // Board
@@ -2561,31 +3208,104 @@ export async function runTui({
           boardWindow,
           boardYouOnly ? id?.codename : null,
           id?.codename ?? null,
+          boardUnique,
         );
       }
       const youHint = isSignedIn(loadIdentity())
-        ? `   ${dim("[Y]")} ${boardYouOnly ? "all" : "just me"}`
-        : "";
+        ? [{ k: "[Y]", label: boardYouOnly ? "all" : "just me", pri: 2 }]
+        : [];
       setFooter(
-        readFooter(`${hint}   ${dim("[W]")} window${youHint}${submitHint}`),
+        readFooter([
+          ...H_NAV,
+          { k: "[W]", label: "window", pri: 1 },
+          { k: "[U]", label: boardUnique ? "all submissions" : "best per operator", pri: 2 },
+          ...youHint,
+          ...H_SUBMIT,
+        ]),
       );
     } else if (activeTab === 4) {
       // Watch
       renderWatchInfo(watchPlatform, watchWindow, watchRefresh);
-      setFooter(readFooter(`${hint}${submitHint}`));
+      setFooter(readFooter([...H_NAV, ...H_SUBMIT]));
     } else if (activeTab === 5) {
       // Connect
       const connectId = loadIdentity();
       renderConnect(connectId, codeBuf, connectMsg);
-      const signOutHint = isSignedIn(connectId)
-        ? `   ${dim("[X]")} sign out`
-        : "   " + dim("[X]") + " reset device";
       setFooter([
         `  ${hr()}`,
-        `  ${dim("[Enter]")} sign in   ${dim("[Esc]")} clear/back${signOutHint}   ${dim("← →")} tabs   ${dim("[Q]")} quit`,
+        ...fitHints([
+          { k: "[Enter]", label: "sign in", pri: 1 },
+          { k: "[Esc]", label: "clear/back", pri: 2 },
+          { k: "[X]", label: isSignedIn(connectId) ? "sign out" : "reset device", pri: 2 },
+          { k: "← →", label: "tabs", pri: 2 },
+          { k: "[Q]", label: "quit", pri: 1 },
+        ]),
       ]);
     }
     flushScreen();
+  };
+
+  // ── Compare loader (PERF 2026-10-15). Cached result for the platform → paint it at once with an
+  // "updated Ns ago · refreshing…" note and refresh in the background; no cache → the original
+  // animated "pulling fresh sources…" spinner. A newer request (platform switch, [R]) supersedes
+  // an older in-flight one: stale results are cached but never painted over the newer view.
+  let compareReq = 0;
+  let compareAgoTimer = null;
+  let compareInflight = null; // platform of the newest in-flight pull, or null
+  const openCompare = async (label = "pulling fresh sources…") => {
+    const req = ++compareReq;
+    const plat = platform;
+    const cached = getCachedCompare(plat);
+    compareInflight = plat;
+    let spinTimer = null;
+    if (compareAgoTimer) clearInterval(compareAgoTimer);
+    compareAgoTimer = null;
+    if (cached) {
+      compareData = { ...cached.data, _cachedAt: cached.at, _refreshing: true };
+      await redraw();
+      // keep the "updated Ns ago" note honest while the refresh runs
+      compareAgoTimer = setInterval(() => {
+        if (activeTab === 2 && req === compareReq && compareData?._refreshing)
+          redraw().catch(() => {});
+      }, 1000);
+    } else {
+      compareData = null;
+      await redraw(); // show the spinner line before the (slow) fresh pull
+      // Animated spinner with elapsed timer — the fresh verifier pull takes
+      // 5-20s+ (ccusage CLI scans 1,700+ JSONL files). Without animation the
+      // user sees a frozen "pulling fresh sources…" line and thinks it hung.
+      const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+      const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
+      const pullStart = Date.now();
+      let spinIdx = 0;
+      spinTimer = setInterval(() => {
+        if (activeTab !== 2 || req !== compareReq) return; // switched away — don't repaint
+        const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
+        const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
+        const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
+        spinIdx++;
+        // Repaint just the spinner line in-place (line 4 of the frame)
+        process.stdout.write(
+          GOTO(4, 1) + ERLINE +
+          `  ${gold(spin)} ${dim(label)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
+        );
+      }, 200);
+    }
+    const result = await loadCompareData(plat).catch(() => null);
+    if (spinTimer) clearInterval(spinTimer);
+    if (_compareHasData(result)) putCachedCompare(plat, result);
+    if (req !== compareReq) return; // superseded by a newer Compare request
+    compareInflight = null;
+    if (compareAgoTimer) clearInterval(compareAgoTimer);
+    compareAgoTimer = null;
+    if (_compareHasData(result) || !cached) {
+      compareData = result;
+      status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
+    } else {
+      // Refresh came back empty/failed — keep showing the cached result, flagged as such.
+      compareData = { ...cached.data, _cachedAt: cached.at, _refreshFailed: true };
+    }
+    if (activeTab === 2) await redraw();
   };
 
   // ── Initial data load
@@ -2615,7 +3335,16 @@ export async function runTui({
     // FIX 0: progressive Dashboard load — claude first (fast), render it, THEN fill
     // the remaining ALL_PLATFORMS entries in the background + redraw. The user sees their cascade
     // within ~1 read instead of a 7s blank "loading dashboard…".
-    dashData = await loadDashboardData({ includeOmp: ompEnabled }).catch((e) => {
+    const placeholder = dashData;
+    dashData = await loadDashboardData({
+      includeOmp: ompEnabled,
+      onPrimary: async (primary) => {
+        // Still the placeholder from this loadAll? Paint claude now (Trends + cascade).
+        if (dashData !== placeholder) return;
+        placeholder.active = primary;
+        await redraw();
+      },
+    }).catch((e) => {
       status = `dashboard error: ${e.message}`;
       return null;
     });
@@ -2958,6 +3687,11 @@ export async function runTui({
           await redraw();
           return;
         }
+        if ((key === "p" || key === "P") && previewPages > 1) {
+          previewPage = (previewPage + 1) % previewPages;
+          await redraw();
+          return;
+        }
         return; // swallow all other keys while the preview is open
       }
 
@@ -3109,35 +3843,15 @@ export async function runTui({
       // ASYNC FIX (2026-06-27): with execFile (async), the event loop keeps running during the
       // pull — key presses are NOT blocked. Guard: only render the result if the user is still
       // on the Compare tab (they may have switched away during the pull).
-      if (switched && activeTab === 2 && !compareData) {
+      if (switched && activeTab === 2 && (!compareData || compareData.platform !== platform)) {
         submitMsg = "";
-        await redraw(); // show the spinner line before the (slow) fresh pull
-        // Animated spinner with elapsed timer — the fresh verifier pull takes
-        // 5-20s (ccusage CLI scans 1,700+ JSONL files). Without animation the
-        // user sees a frozen "pulling fresh sources…" line and thinks it hung.
-        const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
-        const pullStart = Date.now();
-        let spinIdx = 0;
-        const spinTimer = setInterval(() => {
-          if (activeTab !== 2) return; // user switched away — don't repaint
-          const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
-          const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
-          const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
-          spinIdx++;
-          // Repaint just the spinner line in-place (line 4 of the frame)
-          process.stdout.write(
-            GOTO(4, 1) + ERLINE +
-            `  ${gold(spin)} ${dim(`pulling fresh sources…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
-          );
-        }, 200);
-        const result = await loadCompareData(platform).catch(() => null);
-        clearInterval(spinTimer);
-        if (activeTab === 2) {
-          // still on Compare? render the result
-          compareData = result;
+        // Left and came back mid-pull? Re-show its view instead of starting a second scan.
+        if (compareInflight === platform) {
           await redraw();
+          return;
         }
+        // Not awaited: the background refresh must not block key handling.
+        openCompare().catch(() => {});
         return;
       }
 
@@ -3185,34 +3899,10 @@ export async function runTui({
           // Compare: real platforms only (no 'all' — Compare is per-platform by design).
           const idx = CYCLE_PLATFORMS.indexOf(platform);
           platform = CYCLE_PLATFORMS[(idx + 1) % CYCLE_PLATFORMS.length];
-          // #9: clearing compareData makes redraw show the "pulling fresh sources…" spinner
-          // for the new platform while the fresh on-demand verifier pull runs.
-          compareData = null;
           status = `loading ${platform}…`;
-          await redraw();
-          // Animated spinner (same as the initial Compare load — see above)
-          const SPIN_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-          const BEAR_FRAMES = ["ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ", "ʕ•ᴥ•ʔ", "ʕ•ᴥ•ʔﾉ"];
-          const pullStart = Date.now();
-          let spinIdx = 0;
-          const spinTimer = setInterval(() => {
-            if (activeTab !== 2) return;
-            const elapsed = ((Date.now() - pullStart) / 1000).toFixed(1);
-            const spin = SPIN_FRAMES[spinIdx % SPIN_FRAMES.length];
-            const bear = BEAR_FRAMES[spinIdx % BEAR_FRAMES.length];
-            spinIdx++;
-            process.stdout.write(
-              GOTO(4, 1) + ERLINE +
-              `  ${gold(spin)} ${dim(`pulling ${platform}…`)} ${bold(`${elapsed}s`)} ${dim(`·`)} ${gold(bear)}`,
-            );
-          }, 200);
-          // ASYNC FIX: guard — only render if still on Compare (user may have switched away)
-          const result = await loadCompareData(platform).catch(() => null);
-          clearInterval(spinTimer);
-          if (activeTab === 2) {
-            compareData = result;
-            status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
-          }
+          // Cached → instant paint + background refresh; else the spinner for the new platform.
+          openCompare(`pulling ${platform}…`).catch(() => {});
+          return;
         } else {
           // A5: Watch [P] cycles 'all' → claude → codex → … → 'all' (optional focus; default 'all').
           const WATCH_PLAT_CYCLE = ["all", ...CYCLE_PLATFORMS];
@@ -3276,15 +3966,8 @@ export async function runTui({
         // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
         // (loadAll no longer touches Compare). Clearing compareData shows the spinner first.
         if (activeTab === 2) {
-          compareData = null;
-          await redraw();
-          // ASYNC FIX: guard — only render if still on Compare
-          const result = await loadCompareData(platform).catch(() => null);
-          if (activeTab === 2) {
-            compareData = result;
-            status = `last refreshed ${new Date().toLocaleTimeString("en-US", { hour12: false })}`;
-            await redraw();
-          }
+          // [R] forces a fresh pull. Any cached result stays on screen, marked "refreshing…".
+          openCompare().catch(() => {});
           return;
         }
         await redraw();
@@ -3306,6 +3989,7 @@ export async function runTui({
           return;
         }
         submitPreview = true;
+        previewPage = 0;
         submitMsg = "";
         await redraw();
         return;
@@ -3315,6 +3999,12 @@ export async function runTui({
       // (hybrid model — owner decision 2026-06-26). Only when signed in.
       if (k === "y" && activeTab === 3 && isSignedIn(loadIdentity())) {
         boardYouOnly = !boardYouOnly;
+        await redraw();
+        return;
+      }
+
+      if (k === "u" && activeTab === 3) {
+        boardUnique = !boardUnique;
         await redraw();
         return;
       }
