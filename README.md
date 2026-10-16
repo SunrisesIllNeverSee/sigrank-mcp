@@ -1,272 +1,65 @@
-# SigRank SignalAF — `sigrank` CLI/MCP
+# SigRank CLI & MCP
 
-> **SignalAF** is the public brand. **SigRank** is the leaderboard and proof surface.
-> The `sigrank` package reads local AI session logs, derives your token cascade,
-> and publishes to the board at [signalaf.com](https://signalaf.com).
-> _Four token counts only. Never prompts or code._
-
-<div align="center">
-
-<p><img src="./.github/assets/og-card.png" alt="SigRank SignalAF — AI operator evaluation and token cascade efficiency leaderboard" width="800"></p>
-
-**SignalAF is the brand. SigRank proves. MO§ES™ governs.**
-
-SigRank evaluates observable AI operator token-processing patterns—not AI model quality, cognition, work quality, employee productivity, or business value.
-
-[![npm version](https://img.shields.io/npm/v/sigrank.svg?style=flat-square&color=gold)](https://www.npmjs.com/package/sigrank)
-[![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/codeql.yml)
-[![audit](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/dependency-audit.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/dependency-audit.yml)
-[![Dependabot](https://img.shields.io/badge/Dependabot-enabled-025E8C?style=flat-square&logo=dependabot)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/network/dependencies)
-[![license](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
-[![platform](https://img.shields.io/badge/platform-node-grey.svg?style=flat-square)](https://nodejs.org)
-[![live](https://img.shields.io/badge/board-signalaf.com-gold.svg?style=flat-square)](https://signalaf.com)
-[![SunrisesIllNeverSee/sigrank-mcp MCP server](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp/badges/score.svg)](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
-[![LightNow capabilities](https://lightnow.ai/badge/io.github.SunrisesIllNeverSee/sigrank-mcp)](https://lightnow.ai/servers/io.github.SunrisesIllNeverSee/sigrank-mcp)
-
-</div>
-
-<p align="center">
-  <a href="https://www.npmjs.com/package/sigrank"><img src="https://img.shields.io/badge/$%20npx%20sigrank-gold?style=for-the-badge&logo=npm&logoColor=white&labelColor=1a1a1a&color=daa520" alt="npx sigrank" /></a>
-</p>
-
-## Table of Contents
-
-- [SignalAF product architecture](#signalaf-product-architecture)
-- [Quickstart](#quickstart--3-steps-to-the-board)
-- [Install from GitHub](#install-from-github)
-- [Install via Smithery](#install-via-smithery)
-- [Commands](#commands)
-- [MCP Server mode](#mcp-server-mode)
-- [Cascade math](#cascade-math)
-- [Token Pillars](#token-pillars--sources)
-- [Platform adapters](#platform-adapters)
-- [Privacy](#privacy)
-- [Env vars](#env-vars)
-- [Dev / test](#dev--test)
-- [File map](#file-map)
-- [Contributing](#contributing)
-- [License](#license)
-
-|                                       The board                                       |                               Your operator profile                               |
-| :-----------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------: |
-| [![SigRank SignalAF leaderboard](./.github/assets/board.png)](https://signalaf.com/board/all)  | [![SigRank SignalAF operator profile](./.github/assets/profile.png)](https://signalaf.com) |
-| Every operator ranked by **Υ Yield** — the architecture of the cascade, not raw spend |      Cascade layer, class, and fingerprint — derived from four token counts       |
-
-> **Run [`sigrank enroll`](#sign-in--submit) then [`sigrank submit`](#sign-in--submit) to get ranked and claim your public profile at [signalaf.com](https://signalaf.com).**
-
----
-
-## SignalAF product architecture
-
-```text
-MO§ES™ governance → SignalAF brand → SigRank leaderboard → Upsilon engine
-```
-
-| Repo | What it is | Install |
-|------|-----------|---------|
-| **[sigrank-mcp](https://github.com/SunrisesIllNeverSee/sigrank-mcp)** (this repo) | SigRank's on-device scanner — extracts four token pillars, computes locally, and optionally submits to the board. | `npx sigrank` |
-| **[sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app)** | SignalAF web app — the SigRank leaderboard, operator profiles, and proof surface. | [signalaf.com](https://signalaf.com) |
-| **[bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp)** | The intent layer — routes "who is the best AI user?" queries to SigRank SignalAF's leaderboard. MCP server for AI assistants. | `npx bestuser-router-mcp` |
-| **[sigarena](https://github.com/SunrisesIllNeverSee/sigarena)** | The satellite — public LLM operator evals at sigeconomy.com. Read-only leaderboard, SEO/AEO surface. | [sigeconomy.com](https://sigeconomy.com) |
-| **[sigrank-vscode](https://github.com/SunrisesIllNeverSee/sigrank-vscode)** | The IDE extension — see your cascade metrics inline in VS Code. | `code --install-extension sigrank.sigrank` |
-| **[fundscore](https://github.com/SunrisesIllNeverSee/fundscore)** | The repo scorer — investor-readiness scoring for GitHub repos. CLI + MCP server. | `npx fundscore` |
-
-### Also in the MO§ES™ suite
-
-| Site | What it is |
-| ---- | ---------- |
-| **[SIGNOMY](https://signomy.xyz)** | Governed AI agent marketplace where ranked agents form teams, fill slots, run missions, and earn revenue under constitutional protocol. Agents are free. Operators pay. |
-| **[MO§ES](https://mos2es.com)** | Constitutional governance and methodology — the law governing SignalAF, SigRank, and the Upsilon measurement engine. |
-
-## Quickstart — 3 steps to the board
+Read your local AI usage, inspect the token cascade, and optionally publish a signed snapshot to the [SigRank leaderboard on SignalAF](https://signalaf.com).
 
 ```bash
-# 1. Install (pulls ccusage + tokscale automatically — no separate installs)
-npm install -g sigrank
-
-# 2. Sign in (paste a connect code from signalaf.com → Settings → New key)
-sigrank enroll
-
-# 3. Submit your cascade to the board
-sigrank submit
-
-# (cautious? see exactly what would be sent — four counts + a signature — sending nothing)
-sigrank submit --dry-run
-```
-
-That's it. sigrank reads your local AI session logs on-device, derives your token cascade (Υ Yield, Leverage, Velocity, 10xDEV), and publishes to [signalaf.com](https://signalaf.com). No paste, no transcript content — what leaves your machine is limited to the four token pillars plus the identifiers listed under [Privacy](#privacy).
-
-Or just explore without signing in:
-
-```bash
-sigrank          # launches the full tabbed TUI (dashboard, compare, board, watch)
-npx sigrank board --once    # print the live leaderboard once
-bunx sigrank board --once   # same, via Bun (faster startup if you have it)
-```
-
-## Install from GitHub
-
-```bash
-git clone https://github.com/SunrisesIllNeverSee/sigrank-mcp.git
-cd sigrank-mcp
-npm install
-
-# Run CLI
-node index.mjs                        # TUI (if TTY)
-node cli.mjs board --once             # leaderboard one-shot
-
-# Or link globally for `sigrank` command
-npm link
-sigrank
-```
-
-**Repo:** [`SunrisesIllNeverSee/sigrank-mcp`](https://github.com/SunrisesIllNeverSee/sigrank-mcp)
-**Site:** [signalaf.com](https://signalaf.com)
-**npm:** [sigrank](https://www.npmjs.com/package/sigrank)
-**Smithery:** [smithery.ai/servers/burnmydays/sigrank](https://smithery.ai/servers/burnmydays/sigrank)
-**Glama:** [glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp](https://glama.ai/mcp/servers/SunrisesIllNeverSee/sigrank-mcp)
-
----
-
-## Install via Smithery
-
-SigRank SignalAF is available on [Smithery](https://smithery.ai/servers/burnmydays/sigrank) as a stdio MCP bundle — one-click install for Claude Desktop, Cursor, and other MCP clients.
-
-### Smithery CLI
-
-```bash
-# Install Smithery CLI
-npm install -g smithery
-
-# Connect to SigRank SignalAF (downloads the MCPB bundle locally)
-smithery mcp add burnmydays/sigrank --id sigrank
-
-# List available tools
-smithery tool list sigrank
-
-# Call a tool
-smithery tool call sigrank get_leaderboard '{}'
-smithery tool call sigrank rank_paste '{"text": "1000000 500000 50000 800000"}'
-```
-
-### Claude Desktop (via Smithery)
-
-1. Go to [smithery.ai/servers/burnmydays/sigrank](https://smithery.ai/servers/burnmydays/sigrank)
-2. Click **Install**
-3. Smithery handles the rest — no manual config editing
-
----
-
-## Commands
-
-```
-⊙ SigRank SignalAF CLI  v1.0.37
-
-Default (no args)
-  sigrank              unified dashboard: cascade + token pillars + board
-
-Commands
-  enroll                   sign in: paste a connect code (get one at signalaf.com → Settings)
-  submit                   publish your verified runs to the board (sign in first)
-  board                    live leaderboard (refreshes every 30s)
-  board --window 7d        board for a specific window (7d, 30d, 90d, all)
-  board --once             print once and exit
-  compare                  raw pillar audit: tokenpull vs ccusage vs token-dash vs tokscale
-  compare --platform codex compare for a specific platform
-  tui                      full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect
-  tui --platform codex     TUI with a different default platform
-  watch                    live tune meter — ALL active platforms × all windows, every 30s
-  watch --platform codex   watch only one platform (optional filter)
-  watch --window 7d        watch only one window (optional filter)
-  proxy                    opt-in local Anthropic/OpenAI usage proxy
-  proxy --port 9000        run the proxy on a custom loopback port
-
-Options
-  --window    7d · 30d · 90d · all  (default: 30d for board; all windows for watch)
-  --platform  claude · codex · amp · gemini · opencode · goose · …
-  --refresh   poll interval in seconds (default: 30)
-  --once      print once and exit (board only)
-  --port      proxy port (default: 8787)
-
-For AI clients (not typeable)
-  In a piped/non-TTY context, sigrank is an MCP stdio server.
-  AI clients (Claude, Cursor, …) call its tools automatically — these are
-  NOT shell commands. Humans use the commands above.
-
-Examples
-  sigrank                        # unified dashboard
-  sigrank board                  # live leaderboard
-  sigrank compare                # pillar audit (claude)
-  sigrank compare --platform codex
-  sigrank watch --window 7d --refresh 60
-  sigrank board --window all --once
-```
-
-### Optional API usage proxy
-
-Some desktop coding agents receive provider usage in API responses but do not
-persist it in their local session files. SigRank SignalAF can capture those
-provider-reported counts through a manually started loopback proxy:
-
-```bash
-sigrank proxy              # http://localhost:8787
-sigrank proxy --port 9000  # custom port
-```
-
-Then point a compatible tool's API base URL at the displayed local URL. The
-first release supports Anthropic Messages (`/v1/messages`), OpenAI Chat
-Completions (`/v1/chat/completions`), and OpenAI Responses (`/v1/responses`).
-The tool must support a custom API base URL; this is not guaranteed for every
-desktop client.
-
-The proxy is **off by default**: it opens no port and observes no traffic unless
-you explicitly run `sigrank proxy`. It binds only to loopback and stops when the
-command exits. Request and response content, API keys, and tool calls are
-forwarded transiently but never written to disk. Only usage metadata is appended
-to `~/.sigrank-mcp/proxy-sessions.jsonl` (directory `0700`, file `0600`).
-
-Anthropic and OpenAI calls are currently grouped under one `proxy` platform row.
-For streamed Chat Completions, SigRank SignalAF sets OpenAI's
-`stream_options.include_usage=true` so the provider includes the final usage
-chunk; response chunks are still forwarded immediately.
-
-### The TUI is the whole app
-
-Launch it and sign in inside it:
-
-```
 npx sigrank
 ```
 
-Six tabs. Keys: `1`-`6` or `←` `→` to switch · `R` refresh · `Q` quit.
+[![npm](https://img.shields.io/npm/v/sigrank.svg?style=flat-square)](https://www.npmjs.com/package/sigrank)
+[![CI](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SunrisesIllNeverSee/sigrank-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](./LICENSE)
 
-| Tab           | Key | Content                                                                                                                              |
-| ------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Dashboard** | `1` | Cascade table (all platforms × windows + combined) · Υ sparklines · token composition bars · mini board                              |
-| **Trends**    | `2` | Every metric across windows — sub-views: You / Platform / Field                                                                      |
-| **Compare**   | `3` | 4-source pillar audit (tokenpull vs ccusage vs token-dash vs tokscale) · delta % · cascade metrics per source · cache read bar chart |
-| **Board**     | `4` | Full leaderboard with all fields · `[W]` cycles window (7d/30d/90d/all)                                                              |
-| **Watch**     | `5` | In-TUI landing panel · `[Enter]` launches the live watcher (big numbers + pillar bars + Υ trend, auto-refreshes 30s)                 |
-| **Connect**   | `6` | Sign in / switch device — paste a connect code from signalaf.com → Settings. Then `[S]` submits.                                     |
+**[Website](https://signalaf.com) · [Quickstart](#get-started) · [MCP setup](#connect-an-mcp-client) · [Tool and adapter reference](./docs/CLI-MCP-REFERENCE.md) · [Privacy](#privacy)**
 
-### Sign in + submit
+## What it does
+
+- Reads usage metadata from supported local AI session logs.
+- Shows input, output, cache-write, and cache-read counts across available time windows.
+- Calculates Yield, Leverage, Velocity, SNR, and 10xDEV locally.
+- Provides a terminal dashboard and MCP tools for AI clients.
+- Submits signed telemetry only when you choose to publish.
+
+This evaluates observable token-processing patterns, not model quality, work quality, productivity, or business outcomes. An adapter may estimate a pillar when its source does not expose it separately; those limitations are documented in the [adapter reference](./docs/CLI-MCP-REFERENCE.md#platform-adapters).
+
+## Get started
+
+Requires **Node.js 20 or later**. No global install is required.
+
+### Explore locally
 
 ```bash
-sigrank enroll          # sign in: paste a connect code (get one at signalaf.com → Settings)
-sigrank submit          # publish your verified runs to the board (sign in first)
-sigrank submit --dry-run  # inspect the exact signed payload without sending anything
+npx sigrank                       # interactive dashboard in a terminal
+npx sigrank board --once          # public leaderboard, one-shot
+npx sigrank board --window 7d --once
 ```
 
-Or do it inside the TUI on the **Connect** tab (`6`), then press `[S]` to submit.
+The dashboard includes Dashboard, Trends, Compare, Board, Watch, and Connect tabs. Use `1`–`6` or the arrow keys to switch, `R` to refresh, and `Q` to quit.
 
----
+### Publish your own snapshot
 
-## MCP Server mode
+1. Sign in at [signalaf.com](https://signalaf.com) and create a connect code in Settings.
+2. Enroll this device, then inspect the dry-run payload.
+3. Submit when you are ready to publish.
 
-When stdout is not a TTY (i.e. piped to an AI client), `sigrank` starts an MCP stdio server automatically. AI clients (Claude Code, Cursor, Windsurf, etc.) use this path.
+```bash
+npx sigrank enroll
+npx sigrank submit --dry-run
+npx sigrank submit
+```
 
-Add to `.mcp.json` or equivalent:
+Enrollment binds a device signing key to your operator account. The private key stays on your device. The server verifies and re-scores submitted telemetry; a local preview is not a guaranteed public rank.
+
+For repeated use, an optional global installation provides the same commands:
+
+```bash
+npm install -g sigrank
+sigrank
+```
+
+## Connect an MCP client
+
+Add this server to your client's MCP configuration:
 
 ```json
 {
@@ -279,211 +72,84 @@ Add to `.mcp.json` or equivalent:
 }
 ```
 
-Or if installed globally:
+The entry point automatically runs an MCP stdio server when launched without a terminal. MCP tool names are called by the client; they are not shell commands.
 
-```json
-{
-  "mcpServers": {
-    "sigrank": {
-      "command": "sigrank"
-    }
-  }
-}
+| Task | Tools |
+| --- | --- |
+| Inspect local usage | `tokenpull`, `rank_windows`, `tokenpull_compare` |
+| Calculate from supplied counts | `rank_paste`, `get_sigrank_standard_record` |
+| Read public results | `get_leaderboard`, `get_operator`, `discover_peers` |
+| Explore possible changes | `diagnose_cascade`, `simulate_change`, `suggest_improvements` |
+| Enroll and submit | `enroll`, `submit_verified` |
+
+For the full list, arguments, and adapter paths, see the [CLI and MCP reference](./docs/CLI-MCP-REFERENCE.md). Publishing through `submit_verified` requires `confirm: true`; `dry_run: true` inspects the payload without publishing.
+
+## Command guide
+
+| Command | Purpose |
+| --- | --- |
+| `sigrank` | Open the terminal dashboard |
+| `sigrank board --once` | Print the public leaderboard |
+| `sigrank compare --platform codex` | Audit token counts across available local sources |
+| `sigrank watch --window 7d` | Watch local usage updates |
+| `sigrank enroll` | Bind a device using a connect code |
+| `sigrank submit --dry-run` | Inspect a signed submission without sending it |
+| `sigrank submit` | Publish a verified submission |
+| `sigrank proxy` | Start the optional loopback usage proxy |
+| `sigrank --help` | Show the current command reference |
+
+### Optional usage proxy
+
+Some clients do not persist all provider-reported usage in their session files. `sigrank proxy` can capture usage from compatible Anthropic or OpenAI API traffic when a client supports a custom API base URL.
+
+The proxy is **off by default** and binds only to loopback. It forwards provider-bound request/response content and credentials in memory, but does not persist their content. Its local usage log contains token counts and metadata. See the [privacy contract](./docs/CLI-MCP-REFERENCE.md#privacy) before using it.
+
+## How measurement works
+
+Four token pillars feed the calculation:
+
+```text
+Yield (Υ) = (cache_read × output) / input²
+Leverage  = cache_read / input
+Velocity  = output / input
+SNR       = output / (input + output)
+10xDEV    = log₁₀(Leverage)
 ```
 
-## Tools
+This package distributes the **Upsilon** measurement engine through the `sigrank` CLI/MCP compatibility command. **SigRank** is the public leaderboard and proof surface on **SignalAF**. **TTEOP** defines the protocol semantics; **MO§ES™** is the governance framework.
 
-| Tool                                  | Args                                                                             | What                                                                                                                                                                       |
-| ------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rank_paste(text)`                    | `{input, output, cacheCreate, cacheRead}` JSON or 4 whitespace-delimited numbers | Scores token pillars → Υ Yield / SNR / Leverage / Velocity / 10xDEV / Class + prose narration card                                                                         |
-| `get_leaderboard()`                   | `{window?}`                                                                      | Live board from signalaf.com — sorted by Υ Yield                                                                                                                           |
-| `get_operator(codename)`              | `{codename}`                                                                     | One operator's live profile                                                                                                                                                |
-| `submit_paste(text, codename)`        | `{text, codename?}`                                                              | Rank locally then POST to board. Omit codename for preview-only                                                                                                            |
-| `tokenpull(platform?)`                | `{platform?}`                                                                    | On-device local reader: scans local logs → 4-window cascade. Zero paste, token-only                                                                                        |
-| `tokenpull_submit(codename, window?)` | `{codename?, window?}`                                                           | `tokenpull` → publish to board. Omit codename for preview                                                                                                                  |
-| `tokenpull_compare(platform?)`        | `{platform?}`                                                                    | All four sources side-by-side: tokenpull + ccusage + token-dash + tokscale. Returns pillars, cascade metrics, and delta % vs tokenpull per window                          |
-| `rank_windows`                        | `{platform?, window?}`                                                           | Multi-window cascade from local logs                                                                                                                                       |
-| `get_sigrank_standard_record`         | `{input, output, cache_write?, cache_read?}`                                     | Builds the portable `sigrank/0.1-draft` compatibility record (legacy alias under TTEOP authority) — canonical cascade, computed locally                                   |
-| `discover_peers`                      | `{codename?}`                                                                    | Find mentors, peers, and complementary operators on the leaderboard                                                                                                        |
-| `watch_tokenpull`                     | `{platform?, interval_s?}`                                                       | One cascade snapshot per call (interval_s advisory)                                                                                                                        |
-| `submit_verified`                     | `{window?, platform?, dry_run?}`                                                 | THE ranked path: builds + ed25519-signs Schema 1.0 snapshots and POSTs them. `platform:'multi'` sums all active platforms. `dry_run:true` returns the exact payload unsent |
-| `enroll`                              | `{code, device_label?}`                                                          | Bind this device with a connect code from signalaf.com → Settings                                                                                                          |
-| `diagnose_cascade`                    | `{text?}`                                                                        | Diagnoses where your token cascade is leaking efficiency — ranked findings with severity + estimated Υ impact                                                              |
-| `simulate_change`                     | `{text?, changes}`                                                               | Prescriptive "what if" — test proposed pillar changes and see the exact Υ delta + class change before committing                                                           |
-| `suggest_improvements`                | `{text?}`                                                                        | Generates ranked, simulated improvement suggestions — tests strategies and returns them sorted by Υ yield impact                                                           |
-| `self_improve`                        | `{text?}`                                                                        | One-click optimize: diagnoses, suggests, and simulates the best change in a single call                                                                                    |
-| `tokscale_breakdown(threshold?)`       | `{threshold?}`                                                                   | Per-model token breakdown across platforms (models under threshold → "other")                                                                                              |
-| `tokscale_market_share()`              | `{}`                                                                             | AI tool market share: each tool's % of tokens/cost/messages, ranked. From local tokscale data                                                                              |
-| `tokscale_developer_profile()`         | `{}`                                                                             | Per-developer usage profile across all detected tools: model mix, pillars, sessions, workspace count (no names). Paths redacted                             |
-| `tokscale_model_trends()`              | `{}`                                                                             | Model adoption over time: per-model first/last seen, active days, month-by-month adoption curve                                                                            |
-| `tokscale_cost_analysis()`             | `{}`                                                                             | Cost per developer per model: cost_per_million_tokens, cost_per_message, share_cost, client rollup                                                                        |
-| `tokscale_device_profile()`            | `{}`                                                                             | Device fingerprinting: installed tools, session counts, active days, day-of-week distribution, concurrency. Paths redacted                  |
-| `tokscale_mcp_usage()`                 | `{}`                                                                             | MCP server usage: detected servers, detection window, active days                                                                                                         |
-| `tokscale_competitive_intel(target)`   | `{target}`                                                                       | Competitive intelligence for any AI tool: rank, model mix, cost efficiency, share vs all competitors                                                                      |
-
-Intent tools (`get_best_operator`, `compare_self`, `compare_operators`, `describe_power_user`, `optimize_efficiency`) moved to [bestuser-router-mcp](https://github.com/SunrisesIllNeverSee/bestuser-router-mcp) — `npx bestuser-router-mcp`.
-
----
-
-## Cascade math
-
-```
-Υ Yield    = (cache_read × output) / input²       (TTEOP canonical)
-SNR        = output / (input + output)            (display alias for output_fraction)
-Leverage   = cache_read / input                   (TTEOP canonical)
-Velocity   = output / input                       (TTEOP canonical)
-10xDEV     = log₁₀(leverage)                      (display alias for log_leverage)
-```
-
-Canonical metric computation is delegated to [`tteop-spec`](https://www.npmjs.com/package/tteop-spec)
-via [`@sigrank/cascade`](https://www.npmjs.com/package/@sigrank/cascade). SNR
-and 10xDEV are SigRank display aliases for the TTEOP metrics `output_fraction`
-and `log_leverage` respectively. See `TTEOP-IMPLEMENTATION-PROFILE.md` for the
-full authority chain.
-Canon check: `MO§ES (1251211, 11296121, 128196310, 2555179769) → Υ 18436.98`.
-
----
-
-## Token Pillars — sources
-
-The dashboard pulls from multiple sources and shows them side-by-side for verification:
-
-| Source            | What                                                                           | Platform              |
-| ----------------- | ------------------------------------------------------------------------------ | --------------------- |
-| `tokenpull`       | On-device JSONL scanner (canon source)                                         | claude, codex, amp, … |
-| `ccusage`         | `ccusage <platform> daily --json` CLI (bundled)                                | claude, codex         |
-| `token-dashboard` | `~/.claude/token-dashboard.db` SQLite ([Nate's](https://github.com/nateherkai/token-dashboard)) | claude only           |
-| `tokscale`        | `tokscale models --json` CLI (bundled, falls back to `~/tokscale_report.json`) | claude, codex         |
-
-**Non-Claude input is estimated** — most non-Claude systems (Codex, Devin, etc.) combine user input + cache write into a single `input_tokens` field, so true fresh input must be derived. The ruleset (applies to ALL non-Claude systems):
-
-```
-input       = output × ioRatio         (ioRatio derived from Claude ratio, else 2.0)
-cacheCreate = uncached − input         (uncached = input_tokens − cached_input_tokens)
-cacheRead   = exact (from logs)
-```
-
-- **Beta** = operator's Claude input/output ratio (if Claude data available)
-- **Alpha** = 2.0 default (when no Claude data)
-- Owner-stated average: 7:1:2 (cache:input:output) → input/output ≈ 0.5
-
-Verifier numbers (ccusage/tokscale for codex) show **raw uncached input** (`input_tokens − cached`) — a different field than the estimated input above. The discrepancy is expected and explained inline in the dashboard.
-
----
-
-## Platform adapters
-
-All adapters are token-only (no message content, no cost fields, no credentials). The table below is regenerated from the adapter file headers in `adapters/index.mjs` + `adapters/tokenpull.mjs` so the path, pillar shape, and notes match the actual code (a prior revision had drifted on Qwen/Codex/Copilot).
-
-| Platform           | Path                                           | Pillar shape & notes                                                                                              |
-| ------------------ | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Claude Code        | ✅ `~/.claude/projects` (recursive, incl. `subagents/`) | Native 4-pillar; dedup by `(session_id, message_id)` — final snapshot wins                                  |
-| Codex              | ✅ `~/.codex/sessions` (+ `archived_sessions`) | `input_tokens` incl. cached → `input` + `cacheCreate` split window-level via `io_ratio`; `cacheRead` native (`cached_input_tokens`); `reasoning_output`→output; verified vs ccusage (~1%) |
-| Devin CLI          | ✅ `~/.local/share/devin/cli/sessions.db`      | SQLite; native 4-pillar from `metadata.metrics` (`input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`); `input_tokens` is fresh (excludes cache)                                   |
-| Amp                | ✅ `~/.local/share/amp/threads`                | Native 4-pillar; per-message                                                                                      |
-| Kimi               | ✅ `~/.kimi/sessions`                          | Native 4-pillar; `StatusUpdate` lines only                                                                        |
-| pi-agent           | ✅ `~/.pi/agent/sessions`                      | Native 4-pillar; per-message JSONL                                                                                |
-| oh-my-pi (`omp`)   | ✅ `~/.omp/agent/sessions` (recursive, incl. nested subagent transcripts) | Native 4-pillar from `.message.usage` on `type:"message"` entries (`cacheWrite`→`cacheCreate`); **`reasoningTokens` is already inside `output`** — never added, or it double-counts; `usage.cost` reuses the same four key names for USD floats and is dropped; dedup by (session header `id`, entry `id`). Separate harness from pi-agent |
-| OpenClaw           | ✅ `~/.openclaw`                               | Native 4-pillar; per-message JSONL                                                                                |
-| Droid              | ✅ `~/.factory/sessions/*.settings.json`       | Native 4-pillar; `thinking_tokens`→output                                                                         |
-| Codebuff           | ✅ `~/.config/manicode`                        | Native 4-pillar; `chat-messages.json`                                                                             |
-| Hermes             | ✅ `~/.hermes/state.db`                        | Native 4-pillar; SQLite; `reasoning_tokens`→output                                                                |
-| Kilo               | ✅ `~/.local/share/kilo/kilo.db`               | Native 4-pillar; SQLite                                                                                            |
-| Qwen               | ✅ `~/.qwen/projects`                          | Estimated (`cacheCreate=0` — no field in logs); `cacheRead` from `cachedContentTokenCount`; `thoughtsTokenCount`→output |
-| Goose              | ✅ `~/.local/share/goose/sessions/sessions.db` (or `$GOOSE_PATH_ROOT/data/sessions/sessions.db`) | Estimated (`cacheCreate=cacheRead=0` — no cache fields); reasoning = `total−input−output`→output; cumulative-column dedup by session id |
-| Gemini CLI         | ✅ `~/.gemini/tmp`                             | Estimated (`cacheCreate=0`); `cacheRead` from `cached` field; `thought`→output; `input` = `input−cached` (fresh)  |
-| GitHub Copilot CLI | ✅ `~/.copilot/otel`                           | Native 4-pillar (OTel spans: `llm.token_count.{prompt,completion,cache_creation,cache_read}`); requires `COPILOT_OTEL_ENABLED=true` + `COPILOT_OTEL_EXPORTER_TYPE=file` set **before** session start |
-| OpenCode           | ⚠️ `~/.local/share/opencode`                   | Data gap — logs store `cost:0` and derive tokens via LiteLLM at runtime; raw token counts not persisted. No pillars readable with current format |
-| SigRank SignalAF proxy      | ✅ `~/.sigrank-mcp/proxy-sessions.jsonl`       | Opt-in native 4-pillar usage reported by Anthropic/OpenAI; same-timestamp records keep the last call; OpenAI cached input is separated from fresh input |
-| Other (user JSON)  | ✅ `$SIGRANK_OTHER_PATH`                       | User-supplied JSON `{ "windows": { "all": {input,output,cacheCreate,cacheRead} } }`; all-time only (no timestamps) |
-| Cursor             | 🔜                                             | Chat log path TBD                                                                                                 |
-| Windsurf           | 🔜                                             | Session logs at `~/.codeium/windsurf/`                                                                            |
-
-`estimated=true` means one or more pillars are derived, not native. The server re-scores all submitted pillars authoritatively; local preview Υ is indicative only.
-
----
+The implementation delegates canonical calculations through `token-cascade` to `tteop-spec`. See the [TTEOP implementation profile](./TTEOP-IMPLEMENTATION-PROFILE.md) and [protocol compatibility notes](./docs/PROTOCOL-COMPATIBILITY.md).
 
 ## Privacy
 
-- **Exactly what leaves your machine (signed submit):** the four token pillars (input, output, cache create, cache read) per window, your codename, device id, device public key, ed25519 signature, agent version, platform, message/session counts, and the weekly report block. `enroll` additionally sends a device label, which defaults to `sigrank <version> · <platform>` (your hostname is never sent unless you set `SIGRANK_DEVICE_LABEL` or pass `device_label`). Never sent: prompts, responses, file paths, repo/project names, or environment variables.
-- **MCP safety rails.** The `enroll` tool refuses to re-bind a device that is already enrolled (re-enroll from the CLI), and `submit_verified` requires `confirm: true` to publish (not needed with `dry_run`). `tokscale_developer_profile` returns workspace counts only, never workspace or project names.
-- **Token-only persistence and submission.** Local-log adapters read usage metadata only. The optional proxy necessarily handles provider-bound request and response bytes in memory, but never persists their content; it writes only token counts, model/backend metadata, and timestamps. Only token telemetry is submitted to SigRank SignalAF.
-- **Local by default.** `tokenpull` reads only the selected or detected adapter paths on your device (e.g. `~/.claude/projects` for Claude, `~/.codex` for Codex, plus additional paths for Amp, Devin, Gemini, Goose, and other supported platforms). Numbers stay on your machine unless you explicitly submit with a codename.
-- **Background tooling excluded.** Memory plugins, observers, summarizers (e.g. `claude-mem`, `mem0`, `observer-sessions`) are filtered from both Claude and Codex reads. `subagents/` are kept — they represent real operator work.
-- **Board reads are anonymous.** No account needed to browse, compare, or watch.
-- **Ranked submissions are signed, not trusted.** `sigrank submit` requires a one-time `enroll` (device-bound ed25519 key — the private key never leaves your machine). Verify what's sent with `sigrank submit --dry-run`: the payload is four token counts, ratios, and a signature.
+Local inspection does not publish your usage. Signed submissions include the four pillars plus account/device identifiers, signature, platform/version information, counts, and report metadata. Enrollment also sends a device label.
 
----
+Prompt text, response text, source code, repository contents, and local file paths are not part of the ranked submission payload. The optional proxy's transient handling of content is separate from what is persisted or submitted.
 
-## Env vars
+Read the [full payload and privacy details](./docs/CLI-MCP-REFERENCE.md#privacy), and use `submit --dry-run` to inspect what would be sent.
 
-| Var                     | Default                | Description                  |
-| ----------------------- | ---------------------- | ---------------------------- |
-| `SIGRANK_API_BASE`      | `https://signalaf.com` | Override the board host (https required; http only for loopback) |
-| `SIGRANK_DEVICE_LABEL`  | `sigrank <version> · <platform>` | Optional device label sent at enroll |
-| `SIGRANK_FETCH_TIMEOUT` | `10000`                | Board API fetch timeout (ms) |
-
----
-
-## Dev / test
+## Development
 
 ```bash
-node test.mjs          # 313-assertion baseline + proxy tests (local mocks only; temp filesystem)
-node sign.test.mjs     # ed25519 signing + canon parity
-node index.mjs         # stdio MCP server directly (pipe to MCP client)
+git clone https://github.com/SunrisesIllNeverSee/sigrank-mcp.git
+cd sigrank-mcp
+npm install
+npm test
+npm run test:packaged
 ```
 
-Tests verify (14 groups, 313 assertions):
+Run `node index.mjs` in a terminal for the dashboard, or configure the checked-out entry point in an MCP client. Release versions are managed by the repository's explicit publishing workflow; a documentation commit does not publish an npm release.
 
-- `rank_paste` canon: MO§ES `(1251211, 11296121, 128196310, 2555179769)` → Υ 18436.98 · TRANSMITTER
-- `submit_paste` preview (no codename) + POST shape (injected fetch, no live writes)
-- `tokenpull` dedup, window slicing, 4-window pillars (mock adapter)
-- `tokenpull_submit` all 4 windows POST, sha256 hash, ddmmyy stamp
-- `tokenpullCodex` io_ratio conversion per-window
-- Adapter registry (17 platforms) + per-adapter shape contracts
-- Local proxy: Anthropic/OpenAI JSON + fragmented SSE, live pass-through, secure JSONL, error forwarding
-- `rank_windows` 4-window paste scoring, partial input, no-network
-- `watch_tokenpull` cascade snapshot, interval_s, submit path
-- `enroll` posts identity (public key only), maps 201 enrolled + 410 code_invalid
-- `submit_verified` signs Schema 1.0, server-verifiable
-- `simulate_change` relative + absolute deltas, quadratic penalty, JSON input
-- Hardening: div-by-zero guards, parsePillars warnings, fetch timeout, EXCLUDE_TOOLING regex, narrate safety
-- `sign.test.mjs` ed25519 round-trip + canonical 926-byte payload parity
+## Related projects
 
----
+- [sigrank-app](https://github.com/SunrisesIllNeverSee/sigrank-app) — SignalAF website, profiles, public API, and leaderboard.
+- [token-cascade](https://www.npmjs.com/package/token-cascade) — measurement implementation consumed by this package.
+- [TTEOP](https://github.com/SunrisesIllNeverSee/otep-spec) — protocol specification and semantics.
 
-## File map
+## Contributing and security
 
-| File            | Responsibility                                                          |
-| --------------- | ----------------------------------------------------------------------- |
-| `index.mjs`     | Entry point — TTY detection, routes to CLI or MCP server                |
-| `proxy.mjs`     | Opt-in loopback Anthropic/OpenAI proxy and usage capture                |
-| `cli.mjs`       | CLI commands: board, compare, watch, enroll, submit, help               |
-| `tui.mjs`       | Full tabbed TUI: Dashboard / Trends / Compare / Board / Watch / Connect |
-| `cascade.mjs`   | Cascade facade — delegates to `@sigrank/cascade` → `tteop-spec` (Υ, SNR, leverage, velocity, 10xDEV, class) |
-| `tokenpull.mjs` | On-device log scanner — Claude, Codex, multi-platform                   |
-| `adapters.mjs`  | Platform adapter registry (16+ platforms)                               |
-| `tools.mjs`     | MCP tool table + dispatcher                                             |
-| `connect.mjs`   | Connect-code enrollment + device identity                               |
-| `keystore.mjs`  | Local key management (paste-keys, not API keys)                         |
-| `submit.mjs`    | Verified submit flow (signs + POSTs to board)                           |
-| `sign.mjs`      | Schema 1.0 signing (X-Agent-Signature)                                  |
-| `narrate.mjs`   | Deterministic prose narration card                                      |
-| `preflight.mjs` | Plausibility checks (Benford, bounds, anomaly detection)                |
-| `test.mjs`      | Unit tests (no external deps)                                           |
-| `sign.test.mjs` | ed25519 signing + canon parity test                                     |
-
----
-
-## Contributing
-
-Contributions welcome. SigRank SignalAF MCP is built in the open.
-
-- [Contributing guide](./.github/CONTRIBUTING.md)
-- [Security policy](https://github.com/SunrisesIllNeverSee/sigrank-mcp/security/policy)
-- Report bugs via [GitHub Issues](https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues)
-- PRs: fork → branch → `node test.mjs` passes → open PR against `main`
+See the [contributing guide](./.github/CONTRIBUTING.md). Open bugs in [GitHub Issues](https://github.com/SunrisesIllNeverSee/sigrank-mcp/issues); report vulnerabilities privately through the [security policy](https://github.com/SunrisesIllNeverSee/sigrank-mcp/security/policy).
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+[MIT](./LICENSE).
