@@ -1,21 +1,21 @@
 
+  ■ KINETIC  ·  Υ 539.6  ·  379 : 1 : 1.42  ·  BASE III
+
   Your Cascade  all platforms · all windows
 
     Platform     Win      Input   Output       CW        CR   Υ Yield
   ······································································
-    claude       90d      14.4M    19.4M   184.9M      5.0B     466.9
-    claude       all      14.4M    21.3M   201.8M      5.6B     575.1
+    claude       7d       19.7K     4.3M    37.0M      2.2B     24.2M
+    claude       30d     912.1K     4.1M    60.5M      3.2B     15.7K
+    claude       90d     938.8K     6.8M    58.8M      2.2B     17.1K
+    claude       all      20.9M    29.7M   277.5M      7.9B     539.6
 
   ────────────────────────────────────────────────────────────────────────────
-  Your Read  how your cascade sits vs the field
-    ▲ Υ Yield 466.9 — above field avg
-    ▲ SNR 57.3% — top tier
-    ▲ Leverage 348× — above field avg
-
-  ────────────────────────────────────────────────────────────────────────────
-  Three Degrees  AI avg · SigRank avg · top — signalaf.com/wiki
-    Metric         AI avg   SigRank avg        Top
-    Υ Yield           1.6           1.5      745.4
-    SNR             33.0%          7.0%      63.0%
-    Velocity         0.50          0.08       1.70
+  Token Composition  lifetime · archived submissions, never decreases   █in █cw █cr █out
+    devin        ██████████████████████████████████████████████████   61.9B
+    claude       █████████████████████████████████████████████████    3.9B
+    codex        █████████████████████████████████████████████████    3.3B
+    other        ██████████████████████████████████████████████████    4.8M
+    combined     █████████████████████████████████████████████████   37.4B
+    87 submissions archived · baseline 2026-06-26
 

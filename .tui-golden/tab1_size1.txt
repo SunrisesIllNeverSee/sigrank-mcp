@@ -1,19 +1,18 @@
 
   Trends  every metric across windows (7d → all)     You   Platform   Field 
+  more platforms loading… (1 in so far)
   ······································································
 
   Your trajectory
                         7d         30d         90d         all
-    ∑ Total     ▁▁▇█           0           0        5.2B        5.9B
-    Υ Yield       ▁█           —           —       466.9       575.1
-    SNR           ▁█           —           —       57.3%       59.6%
-    Velocity      ▁█           —           —        1.34        1.47
-    Leverage      ▁█           —           —        348×        390×
-    10xDEV        ▁█           —           —        2.54        2.59
-    Eff           ▁█           —           —      116.7×      143.8×
-    §IGNA           calculating… (composite calibrating (needs user volume))
-    Op Ratio               —           —  347.6 : 1 : 1.34  390.1 : 1 : 1.47
-    $/1M            calculating… (cost data wires post-ingest)
-    Rank            calculating… (rank history wires post-ingest)
+    ∑ Total     ▁▂▁█        2.2B        3.3B        2.3B        8.2B
+    Υ Yield     █▁▁▁       24.2M       15.7K       17.1K       539.6
+    SNR         █▅▆▁       99.6%       81.7%       87.9%       58.7%
+    Velocity    █▁▁▁      219.59        4.47        7.29        1.42
+    Leverage    █▁▁▁     110.4K×       3.5K×       2.3K×        379×
+    10xDEV      █▄▃▁        5.04        3.55        3.37        2.58
+    Eff         █▁▁▁  6060526.8×     3931.3×     4277.8×      134.9×
+    Op Ratio      110.4K:1:219.6  3.5K:1:4.5  2.3K:1:7.3   379:1:1.4
+    coming later: §IGNA · $/1M · Rank
 
 

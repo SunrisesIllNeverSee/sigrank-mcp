@@ -1,33 +1,37 @@
 
+     ▄▄██▀▀     ARCHETYPE                             Υ YIELD                   OP RATIO              CLASS       
+   ▀▀▀▀████▀▀   KINETIC                               539.6                     379 : 1 : 1.42        BASE III    
+     ▀▀▀▀       output breaks out past input          all-time · all platforms  cache : in : out      scale       
+
+   flow   1 fresh input ──▶ 13 written · 379 read back ──▶ 1.42 output
+
   Your Cascade  all platforms · all windows
 
-    Platform      Win       Input    Output    CacheW     CacheR    Υ Yield      SNR      Lev     Vel     10x  Class        
-  ··················································································································
-    claude        90d       14.4M     19.4M    184.9M       5.0B      466.9    57.3%     348×    1.34    2.54  SEEKER II    
-    claude        all       14.4M     21.3M    201.8M       5.6B      575.1    59.6%     390×    1.47    2.59  SEEKER I     
+    Platform      Win       Input    Output    CacheW     CacheR    Υ Yield      SNR      Lev     Vel     10x  Class          Build       
+  ································································································································
+    claude        7d        19.7K      4.3M     37.0M       2.2B      24.2M    99.6%  110.4K×  219.59    5.04  REFINER II     KINETIC     
+    claude        30d      912.1K      4.1M     60.5M       3.2B      15.7K    81.7%    3.5K×    4.47    3.55  SEEKER III     KINETIC     
+    claude        90d      938.8K      6.8M     58.8M       2.2B      17.1K    87.9%    2.3K×    7.29    3.37  REFINER II     KINETIC     
+    claude        all       20.9M     29.7M    277.5M       7.9B      539.6    58.7%     379×    1.42    2.58  BASE III       KINETIC     
 
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Token Composition  █I in  █W cW  █R cR  █O out
-    claude      ██████████████████████████████████████████████████  5.9B
-  log-scale (each 10× = same step — every pillar visible)
-  I  ██████████████████████████▍  14.4M
-  W  ██████████████████████████████▋  201.8M
-  R  ████████████████████████████████████  5.6B
-  O  ███████████████████████████  21.3M
-  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Your Read  how your cascade sits vs the field
-    ▲ Υ Yield 466.9 — above field avg
-    ▲ SNR 57.3% — top tier
-    ▲ Leverage 348× — above field avg
+  Token Composition  lifetime · archived submissions, never decreases   █in █cw █cr █out
+    devin        ████████████████████████████████████  in 160.6M  out 232.3M  cw   2.1B  cr  59.5B   61.9B  35.7B in 90d
+    claude       ███████████████████████████████████  in  13.6M  out  31.4M  cw 154.5M  cr   3.7B    3.9B  853.9M in 90d
+    codex        ████████████████████████████████████  in   9.3M  out  19.6M  cw 143.7M  cr   3.1B    3.3B  2.0B in 90d
+    other        ████████████████████████████████████  in   1.1M  out  22.1K  cw      0  cr   3.7M    4.8M  4.9M in 90d
+    combined     ████████████████████████████████████  in 193.7M  out 333.9M  cw   2.8B  cr  34.0B   37.4B  22.7B in 90d
+    87 submissions archived · baseline 2026-06-26
+  ─────────────────────────────────────────────────────────────────      ─────────────────────────────────────────────────────────────────
+  Your Read  how your cascade sits vs the field                          Four Degrees  AA · Field · Power · Top Evals — signalaf.com/wiki
+    ▲ Υ Yield 24.2M — top tier                                             Metric        AA base      Field      Power        Top
+    ▲ SNR 99.6% — top tier                                                 Υ Yield           1.8        1.9      239.6      941.2
+    ▲ Leverage 110.4K× — top tier                                          SNR             33.0%       9.0%      51.0%      63.0%
+    ▲ Velocity 219.59 — top tier                                           Velocity         0.50       0.10       1.04       1.70
+    above field on 5/5 · above Power on 5/5                                Leverage           4×        20×       242×       553×
+                                                                           10xDEV           0.54       1.31       2.38       2.74
+                                                                           Field = operator center of mass · published field references
 
-  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Three Degrees  AI avg · SigRank avg · top — signalaf.com/wiki
-    Metric         AI avg   SigRank avg        Top
-    Υ Yield           1.6           1.5      745.4
-    SNR             33.0%          7.0%      63.0%
-    Velocity         0.50          0.08       1.70
-    Leverage           3×           22×       439×
-    10xDEV           0.50          1.35       2.64
-    reference values until live user volume calibrates SigRank avg
+    Where you sit  Υ  AA 1.8 ─ Field 1.9 ──────────────────────────────────────────────── Power 239.6 ──────── ▲ YOU 539.6 ───── Top 941.2
   audit
 

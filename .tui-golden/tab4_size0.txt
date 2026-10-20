@@ -2,5 +2,15 @@
   Live Watch  all active platforms · all windows
   ············································································
 
-    no active platforms detected — run some sessions, this picks them up automatically
+  claude
+    7d         Υ 11.0M  SNR 99.5%  Lev 50.6K×  Vel 217.29  REFINER III
+    30d        Υ 11.4K  SNR 84.0%  Lev 2.2K×  Vel 5.24  REFINER I
+    90d        Υ 7.44K  SNR 84.7%  Lev 1.3K×  Vel 5.55  REFINER II
+    all-time   Υ 24.3K  SNR 90.7%  Lev 2.5K×  Vel 9.79  REFINER I
+
+  codex (est)
+    7d         Υ 39.2K  SNR 92.3%  Lev 3.3K×  Vel 12.00  IGNITER II
+    30d        Υ 21.2K  SNR 90.4%  Lev 2.3K×  Vel 9.38  BEARER II
+    90d        Υ 37.6K  SNR 92.2%  Lev 3.2K×  Vel 11.76  BEARER III
+    all-time   Υ 11.6K  SNR 89.9%  Lev 1.3K×  Vel 8.87  BEARER III
 
