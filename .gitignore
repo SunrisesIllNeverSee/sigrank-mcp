@@ -15,3 +15,7 @@ bun.lock
 .tui-screenshots/
 skylos-output.json
 .skylos/
+
+# Local agent scratch (browser captures, agent worktrees) — never commit
+.playwright-mcp/
+.claude/worktrees/
