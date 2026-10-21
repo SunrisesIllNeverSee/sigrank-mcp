@@ -19,7 +19,7 @@ It does not persist that content or send it to the SigRank service; it appends
 only provider-reported token counts, model/backend metadata, and timestamps to
 `~/.sigrank-mcp/proxy-sessions.jsonl`.
 
-- **Signed path** (`submit_verified`, `watch_tokenpull` with `submit:true`): the four numbers travel with the device's public key, codename, window, and an ed25519 signature. The board verifies the signature without seeing your data.
+- **Signed path** (`submit_verified`, `watch_tokenpull` with `submit:true`; both require `confirm:true`, so nothing publishes without your approval): the four numbers travel with the device's public key, codename, window, and an ed25519 signature. The board verifies the signature without seeing your data.
 - **Preview tools** (`submit_paste`, `tokenpull_submit`): compute your cascade locally and send nothing. They do not publish to the board; publishing goes through the signed path or the signalaf.com web UI.
 
 ## How it works

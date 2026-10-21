@@ -1461,86 +1461,13 @@ async function runSigRank() {
             resolve();
             return;
           }
-          // NOT enrolled → the anonymous paste path (preview-only; does NOT rank) + a hint.
+          // NOT enrolled → nothing is sent. Publishing is signed-only; the old
+          // codename-only paste POST was removed (the endpoint needs a web session).
           writeln();
           writeln(
-            `  ${dim("Not enrolled — run")} ${bold("npx sigrank enroll")} ${dim("to rank as a verified operator. Anonymous paste below:")}`,
+            `  ${dim("Not enrolled — run")} ${bold("npx sigrank enroll")} ${dim("to publish as a verified operator, or submit at signalaf.com.")}`,
           );
-          process.stdout.write("  Codename: ");
-          let codename = "";
-          process.stdin.on("data", async function onData(chunk) {
-            if (chunk === "\r" || chunk === "\n") {
-              process.stdin.removeListener("data", onData);
-              codename = codename.trim();
-              if (!codename) {
-                writeln(red("  ✗ codename required"));
-                resolve();
-                return;
-              }
-              writeln();
-              writeln(
-                `  ${dim("Submitting all windows for")} ${cyan(codename)}${dim("…")}`,
-              );
-              write(HIDE_CURSOR);
-              try {
-                for (const d of active) {
-                  const apiBase = DEFAULT_API_BASE;
-                  const WINDOW_TYPE = {
-                    "7d": "7d",
-                    "30d": "30d",
-                    "90d": "90d",
-                    all: "all_time",
-                  };
-                  for (const ww of d.windows ?? []) {
-                    const rawPaste = `${ww.pillars.input} ${ww.pillars.output} ${ww.pillars.cacheCreate} ${ww.pillars.cacheRead}`;
-                    const windowType = WINDOW_TYPE[ww.window] || ww.window;
-                    const now = new Date();
-                    const ddmmyy = `${String(now.getDate()).padStart(2, "0")}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getFullYear()).slice(-2)}`;
-                    const content_hash = `sha256:${codename}|${windowType}|${rawPaste}|${ddmmyy}`;
-                    const res = await fetch(`${apiBase}/api/v1/ingest-paste`, {
-                      method: "POST",
-                      headers: {
-                        "content-type": "application/json",
-                        accept: "application/json",
-                        "user-agent": `node/${process.version} sigrank-mcp/cli`,
-                      },
-                      body: JSON.stringify({
-                        codename,
-                        raw_paste: rawPaste,
-                        window_type: windowType,
-                        telemetry: { platform: { primary: d.platform } },
-                        content_hash,
-                        submitted_ddmmyy: ddmmyy,
-                        submitted_at: now.toISOString(),
-                      }),
-                    }).catch(() => null);
-                    const ok = res?.ok ?? false;
-                    const status = ok ? green("✓") : red("✗");
-                    writeln(
-                      `    ${status}  ${d.platform}  ${ww.window}${!ok ? dim(` HTTP ${res?.status ?? "err"}`) : ""}`,
-                    );
-                  }
-                }
-                writeln();
-                writeln(
-                  `  ${green("✓")} Submitted. Visit ${cyan(`signalaf.com/user/${codename}`)}`,
-                );
-              } catch (e) {
-                writeln(red(`  ✗ ${e.message}`));
-              }
-              resolve();
-            } else if (chunk === "\u007f") {
-              // backspace
-              if (codename.length > 0) {
-                codename = codename.slice(0, -1);
-                process.stdout.write("\b \b");
-              }
-            } else {
-              codename += chunk;
-              process.stdout.write(chunk);
-            }
-          });
-          process.stdin.resume();
+          resolve();
         }
       });
     });
