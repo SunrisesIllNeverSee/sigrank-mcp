@@ -3,14 +3,14 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "SigRank SignalAF on-device scanner — four-token cascade, leaderboard, 25 local tools.",
   "title": "SigRank SignalAF \u2014 AI Operator Cascade & Leaderboard",
-  "version": "1.0.47",
+  "version": "1.0.48",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "1.0.47",
+      "version": "1.0.48",
       "transport": {
         "type": "stdio"
       },
