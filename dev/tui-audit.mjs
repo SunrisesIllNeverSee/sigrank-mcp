@@ -45,6 +45,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GOLDEN_DIR = join(__dirname, "..", ".tui-golden");
+const FIXTURE_PATH = join(__dirname, "fixtures", "tui-audit-data.json");
 
 // ── Default config (SigRank) ────────────────────────────────────────────────
 // This is used when the audit is invoked via `node tui.mjs --audit`.
@@ -988,27 +989,44 @@ export async function runAudit(opts = {}) {
   // scan with no internal timeout) — without it a pending load hangs the
   // headless audit forever. The fallbacks match the prior catch shapes so
   // renderers see identical input whether a load rejected or timed out.
-  const dashData = await withTimeout(loadDashboardData(), LOAD_TIMEOUT_MS, {
-    onCatch: (e) => ({ error: e.message }),
-    onTimeout: { error: `load timed out (${LOAD_TIMEOUT_MS / 1000}s)` },
-  });
-  const compareData = await withTimeout(loadCompareData("claude"), LOAD_TIMEOUT_MS, {
-    onCatch: () => null,
-    onTimeout: null,
-  });
-  const boardData = await withTimeout(loadBoardData("30d"), LOAD_TIMEOUT_MS, {
-    onCatch: () => null,
-    onTimeout: null,
-  });
+  // Golden frames are committed to a public repo, so they render from the
+  // synthetic fixture (fake codenames, device id and numbers) — never from the
+  // developer's local logs, keystore or the live board. Layout-only runs keep
+  // using live data. Regenerate the fixture by hand; never from a real capture.
+  const useFixture = opts.fixture ?? (goldenSave || goldenCheck);
+  const fixture = useFixture
+    ? JSON.parse(readFileSync(FIXTURE_PATH, "utf8"))
+    : null;
+  if (fixture) loadIdentity = () => fixture.identity;
+  const dashData = fixture
+    ? fixture.dash
+    : await withTimeout(loadDashboardData(), LOAD_TIMEOUT_MS, {
+        onCatch: (e) => ({ error: e.message }),
+        onTimeout: { error: `load timed out (${LOAD_TIMEOUT_MS / 1000}s)` },
+      });
+  const compareData = fixture
+    ? fixture.compare
+    : await withTimeout(loadCompareData("claude"), LOAD_TIMEOUT_MS, {
+        onCatch: () => null,
+        onTimeout: null,
+      });
+  const boardData = fixture
+    ? fixture.board
+    : await withTimeout(loadBoardData("30d"), LOAD_TIMEOUT_MS, {
+        onCatch: () => null,
+        onTimeout: null,
+      });
   // Watch data: a full 16-platform scan takes ~8s and is NOT cached across
   // calls, so loading it once here (vs. re-scanning per frame) cuts ~130s off
   // the audit. renderWatchData renders from this pre-loaded snapshot per size.
   // On timeout/failure, fall back to an empty dataset so the Watch tab still
   // renders its "no active platforms" frame rather than hanging the audit.
-  const watchData = await withTimeout(loadWatchData("all", "all-windows"), LOAD_TIMEOUT_MS, {
-    onCatch: () => ({ active: [], platFilter: null, winFilter: null }),
-    onTimeout: { active: [], platFilter: null, winFilter: null },
-  });
+  const watchData = fixture
+    ? fixture.watch
+    : await withTimeout(loadWatchData("all", "all-windows"), LOAD_TIMEOUT_MS, {
+        onCatch: () => ({ active: [], platFilter: null, winFilter: null }),
+        onTimeout: { active: [], platFilter: null, winFilter: null },
+      });
 
   // Determine tab labels — use config.tabs if provided, else default SigRank labels.
   const TAB_LABELS = config.tabs

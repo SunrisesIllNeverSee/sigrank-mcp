@@ -98,8 +98,8 @@ npx sigrank improve             # Get improvement suggestions
 
 | # | Tool | What it does |
 |---|------|-------------|
-| 14 | `submit_paste` | Ranks a paste of token counts AND publishes to the live board in one call. Computes local preview, then submits to server for authoritative scoring. Returns both local + server results. |
-| 15 | `tokenpull_submit` | Pull your LOCAL token usage AND publish to the board in one call — the zero-paste flow. Reads pillars per window, computes cascade, submits each window server-side. Token-only, no prompt content. |
+| 14 | `submit_paste` | Ranks a paste of token counts locally and shows the cascade result. Preview-only — does not publish; use `submit_verified` or the signalaf.com web UI to publish. |
+| 15 | `tokenpull_submit` | Pull your LOCAL token usage and preview the cascade per window — the zero-paste flow. Preview-only — does not publish; use `submit_verified` to publish. Token-only, no prompt content. |
 | 16 | `submit_verified` | Publish your LOCAL token runs as a VERIFIED operator — the enrolled, signed path. Reads pillars, builds Schema 1.0 snapshot, ed25519-signs with your device key, POSTs to board. Requires `enroll` first. |
 | 17 | `enroll` | Bind THIS device to your SigRank operator. Paste the key from signalaf.com → Settings → "New key". Generates + stores a local ed25519 keypair. Only the PUBLIC key is ever sent. |
 

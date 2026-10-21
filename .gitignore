@@ -19,3 +19,5 @@ skylos-output.json
 # Local agent scratch (browser captures, agent worktrees) — never commit
 .playwright-mcp/
 .claude/worktrees/
+__pycache__/
+*.pyc

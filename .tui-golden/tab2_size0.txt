@@ -1,7 +1,10 @@
 
   Source Comparison  platform: claude  ·  0 sources
-  tokenpull: no JSONL data found — check ~/.claude/projects/
-    no data from: ccusage (npm i -g ccusage) · token-dashboard (~/.claude/token-dashboard.db) · tokscale (npm i -g tokscale)
 
-    no source data available for this platform — install a verifier or check ~/.claude/projects/
+    ✗ tokenpull        reads your local session logs (~/.claude/projects/)
+    ✗ ccusage          npm i -g ccusage
+    ✗ token-dashboard  ~/.claude/token-dashboard.db
+    ✗ tokscale         not installed, or scan timed out
+
+  nothing to compare for claude yet — [P] tries another platform
 

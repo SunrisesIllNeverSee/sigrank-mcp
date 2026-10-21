@@ -20,13 +20,13 @@ only provider-reported token counts, model/backend metadata, and timestamps to
 `~/.sigrank-mcp/proxy-sessions.jsonl`.
 
 - **Signed path** (`submit_verified`, `watch_tokenpull` with `submit:true`): the four numbers travel with the device's public key, codename, window, and an ed25519 signature. The board verifies the signature without seeing your data.
-- **Paste path** (`submit_paste`, `tokenpull_submit`): the MCP parses your pasted token counts locally, then sends only the four canonical numbers to the server's web-paste endpoint. Even if you paste mixed text (prose + numbers), only the extracted token counts are transmitted — the raw text never leaves your machine.
+- **Preview tools** (`submit_paste`, `tokenpull_submit`): compute your cascade locally and send nothing. They do not publish to the board; publishing goes through the signed path or the signalaf.com web UI.
 
 ## How it works
 
 1. **Local-first:** All token pulling happens on your machine. Upsilon reads usage metadata from session logs in ~/.claude, ~/.codex, ~/.local/share/amp, etc. The optional proxy also runs only on loopback and only when manually started.
-2. **Token-only persistence:** Local-log adapters extract integer counts from log metadata without reading conversation content. The optional proxy forwards request/response bytes transiently but persists only usage metadata. On the paste path, the MCP parses the paste locally and sends only the four extracted numbers — the raw paste text stays on your machine.
-3. **Signed submission:** Ranked submissions (`submit_verified`, `watch_tokenpull` with `submit:true`) are ed25519-signed with a device-bound key generated locally at enrollment. The board verifies the signature without seeing your data. Paste submissions (`submit_paste`, `tokenpull_submit`) are unsigned and go through the web-paste endpoint with a codename only — but still send only the four token counts, not the raw paste.
+2. **Token-only persistence:** Local-log adapters extract integer counts from log metadata without reading conversation content. The optional proxy forwards request/response bytes transiently but persists only usage metadata. Paste parsing (`submit_paste`, `rank_paste`) happens locally and nothing is transmitted.
+3. **Signed submission:** Ranked submissions (`submit_verified`, `watch_tokenpull` with `submit:true`) are ed25519-signed with a device-bound key generated locally at enrollment. The board verifies the signature without seeing your data. `submit_paste` and `tokenpull_submit` are preview-only and never submit.
 4. **Read tools need no auth:** No API keys, no OAuth, no account needed to read the leaderboard or operator profiles. **Enrollment requires a connect code** from signalaf.com → Settings → New key (the code binds your device's public key to your operator server-side); a codename alone is not enough for the signed/ranked path.
 
 ## What the Upsilon service can NOT see
