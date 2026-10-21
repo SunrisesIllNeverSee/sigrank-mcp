@@ -17,7 +17,7 @@ import {
 export const TOOL_DEF = {
   name: "watch_tokenpull",
   description:
-    "One poll per call: pulls your local token logs and returns the current cascade for the watched window — the tool never blocks or loops. Re-call at your desired cadence to watch for changes (interval_s is advisory only and echoed back as poll_interval_s). With submit:true (and an enrolled device) each call may also sign + publish the watched window to the board, rate-limited to once per 5 min per platform+window; default is preview-only (no submit).",
+    "One poll per call: pulls your local token logs and returns the current cascade for the watched window — the tool never blocks or loops. Re-call at your desired cadence to watch for changes (interval_s is advisory only and echoed back as poll_interval_s). With submit:true AND confirm:true (and an enrolled device) each call may also sign + publish the watched window to the public board, rate-limited to once per 5 min per platform+window. Publishing requires confirm: true (ask the user first); default is preview-only (no submit).",
   annotations: {
     title: "Watch token pull",
     ...ANNOTATIONS.idempotentHint,
@@ -45,7 +45,12 @@ export const TOOL_DEF = {
       submit: {
         type: "boolean",
         description:
-          "auto-submit the watched window to the board as a VERIFIED operator each poll (requires `enroll`; default false = preview only)",
+          "auto-submit the watched window to the board as a VERIFIED operator each poll (requires `enroll` and confirm:true; default false = preview only)",
+      },
+      confirm: {
+        type: "boolean",
+        description:
+          "REQUIRED with submit:true: must be true, set only after the user has explicitly approved publishing to the public board.",
       },
     },
   },
@@ -78,7 +83,13 @@ export async function handleWatchTokenpull(args, ctx) {
   // watched window to the verified ingest path. Default OFF = preview only. The server
   // dedups identical re-submits (exact snapshot_hash → 422), so re-calling is safe.
   let auth_submit = null;
-  if (args?.submit === true) {
+  if (args?.submit === true && args?.confirm !== true) {
+    auth_submit = {
+      status: "confirmation_required",
+      detail:
+        "watch_tokenpull with submit:true publishes to the public board. Ask the user for approval, then call again with confirm: true.",
+    };
+  } else if (args?.submit === true) {
     const id = ctx.opts.identity || ensureIdentity();
     if (id.codename && id.operator_id && id.private_key_pkcs8_b64) {
       // E3: client-side cooldown — at most one auto-submit per platform+window per 5 min.

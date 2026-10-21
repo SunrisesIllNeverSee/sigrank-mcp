@@ -1599,7 +1599,7 @@ const watchFetch = async (url, init) => {
 };
 const watchSubmit = await callTool(
   "watch_tokenpull",
-  { window: "7d", submit: true },
+  { window: "7d", submit: true, confirm: true },
   {
     adapter: mockWatchAdapter,
     now: NOW,
@@ -1632,7 +1632,7 @@ const watchFetch2 = async (url, init) => {
 };
 const watchUnenrolled = await callTool(
   "watch_tokenpull",
-  { window: "7d", submit: true },
+  { window: "7d", submit: true, confirm: true },
   {
     adapter: mockWatchAdapter,
     now: NOW,
@@ -1646,6 +1646,27 @@ assert.strictEqual(
   "watch_tokenpull: submit:true + unenrolled → not_enrolled",
 );
 assert.strictEqual(watchCap2, null, "watch_tokenpull: unenrolled never POSTs");
+// submit:true without confirm:true → confirmation_required, no POST even when enrolled
+let watchCap3 = null;
+const watchNoConfirm = await callTool(
+  "watch_tokenpull",
+  { window: "7d", submit: true },
+  {
+    adapter: mockWatchAdapter,
+    now: NOW,
+    fetchImpl: async (url, init) => {
+      watchCap3 = { url, init };
+      return { ok: true, status: 202, json: async () => ({}) };
+    },
+    identity: watchEnrolledId,
+  },
+);
+assert.strictEqual(
+  watchNoConfirm.auth_submit.status,
+  "confirmation_required",
+  "watch_tokenpull: submit:true without confirm → confirmation_required",
+);
+assert.strictEqual(watchCap3, null, "watch_tokenpull: no confirm never POSTs");
 
 console.log(
   "\n✓ canon · card · submit_paste · tokenpull(claude) · tokenpull_submit · tokenpullCodex conversion",

@@ -92,7 +92,7 @@ npx sigrank improve             # Get improvement suggestions
 |---|------|-------------|
 | 11 | `tokenpull` | Pull your LOCAL token usage from session logs and rank it across all four windows — zero paste. Reads token counts, not message content. Numbers stay on your machine. 17 platform adapters. |
 | 12 | `tokenpull_compare` | Pull token usage from ALL four local sources in parallel (JSONL canon, ccusage CLI, token-dashboard SQLite, tokscale) and compare side-by-side with delta % vs baseline. |
-| 13 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true`, signs + publishes (rate-limited to once per 5 min). |
+| 13 | `watch_tokenpull` | One poll per call — pulls local token logs and returns current cascade for the watched window. Re-call at your desired cadence to monitor. With `submit:true` and `confirm:true`, signs + publishes (rate-limited to once per 5 min). |
 
 ### Write — submit to board (needs enrolled identity)
 
