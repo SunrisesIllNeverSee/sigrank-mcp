@@ -8,6 +8,8 @@ import { callTool } from "../tools.mjs";
 import { generateIdentity } from "../identity/keystore.mjs";
 import { devinTimeoutMs } from "../adapters/index.mjs";
 import { _pullExplicitForTest } from "../tools/index.mjs";
+import { _setMultiPullForTest, collectMultiPlatforms } from "../tools/_multi.mjs";
+import { shouldShowCliUpdateNotice } from "../presentation/cli.mjs";
 import {
   cachedUpdateNotice,
   checkForUpdate,
@@ -37,24 +39,30 @@ const id = {
   codename: "TestOperator",
   operator_id: "op_test",
 };
-const run = (tool, args, pull) => {
+const readFailed = (msg) => Object.assign(new Error(msg), { code: "SIGRANK_READ_FAILED" });
+const run = async (tool, args, pull) => {
   let posts = 0;
-  return callTool(tool, args, {
-    identity: id,
-    pullByPlatform: pull,
-    fetchImpl: async () => {
-      posts++;
-      return { ok: true, status: 202, json: async () => ({ status: "received" }) };
-    },
-    apiBase: "http://test.local",
-  }).then((out) => ({ out, posts: () => posts }));
+  _setMultiPullForTest(pull);
+  try {
+    const out = await callTool(tool, args, {
+      identity: id,
+      fetchImpl: async () => {
+        posts++;
+        return { ok: true, status: 202, json: async () => ({ status: "received" }) };
+      },
+      apiBase: "http://test.local",
+    });
+    return { out, posts: () => posts };
+  } finally {
+    _setMultiPullForTest(null);
+  }
 };
 
 for (const tool of ["submit_verified", "tokenpull", "tokenpull_submit"]) {
   test(`${tool} multi: a platform whose read throws aborts, naming it`, async () => {
     const args = { platform: "multi", confirm: true, dry_run: tool !== "tokenpull", codename: "TestOperator" };
     const { out, posts } = await run(tool, args, async (p) => {
-      if (p === "devin") throw new Error("sqlite read of x failed: timed out after 60s");
+      if (p === "devin") throw readFailed("sqlite read of x failed: timed out after 60s");
       if (p === "claude" || p === "codex") return data(p);
       return empty(p);
     });
@@ -70,7 +78,7 @@ for (const tool of ["submit_verified", "tokenpull", "tokenpull_submit"]) {
     const args = { platform: "multi", confirm: true, dry_run: tool !== "tokenpull", codename: "TestOperator" };
     const { out } = await run(tool, args, async (p) => {
       if (p === "claude" || p === "codex") return data(p);
-      if (p === "other") throw Object.assign(new Error("not set up"), { code: "SIGRANK_NO_LOCAL_DATA" });
+      if (p === "other") throw new Error("other adapter: cannot read /stale/path — check SIGRANK_OTHER_PATH");
       return empty(p);
     });
     assert.notEqual(out.status, "error");
@@ -80,22 +88,112 @@ for (const tool of ["submit_verified", "tokenpull", "tokenpull_submit"]) {
   });
 }
 
+test("multi: stale/invalid `other` config and unconfigured adapters never block multi", async () => {
+  _setMultiPullForTest(async (p) => {
+    if (p === "other") throw new Error("other adapter: invalid JSON in /x.json");
+    if (p === "kimi") throw Object.assign(new Error("n/a"), { code: "SIGRANK_NO_LOCAL_DATA" });
+    return data(p);
+  });
+  try {
+    const r = await collectMultiPlatforms({}, ["claude", "other", "kimi", "codex"]);
+    assert.deepEqual(r.failed, []);
+    assert.deepEqual(r.detected.map((d) => d.platform), ["claude", "codex"]);
+    _setMultiPullForTest(async (p) => {
+      if (p === "devin") throw readFailed("db locked");
+      return data(p);
+    });
+    const r2 = await collectMultiPlatforms({}, ["claude", "devin"]);
+    assert.deepEqual(r2.failed.map((f) => f.platform), ["devin"]);
+  } finally {
+    _setMultiPullForTest(null);
+  }
+});
+
+test("test reader override is not reachable through opts", async () => {
+  let called = false;
+  const r = await collectMultiPlatforms({ pullByPlatform: async () => { called = true; return data("x"); } }, ["claude"]);
+  assert.equal(called, false);
+  assert.ok(Array.isArray(r.detected));
+});
+
+test("Devin read failure messages distinguish timeout / locked / parse", async () => {
+  const mod = await import("../adapters/index.mjs");
+  // exercised via the adapter with a fake sqlite3 on PATH
+  const { mkdtempSync, writeFileSync, chmodSync, mkdirSync } = await import("node:fs");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sr-devin-"));
+  const home = path.join(dir, "devin");
+  mkdirSync(home);
+  writeFileSync(path.join(home, "sessions.db"), "x");
+  const bin = path.join(dir, "bin");
+  mkdirSync(bin);
+  const run1 = async (script) => {
+    writeFileSync(path.join(bin, "sqlite3"), script);
+    chmodSync(path.join(bin, "sqlite3"), 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${bin}:${oldPath}`;
+    process.env.DEVIN_HOME = home;
+    process.env.SIGRANK_DEVIN_TIMEOUT_MS = "1000";
+    try {
+      for await (const _r of mod.devinAdapter.records(home)) void _r;
+      return null;
+    } catch (e) {
+      return e;
+    } finally {
+      process.env.PATH = oldPath;
+      delete process.env.DEVIN_HOME;
+      delete process.env.SIGRANK_DEVIN_TIMEOUT_MS;
+    }
+  };
+  try {
+    let e = await run1("#!/bin/sh\nsleep 5\n");
+    assert.equal(e.code, "SIGRANK_READ_FAILED");
+    assert.match(e.message, /timed out/);
+    e = await run1("#!/bin/sh\necho 'Error: database is locked' >&2\nexit 5\n");
+    assert.match(e.message, /locked.*try again/);
+    e = await run1("#!/bin/sh\necho '[{broken'\n");
+    assert.match(e.message, /parse/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI update notice: short commands on a TTY only", () => {
+  const tty = { stdout: { isTTY: true }, stderr: { isTTY: true } };
+  const piped = { stdout: { isTTY: false }, stderr: { isTTY: true } };
+  for (const c of [undefined, "start", "run", "tui", "watch", "proxy"]) assert.equal(shouldShowCliUpdateNotice(c, {}, tty), false, String(c));
+  assert.equal(shouldShowCliUpdateNotice("board", {}, tty), false);
+  assert.equal(shouldShowCliUpdateNotice("board", { once: true }, tty), true);
+  for (const c of ["compare", "submit", "enroll"]) assert.equal(shouldShowCliUpdateNotice(c, {}, tty), true);
+  assert.equal(shouldShowCliUpdateNotice("submit", {}, piped), false);
+});
+
 test("Devin read timeout is generous and configurable", () => {
   assert.equal(devinTimeoutMs({}), 300_000);
   assert.equal(devinTimeoutMs({ SIGRANK_DEVIN_TIMEOUT_MS: "900000" }), 900_000);
   assert.equal(devinTimeoutMs({ SIGRANK_DEVIN_TIMEOUT_MS: "nope" }), 300_000);
 });
 
-test("loader reports failed platform reads (not 'no data') to the TUI", async () => {
-  const active = await _pullExplicitForTest(["claude", "devin", "other"], {
+test("loader returns { active, failed }: only real read failures are 'failed'", async () => {
+  const r = await _pullExplicitForTest(["claude", "devin", "other"], {
     callTool: async (_n, a) => {
-      if (a.platform === "devin") throw new Error("timed out");
-      if (a.platform === "other") throw Object.assign(new Error("unset"), { code: "SIGRANK_NO_LOCAL_DATA" });
+      if (a.platform === "devin") throw readFailed("timed out");
+      if (a.platform === "other") throw new Error("other adapter: invalid JSON");
       return data(a.platform);
     },
   });
-  assert.deepEqual(active.map((d) => d.platform), ["claude"]);
-  assert.deepEqual(active.failed.map((f) => f.platform), ["devin"]);
+  assert.deepEqual(r.active.map((d) => d.platform), ["claude"]);
+  assert.deepEqual(r.failed.map((f) => f.platform), ["devin"]);
+});
+
+// TUI dashboard: failed reads (incl. claude) are tracked, and a good re-read clears them.
+test("dashboard failure state: claude failure recorded; later good read clears it", async () => {
+  const tuiMod = await import("../presentation/tui.mjs");
+  assert.equal(typeof tuiMod._applyPlatformReadForTest, "function");
+  const dd = { active: [], failed: [{ platform: "devin", error: "old" }] };
+  tuiMod._applyPlatformReadForTest(dd, "devin", { active: [data("devin")], failed: [] });
+  assert.deepEqual(dd.failed, [], "stale failure cleared by a good re-read");
+  tuiMod._applyPlatformReadForTest(dd, "claude", { active: [], failed: [{ platform: "claude", error: "boom" }] });
+  assert.deepEqual(dd.failed.map((f) => f.platform), ["claude"]);
 });
 
 // ── update check ────────────────────────────────────────────────────────────

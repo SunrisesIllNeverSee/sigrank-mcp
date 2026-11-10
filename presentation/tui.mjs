@@ -444,9 +444,11 @@ async function loadDashboardData({ includeOmp = false, onPrimary } = {}) {
   // primary platform (claude) FAST, then fill the rest in fillDashboardRest. This is the SAME loader
   // `me` and `watch` use, so the three views can't drift apart. (Verifier comparison still runs
   // FRESH + on-demand in the Compare tab — see loadCompareData — never on this Dashboard path.)
-  const active = await pullActivePlatforms({ platforms: ["claude"] }).catch(
-    () => [],
+  const first = await pullActivePlatforms({ platforms: ["claude"] }).catch(
+    () => ({ active: [], failed: [{ platform: "claude", error: "read failed" }] }),
   );
+  const active = first.active;
+  const failedReads = [...first.failed];
   // PERF: hand the primary platform to the TUI the moment it lands, so Trends (and the cascade)
   // can paint without waiting on the board/batched fetches (up to 5s each) below. The batched
   // "all" override further down mutates these same objects in place.
@@ -484,6 +486,7 @@ async function loadDashboardData({ includeOmp = false, onPrimary } = {}) {
 
   return {
     active,
+    failed: failedReads,
     verifierMap: {},
     tdPillars: null,
     boardData,
@@ -502,15 +505,20 @@ async function loadDashboardData({ includeOmp = false, onPrimary } = {}) {
 const dashboardPlatformRank = (p) =>
   p === "claude" ? -2 : p === "codex" ? -1 : ALL_PLATFORMS.indexOf(p);
 
+// Replace one platform's failure state on every read: a later good read clears it.
+function recordPlatformFailures(dashData, platform, failed) {
+  dashData.failed = [
+    ...(dashData.failed || []).filter((f) => f.platform !== platform),
+    ...(failed || []).filter((f) => f.platform === platform),
+  ];
+}
+export const _applyPlatformReadForTest = (dashData, platform, { failed }) =>
+  recordPlatformFailures(dashData, platform, failed);
+
 async function pullDashboardPlatform(dashData, platform) {
   try {
-    const active = await pullActivePlatforms({ platforms: [platform] });
-    if (active.failed?.length) {
-      dashData.failed = [
-        ...(dashData.failed || []).filter((f) => !active.failed.some((x) => x.platform === f.platform)),
-        ...active.failed,
-      ];
-    }
+    const { active, failed } = await pullActivePlatforms({ platforms: [platform] });
+    recordPlatformFailures(dashData, platform, failed);
     for (const d of active) {
       if (!dashData.active.find((a) => a.platform === d.platform)) {
         // Apply the same batched "all" override as loadDashboardData so
@@ -1300,7 +1308,7 @@ function renderDashboard(data, status = "", scrollState = 0) {
     }
   }
   const combinedFirst = allCascadeRows.find((r) => r.combined)?.winKey;
-  const rowKey = (r) => `${r.platform}:${r.winKey}`;
+  const rowKey = (r) => `${r.combined ? "multi" : r.platform}:${r.winKey}`; // combined label changes as platforms load
   for (const r of allCascadeRows) r.notes = r.combined || !gapNote(r.platform) ? 0 : 1;
 
   // Keep the view anchored on the same row when rows load in asynchronously.
@@ -3734,7 +3742,12 @@ export async function runTui({
             }
           }
           if (multiAbort) {
-            submitMsg = `${red("✗")} combined total NOT submitted: could not read ${multiAbort} — per-platform windows${totalReceived ? " were" : " were not"} sent · press [R] and retry`;
+            const outcome = totalReceived
+              ? hadFail
+                ? `per-platform: ${totalVerified}/${totalReceived} verified (sign in again [C] if rejected)`
+                : `per-platform: ${totalVerified}/${totalReceived} verified`
+              : "per-platform: nothing received";
+            submitMsg = `${red("✗")} combined total NOT submitted: could not read ${multiAbort} · ${outcome} · press [R] and retry`;
           } else if (totalReceived && !hadFail && totalVerified === totalReceived) {
             submitMsg = `${green("✓")} submitted · ${totalVerified} window${totalVerified > 1 ? "s" : ""} across ${platforms.length} platform${platforms.length > 1 ? "s" : ""}${didMulti ? " + combined" : ""} · verified`;
           } else if (hadFail && totalReceived) {

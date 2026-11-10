@@ -122,7 +122,7 @@ export function withTokscaleBlind(detected) {
  *  opts.callTool overrides the per-platform pull for tests (same opts-injection
  *  convention as opts.adapter in pullByPlatform) so the target-set logic is
  *  assertable without a real filesystem scan. */
-export const _pullExplicitForTest = (platforms, opts) => _pullExplicit(platforms, opts);
+const READ_FAILED = "SIGRANK_READ_FAILED";
 async function _pullExplicit(platforms, opts = {}) {
   const pull = opts.callTool || callTool;
   const settled = await Promise.allSettled(
@@ -139,15 +139,17 @@ async function _pullExplicit(platforms, opts = {}) {
   const rank = (p) =>
     p === "claude" ? -2 : p === "codex" ? -1 : ALL_PLATFORMS.indexOf(p);
   active.sort((a, b) => rank(a.platform) - rank(b.platform));
-  // Platforms whose read FAILED (threw / timed out) — not "no data". Exposed as a
-  // property so callers building a combined total can refuse to show/submit a
-  // too-small one. "other" with no SIGRANK_OTHER_PATH is just not set up.
-  active.failed = settled
+  // Platforms whose read FAILED (SIGRANK_READ_FAILED: timeout, locked/corrupt db on
+  // an existing store) — not "no data". Callers building a combined total must
+  // refuse to show/submit a too-small one. Any other rejection (adapter not set up,
+  // unconfigured path) is treated as no data, as before.
+  const failed = settled
     .map((r, i) => ({ r, platform: platforms[i] }))
-    .filter(({ r }) => r.status === "rejected" && r.reason?.code !== "SIGRANK_NO_LOCAL_DATA")
+    .filter(({ r }) => r.status === "rejected" && r.reason?.code === READ_FAILED)
     .map(({ r, platform }) => ({ platform, error: String(r.reason?.message || r.reason) }));
-  return active;
+  return { active, failed };
 }
+export const _pullExplicitForTest = (platforms, opts) => _pullExplicit(platforms, opts);
 
 // ── Shared active-platform loader ───────────────────────────────────────────
 // THE single data path for "show my cascade across platforms" — used by `me`,
@@ -155,6 +157,7 @@ async function _pullExplicit(platforms, opts = {}) {
 // target platform via the tokenpull tool (enriched: pillars + cascade + card),
 // keeps only platforms with real local data, and sorts claude → codex → rest.
 // Pass `platforms` to scope it (e.g. ['claude'] for a fast first paint).
+// Returns { active, failed }: failed = platforms whose read FAILED (not "no data").
 export async function pullActivePlatforms({ platforms } = {}, opts = {}) {
   // If the caller specified explicit platforms, use those.
   if (platforms && platforms.length) {
