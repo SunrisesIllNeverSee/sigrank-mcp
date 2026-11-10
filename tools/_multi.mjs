@@ -20,17 +20,27 @@ const hasTokens = (r) =>
       0,
   );
 
+// Test-only reader override. Deliberately NOT reachable through ctx.opts, so a
+// caller of the (signed) submit path cannot swap the real platform reader.
+let _testPull = null;
+export function _setMultiPullForTest(fn) {
+  _testPull = fn || null;
+}
+
 /** Pull every platform. Returns { detected, failed:[{platform,error}] }. */
 export async function collectMultiPlatforms(opts = {}, platforms = ALL_PLATFORMS) {
   const detected = [];
   const failed = [];
-  const pull = opts.pullByPlatform || pullByPlatform; // opts-injection for tests
+  const pull = _testPull ?? pullByPlatform;
   for (const p of platforms) {
     let r;
     try {
       r = await pull(p, opts);
     } catch (e) {
-      if (e?.code === "SIGRANK_NO_LOCAL_DATA") continue; // not set up = no data
+      // Allow-list of abort conditions: only a real read failure of a store that
+      // exists (timeout, locked/corrupt db) aborts. Anything else (adapter not
+      // set up, stale SIGRANK_OTHER_PATH, no data) is "no data" and is skipped.
+      if (e?.code !== "SIGRANK_READ_FAILED") continue;
       failed.push({ platform: p, error: String(e?.message || e) });
       continue;
     }

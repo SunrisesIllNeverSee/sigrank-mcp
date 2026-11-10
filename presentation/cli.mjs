@@ -808,9 +808,15 @@ const WATCH_WINDOWS = ["7d", "30d", "90d", "all"];
 // oh-my-pi tree (~46s), so `watch --platform claude` used to scan everything and then
 // display one row — scan longer than refresh interval, permanently saturated.
 // null / '' / 'all' still mean "everything", keeping withTokscaleBlind's omp row.
-export async function detectActivePulls(platform, opts = {}) {
+export async function detectActivePullsDetailed(platform, opts = {}) {
   const scoped = platform && platform !== "all" ? [platform] : undefined;
-  return pullActivePlatforms({ platforms: scoped }, opts).catch(() => []);
+  return pullActivePlatforms({ platforms: scoped }, opts).catch(() => ({
+    active: [],
+    failed: [],
+  }));
+}
+export async function detectActivePulls(platform, opts = {}) {
+  return (await detectActivePullsDetailed(platform, opts)).active;
 }
 
 async function runWatch({
@@ -842,7 +848,7 @@ async function runWatch({
   const draw = async () => {
     // Re-pull each tick so a platform that just started writing logs appears automatically.
     // Scoped by platFilter, so a focused watch never scans platforms it cannot display.
-    const pulls = await detectActivePulls(platFilter);
+    const { active: pulls, failed: failedReads } = await detectActivePullsDetailed(platFilter);
 
     if (lines > 0) write(CURSOR_UP(lines));
 
@@ -861,6 +867,9 @@ async function runWatch({
       `  ${gold("⊙ SigRank")} ${bold("Watch")}  ${dim(`${scopeLabel}  ·  ${ts}`)}`,
     );
     push(`  ${dim("─".repeat(w - 4))}`);
+    if (failedReads.length) {
+      push(`  ${red("!")} ${dim(`could not read ${failedReads.map((f) => f.platform).join(", ")} — totals below exclude it (it is not "no data")`)}`);
+    }
 
     if (pulls.length === 0) {
       push();
@@ -1767,6 +1776,16 @@ async function runSubmit({ platform = "claude", window } = {}) {
   }
 }
 
+/** True when the plain-CLI update notice applies: a short command, both streams a TTY. */
+export function shouldShowCliUpdateNotice(cmd, flags = {}, proc = process) {
+  const short =
+    cmd === "compare" ||
+    cmd === "submit" ||
+    cmd === "enroll" ||
+    (cmd === "board" && (flags.once === true || flags.once === "true"));
+  return short && !!proc.stderr?.isTTY && !!proc.stdout?.isTTY;
+}
+
 export async function runCli(argv) {
   const args = argv.slice(2); // strip 'node' + script path
   const cmd = args[0];
@@ -1815,11 +1834,13 @@ export async function runCli(argv) {
     flags[key] = val;
   }
 
-  // Update notice (plain CLI): kick the check off now, print the one-line notice
-  // after the command if it is ready. Skipped for long-running/interactive
-  // commands and --version. Never delays exit by more than a moment.
-  const noticeCmds = new Set([undefined, "start", "run", "board", "compare", "submit", "enroll"]);
-  const noticeP = noticeCmds.has(cmd)
+  // Update notice (plain CLI): only for SHORT commands that reach printUpdateNotice
+  // below. Interactive/long-running ones (start/run/tui/watch/board without --once)
+  // are skipped: the TUI runs its own check, and two checks would race on
+  // update-check.json. The notice goes to stderr and only on a TTY, so piped
+  // stdout stays clean.
+  const wantNotice = shouldShowCliUpdateNotice(cmd, flags, process);
+  const noticeP = wantNotice
     ? (async () => {
         const cached = cachedUpdateNotice({ current: pkgVersion() });
         return cached || (await checkForUpdate({ current: pkgVersion() }));
@@ -1827,8 +1848,16 @@ export async function runCli(argv) {
     : null;
   const printUpdateNotice = async () => {
     if (!noticeP) return;
-    const n = await Promise.race([noticeP, new Promise((r) => setTimeout(() => r(null), 300).unref?.())]);
-    if (n) writeln(`\n  ${gold("⬆")} ${dim(n)}`);
+    const timer = { t: null };
+    const n = await Promise.race([
+      noticeP,
+      new Promise((r) => {
+        timer.t = setTimeout(() => r(null), 300);
+        timer.t.unref?.();
+      }),
+    ]);
+    clearTimeout(timer.t);
+    if (n) process.stderr.write(`\n  ${gold("⬆")} ${dim(n)}\n`);
   };
 
   try {

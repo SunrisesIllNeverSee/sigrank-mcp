@@ -126,10 +126,16 @@ async function sqliteJson(dbPath, sql, timeoutMs = 10_000, { strict = false } = 
     // swallowing it made a slow Devin read look like "Devin has no data" and
     // dropped it from the combined total (2026-11-10).
     if (strict && e?.code !== "ENOENT") {
+      const full = `${e?.stderr || ""}\n${e?.message || e}`;
+      const msg = full.trim().split("\n")[0];
       const why =
         e?.killed || e?.signal
-          ? `timed out after ${Math.round(timeoutMs / 1000)}s`
-          : String(e?.message || e).split("\n")[0];
+          ? `timed out after ${Math.round(timeoutMs / 1000)}s (raise SIGRANK_DEVIN_TIMEOUT_MS)`
+          : /locked|busy/i.test(full)
+            ? "database is locked (transient: try again when the app is closed)"
+            : e instanceof SyntaxError
+              ? "could not parse sqlite output (corrupt or truncated)"
+              : msg;
       const err = new Error(`sqlite read of ${dbPath} failed: ${why}`);
       err.code = "SIGRANK_READ_FAILED";
       throw err;
