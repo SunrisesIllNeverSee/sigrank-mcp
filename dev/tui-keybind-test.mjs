@@ -86,6 +86,8 @@ export function resolveKeyAction(rawKey, state) {
     if (rawKey === "\x1b[B" || k === "j") return { action: "scroll-down" };
     if (rawKey === "\x1b[5~") return { action: "scroll-page-up" };
     if (rawKey === "\x1b[6~") return { action: "scroll-page-down" };
+    if (rawKey === "\x1b[H" || rawKey === "\x1b[1~" || rawKey === "\x1bOH") return { action: "scroll-home" };
+    if (rawKey === "\x1b[F" || rawKey === "\x1b[4~" || rawKey === "\x1bOF") return { action: "scroll-end" };
   }
 
   // ── Tab switching: ←/→ arrows ──

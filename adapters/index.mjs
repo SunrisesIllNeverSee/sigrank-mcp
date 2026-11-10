@@ -113,16 +113,36 @@ function* parseJsonl(text, filePath) {
 /** Run sqlite3 -json and return parsed rows, or [] on error/unavailability.
  *  execFile with an args array — no shell, so dbPath/sql need no quoting/escaping
  *  (matches the execFile hardening used in tools.mjs / tokenpull.mjs). */
-async function sqliteJson(dbPath, sql, timeoutMs = 10_000) {
+async function sqliteJson(dbPath, sql, timeoutMs = 10_000, { strict = false } = {}) {
   try {
     const { stdout } = await execFileP("sqlite3", ["-json", dbPath, sql], {
       timeout: timeoutMs,
       maxBuffer: 256 * 1024 * 1024, // 256MB — Devin's sessions.db yields ~15MB JSON
     });
     return JSON.parse(stdout || "[]");
-  } catch {
+  } catch (e) {
+    // strict: "no data" (sqlite3 not installed) stays an empty result, but a
+    // timeout / crash / unreadable db is a FAILED read and must be visible —
+    // swallowing it made a slow Devin read look like "Devin has no data" and
+    // dropped it from the combined total (2026-11-10).
+    if (strict && e?.code !== "ENOENT") {
+      const why =
+        e?.killed || e?.signal
+          ? `timed out after ${Math.round(timeoutMs / 1000)}s`
+          : String(e?.message || e).split("\n")[0];
+      const err = new Error(`sqlite read of ${dbPath} failed: ${why}`);
+      err.code = "SIGRANK_READ_FAILED";
+      throw err;
+    }
     return [];
   }
+}
+
+/** Devin sessions.db read timeout. A large history (>1 min via sqlite3) hit the
+ *  old fixed 60s cap. Default 5 min; override with SIGRANK_DEVIN_TIMEOUT_MS. */
+export function devinTimeoutMs(env = process.env) {
+  const n = Number(env.SIGRANK_DEVIN_TIMEOUT_MS);
+  return Number.isFinite(n) && n >= 1000 ? n : 300_000;
 }
 
 // ── Env-var helper ────────────────────────────────────────────────────────────
@@ -760,6 +780,7 @@ export const devinAdapter = {
   async *records(root) {
     for (const r of roots("DEVIN_HOME", root)) {
       const dbPath = join(r, "sessions.db");
+      if (!existsSync(dbPath)) continue; // no Devin db = no local data (not a failure)
       const rows = await sqliteJson(
         dbPath,
         `SELECT row_id, session_id,
@@ -771,7 +792,8 @@ export const devinAdapter = {
          WHERE json_extract(chat_message, '$.role') = 'assistant'
            AND json_extract(chat_message, '$.metadata.metrics.input_tokens') IS NOT NULL
          ORDER BY created_at`,
-        60_000,
+        devinTimeoutMs(),
+        { strict: true },
       );
       for (const row of rows) {
         const inputIncl = Number(row.input_tokens || 0);
@@ -827,9 +849,11 @@ export const otherAdapter = {
   async *messages(root) {
     const filePath = root || process.env.SIGRANK_OTHER_PATH;
     if (!filePath) {
-      throw new Error(
+      throw Object.assign(new Error(
         "other adapter: set SIGRANK_OTHER_PATH to a JSON file with your token pillars. " +
           'Format: { "windows": { "all": { "input": N, "output": N, "cacheCreate": N, "cacheRead": N } } }',
+        ),
+        { code: "SIGRANK_NO_LOCAL_DATA" },
       );
     }
     let text;

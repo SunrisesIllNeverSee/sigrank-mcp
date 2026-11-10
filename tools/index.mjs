@@ -122,6 +122,7 @@ export function withTokscaleBlind(detected) {
  *  opts.callTool overrides the per-platform pull for tests (same opts-injection
  *  convention as opts.adapter in pullByPlatform) so the target-set logic is
  *  assertable without a real filesystem scan. */
+export const _pullExplicitForTest = (platforms, opts) => _pullExplicit(platforms, opts);
 async function _pullExplicit(platforms, opts = {}) {
   const pull = opts.callTool || callTool;
   const settled = await Promise.allSettled(
@@ -138,6 +139,13 @@ async function _pullExplicit(platforms, opts = {}) {
   const rank = (p) =>
     p === "claude" ? -2 : p === "codex" ? -1 : ALL_PLATFORMS.indexOf(p);
   active.sort((a, b) => rank(a.platform) - rank(b.platform));
+  // Platforms whose read FAILED (threw / timed out) — not "no data". Exposed as a
+  // property so callers building a combined total can refuse to show/submit a
+  // too-small one. "other" with no SIGRANK_OTHER_PATH is just not set up.
+  active.failed = settled
+    .map((r, i) => ({ r, platform: platforms[i] }))
+    .filter(({ r }) => r.status === "rejected" && r.reason?.code !== "SIGRANK_NO_LOCAL_DATA")
+    .map(({ r, platform }) => ({ platform, error: String(r.reason?.message || r.reason) }));
   return active;
 }
 

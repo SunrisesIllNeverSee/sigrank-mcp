@@ -6,6 +6,7 @@ import { cascade } from "../analytics/cascade.mjs";
 import { narrate } from "../presentation/narrate.mjs";
 import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { SUBMIT_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
+import { collectMultiPlatforms, multiAbortResult } from "./_multi.mjs";
 import {
   pullByPlatform,
 } from "./_helpers.mjs";
@@ -55,21 +56,8 @@ export async function handleTokenpullSubmit(args, ctx) {
   // (cloud, via tokscale). Aggregate every locally-detected platform's pillars per
   // window.
   if (platform === "multi") {
-    const detected = [];
-    for (const p of ALL_PLATFORMS) {
-      const r = await pullByPlatform(p, ctx.opts).catch(() => null);
-      const live =
-        r &&
-        (r.windows || []).some(
-          (w) =>
-            w.pillars.input +
-              w.pillars.output +
-              w.pillars.cacheCreate +
-              w.pillars.cacheRead >
-            0,
-        );
-      if (live) detected.push(r);
-    }
+    const { detected, failed } = await collectMultiPlatforms(ctx.opts);
+    if (failed.length) return multiAbortResult(failed, { codename: codename || undefined });
     if (detected.length < 2) {
       return {
         platform: "multi",
