@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.49
+
+### Fixes
+
+* Combined (`multi`) submission no longer silently drops a platform. A platform with no local data is still skipped, but a platform whose read fails or times out now aborts the multi submission with an error naming it, and nothing is sent for multi (applies to `submit_verified`, `tokenpull_submit`, `tokenpull` and the TUI/CLI submit). Real incident: a timed-out Devin read shrank a combined all-time total from 61.5B to 7.7B.
+* Devin `sessions.db` read: timeout raised from 60s to 5 min and configurable with `SIGRANK_DEVIN_TIMEOUT_MS`; a timeout is now an error instead of looking like "no Devin data".
+
+### CLI / TUI
+
+* "Update available" notice (header in the TUI, one line in plain CLI output). Non-blocking, 1.5s cap, silent offline, cached ~24h in `~/.sigrank-mcp/update-check.json`. Opt out with `SIGRANK_NO_UPDATE_CHECK=1` (also `NO_UPDATE_NOTIFIER`, `CI`).
+* Dashboard: the Your Cascade table scrolls reliably (↑/↓, j/k, PgUp/PgDn, Home/End). Combined rows are part of the scrollable table, the ▲/▼ hints are exact, and the view stays on the same row while platforms load in.
+
 ## Unreleased
 
 ### TUI

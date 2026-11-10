@@ -6,6 +6,7 @@ import { ALL_PLATFORMS } from "../adapters/index.mjs";
 import { ensureIdentity } from "../identity/keystore.mjs";
 import { submitSignedWindow } from "../submit/index.mjs";
 import { SUBMIT_OUTPUT, ANNOTATIONS } from "./_schemas.mjs";
+import { collectMultiPlatforms, multiAbortResult } from "./_multi.mjs";
 import { pullByPlatform, WINDOW_TYPE } from "./_helpers.mjs";
 import { _computeReportBlock } from "./_report.mjs";
 
@@ -72,21 +73,8 @@ export async function handleSubmitVerified(args, ctx) {
   // per window and publish as platform='multi' = the operator's TOTAL usage. Empty
   // windows are skipped so a no-activity window never lands as a degenerate row.
   if (platform === "multi") {
-    const detected = [];
-    for (const p of ALL_PLATFORMS) {
-      const r = await pullByPlatform(p, ctx.opts).catch(() => null);
-      const live =
-        r &&
-        (r.windows || []).some(
-          (w) =>
-            w.pillars.input +
-              w.pillars.output +
-              w.pillars.cacheCreate +
-              w.pillars.cacheRead >
-            0,
-        );
-      if (live) detected.push(r);
-    }
+    const { detected, failed } = await collectMultiPlatforms(ctx.opts);
+    if (failed.length) return multiAbortResult(failed, { codename: id.codename, operator_id: id.operator_id });
     if (detected.length < 2) {
       return {
         platform: "multi",

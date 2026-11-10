@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "1.0.48",
+  "version": "1.0.49",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "Upsilon measurement engine distributed through the sigrank CLI/MCP compatibility package, with SigRank public leaderboard tools.",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",
@@ -24,7 +24,7 @@
   },
   "scripts": {
     "start": "node index.mjs",
-    "test": "node test.mjs && node --test __tests__/sign.test.mjs __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs __tests__/standard-record.test.mjs __tests__/standard-cli.test.mjs __tests__/product-architecture.test.mjs __tests__/tteop-delegation.test.mjs __tests__/mcp-stdio.test.mjs",
+    "test": "node test.mjs && node --test __tests__/sign.test.mjs __tests__/cascade.test.mjs __tests__/badges.test.mjs __tests__/tui-input.test.mjs __tests__/standard-record.test.mjs __tests__/standard-cli.test.mjs __tests__/product-architecture.test.mjs __tests__/tteop-delegation.test.mjs __tests__/mcp-stdio.test.mjs __tests__/multi-update-scroll.test.mjs",
     "test:packaged": "node scripts/packed-artifact-smoke.mjs",
     "sync:platforms": "node scripts/sync-platforms.mjs"
   },

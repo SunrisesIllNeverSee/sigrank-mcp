@@ -28,6 +28,8 @@ import { callTool, DEFAULT_API_BASE, pullActivePlatforms } from "../tools.mjs";
 import { cascade, classify, CLASS_TIERS, UNCLASSED, tierOf } from "../cascade.mjs";
 import { ALL_PLATFORMS } from "../adapters.mjs";
 import { ensureIdentity, keystorePath } from "../keystore.mjs";
+import { pkgVersion } from "../lib/pkg-version.mjs";
+import { cachedUpdateNotice, checkForUpdate } from "../lib/update-check.mjs";
 import { submitSignedWindow } from "../submit.mjs";
 import {
   LEADERBOARD_METRIC,
@@ -1722,6 +1724,12 @@ async function runSubmit({ platform = "claude", window } = {}) {
     return;
   }
 
+  if (out.status === "error" && out.reason === "platform_read_failed") {
+    writeln(red(`  ✗ ${out.detail}`));
+    process.exitCode = 1;
+    return;
+  }
+
   writeln();
   let anyRanked = false;
   let anyReceivedNotRanked = false;
@@ -1807,6 +1815,22 @@ export async function runCli(argv) {
     flags[key] = val;
   }
 
+  // Update notice (plain CLI): kick the check off now, print the one-line notice
+  // after the command if it is ready. Skipped for long-running/interactive
+  // commands and --version. Never delays exit by more than a moment.
+  const noticeCmds = new Set([undefined, "start", "run", "board", "compare", "submit", "enroll"]);
+  const noticeP = noticeCmds.has(cmd)
+    ? (async () => {
+        const cached = cachedUpdateNotice({ current: pkgVersion() });
+        return cached || (await checkForUpdate({ current: pkgVersion() }));
+      })().catch(() => null)
+    : null;
+  const printUpdateNotice = async () => {
+    if (!noticeP) return;
+    const n = await Promise.race([noticeP, new Promise((r) => setTimeout(() => r(null), 300).unref?.())]);
+    if (n) writeln(`\n  ${gold("⬆")} ${dim(n)}`);
+  };
+
   try {
     if (cmd === "board") {
       await runBoard({
@@ -1864,6 +1888,7 @@ export async function runCli(argv) {
       await showHelp();
       process.exit(2);
     }
+    await printUpdateNotice();
   } catch (e) {
     write(SHOW_CURSOR);
     writeln(red(`\n  ✗ ${e.message}`));

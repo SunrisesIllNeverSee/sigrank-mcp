@@ -24,11 +24,17 @@ import os from "os";
 import path from "path";
 import { pathToFileURL } from "node:url";
 import { pkgVersion } from "../lib/pkg-version.mjs";
+import { cachedUpdateNotice, checkForUpdate } from "../lib/update-check.mjs";
 import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 
 // Version read from the shared pkg-version helper (single source of truth —
 // matches cli.mjs; never hardcode, that's what caused the version drift).
 const VERSION = pkgVersion();
+
+// "sigrank X available" text for the header; null unless runTui found a newer
+// release (cached result at launch, registry refresh in the background).
+let _updateNotice = null;
+const _updateVersion = () => (_updateNotice ? _updateNotice.split(" ")[1] : null);
 
 // Expensive platform readers that the Dashboard only runs on explicit user
 // request. They remain in ALL_PLATFORMS and are still available to me, watch,
@@ -499,6 +505,12 @@ const dashboardPlatformRank = (p) =>
 async function pullDashboardPlatform(dashData, platform) {
   try {
     const active = await pullActivePlatforms({ platforms: [platform] });
+    if (active.failed?.length) {
+      dashData.failed = [
+        ...(dashData.failed || []).filter((f) => !active.failed.some((x) => x.platform === f.platform)),
+        ...active.failed,
+      ];
+    }
     for (const d of active) {
       if (!dashData.active.find((a) => a.platform === d.platform)) {
         // Apply the same batched "all" override as loadDashboardData so
@@ -749,7 +761,15 @@ function renderTabBar(activeIdx) {
         ? `${c.bgCyan}${c.boldCyan}${lbl}${c.reset}`
         : `${c.bgDim}${c.dim}${lbl}${c.reset}`;
     }).join("");
+  const upd = _updateVersion();
   const rights = [
+    ...(upd
+      ? [
+          dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  ·  `) + gold(`⬆ ${_updateNotice}`),
+          dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  `) + gold(`⬆ ${upd} available`),
+          dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  `) + gold(`⬆ ${upd}`),
+        ]
+      : []),
     right,
     dim(`${gold("v" + VERSION)}${c.reset}${c.dim}  ·  signalaf.com`),
     gold("v" + VERSION),
@@ -1031,34 +1051,55 @@ function metricSpark(d, pick, fmt) {
 
 const DASH_WINS = ["7d", "30d", "90d", "all"];
 
-// Count how many cascade rows the active platforms would produce (every window
-// with data across all active platforms). This is the "total wanted" count.
-function cascadeScrollableCount(active) {
-  return active.reduce(
-    (n, d) =>
-      n +
-      DASH_WINS.filter((wk) => {
-        const wd = d.windows?.find((x) => x.window === wk);
-        return wd && wd.pillars.input + wd.pillars.output > 0;
-      }).length,
-    0,
-  );
+/**
+ * Pure scroll-window layout for the cascade table. `rows` is the full ordered
+ * row list ({ platform, notes }: notes = extra lines printed after that
+ * platform's last visible row). `lineBudget` is the number of TERMINAL LINES the
+ * table may use, so ▲/▼ markers, blank separators and notes are all counted —
+ * the old row-count budget overflowed the frame and cut the lower sections off.
+ * Returns the clamped offset, how many rows fit from there, and the exact
+ * above/below counts the hints print.
+ */
+export function cascadeWindow(rows, offset, lineBudget) {
+  const n = rows.length;
+  const linesFor = (o, k) => {
+    let lines = (o > 0 ? 1 : 0) + 1 + k + (o + k < n ? 1 : 0); // ▲ + trailing blank + rows + ▼
+    let prev = null;
+    for (let i = o; i < o + k; i++) {
+      const p = rows[i].platform;
+      if (prev !== null && p !== prev) lines += 1 + (rows[i - 1].notes || 0); // blank + note of the group that ended
+      prev = p;
+    }
+    if (k > 0) lines += rows[o + k - 1].notes || 0; // note of the last visible group
+    return lines;
+  };
+  const fit = (o) => {
+    let k = 0;
+    while (o + k < n && linesFor(o, k + 1) <= lineBudget) k++;
+    return Math.max(1, Math.min(k, n - o));
+  };
+  let maxOffset = Math.max(0, n - 1);
+  for (let o = 0; o < n; o++) {
+    if (o + fit(o) >= n) {
+      maxOffset = o;
+      break;
+    }
+  }
+  const eff = Math.max(0, Math.min(Number.isFinite(offset) ? offset : 0, maxOffset));
+  const count = n === 0 ? 0 : fit(eff);
+  return { offset: eff, count, maxOffset, above: eff, below: n - eff - count, total: n };
 }
 
-// Compute the max cascade rows that fit in the current terminal height budget.
-// Mirrors the calculation in renderDashboard (budget - used - sectionsBelow).
-function maxCascadeRowsFor(active) {
-  const budget = H() - 4; // 2 tab bar + 2 footer
-  const platformCount = active.length;
-  const barLines = 4 + platformCount + (platformCount > 1 ? 1 : 0);
-  const boardLines = 17;
-  const sectionsBelow = barLines + boardLines;
-  // used before cascade = header(2) + blank(1) + title(1) + blank(1) + col-header(1) + separator(1) = 7
-  const usedBeforeCascade = 7;
-  return Math.max(8, budget - usedBeforeCascade - sectionsBelow);
-}
+// Layout of the last rendered Dashboard cascade (set by renderDashboard) — the key
+// handler and footer hint read this so they use the SAME numbers as the frame.
+let _cascadeLayout = { total: 0, count: 0, maxOffset: 0, offset: 0 };
+const cascadeCanScroll = () => _cascadeLayout.maxOffset > 0;
 
-function renderDashboard(data, status = "", scrollOffset = 0) {
+function renderDashboard(data, status = "", scrollState = 0) {
+  // scrollState: a number (plain offset) or a { offset, anchor } object the caller
+  // keeps — anchor is the "platform:window" key of the top visible row, so async
+  // loads that insert rows above don't make the view jump.
+  const scroll = typeof scrollState === "object" && scrollState ? scrollState : { offset: scrollState, anchor: null };
   const w = W();
   const budget = H() - 4; // 2 tab bar + 2 footer
   const WINS = ["7d", "30d", "90d", "all"];
@@ -1212,8 +1253,6 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   // +2: "Where you sit" line. Two-column layout (≥130 cols) needs fewer rows.
   const boardLines = w >= 130 ? 20 : 26;
   const sectionsBelow = barLines + boardLines;
-  const gapNotes = active.filter((d) => gapNote(d.platform)).length;
-  const maxCascadeRows = Math.max(8, budget - used - sectionsBelow - gapNotes);
 
   // SCROLL-VIEW (2026-06-27): Build the full list of cascade rows first, then
   // slice by [scrollOffset, scrollOffset + maxCascadeRows]. This gives a real
@@ -1239,24 +1278,50 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     }
   }
 
-  const totalWanted = allCascadeRows.length;
-  const canScroll = totalWanted > maxCascadeRows;
-  // Clamp scroll offset to valid range [0, totalWanted - maxCascadeRows]
-  const maxOffset = Math.max(0, totalWanted - maxCascadeRows);
-  const effectiveOffset = Math.min(scrollOffset, maxOffset);
-  const visibleRows = allCascadeRows.slice(
-    effectiveOffset,
-    effectiveOffset + maxCascadeRows,
-  );
+  // Combined row(s) are part of the scrollable list (they used to be a separate
+  // block that vanished whenever the cascade filled the viewport).
+  if (active.length > 1) {
+    const lbl = active.map((d) => d.platform).join("+");
+    const hasEst = active.some((d) => d.estimated);
+    for (const wk of WINS) {
+      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+      let any = false;
+      for (const d of active) {
+        const wd = d.windows?.find((x) => x.window === wk);
+        if (!wd || wd.pillars.input + wd.pillars.output === 0) continue;
+        cp.input += wd.pillars.input ?? 0;
+        cp.output += wd.pillars.output ?? 0;
+        cp.cacheCreate += wd.pillars.cacheCreate ?? 0;
+        cp.cacheRead += wd.pillars.cacheRead ?? 0;
+        any = true;
+      }
+      if (!any) continue;
+      allCascadeRows.push({ platform: lbl, winKey: wk, pillars: cp, estimated: hasEst, combined: true });
+    }
+  }
+  const combinedFirst = allCascadeRows.find((r) => r.combined)?.winKey;
+  const rowKey = (r) => `${r.platform}:${r.winKey}`;
+  for (const r of allCascadeRows) r.notes = r.combined || !gapNote(r.platform) ? 0 : 1;
+
+  // Keep the view anchored on the same row when rows load in asynchronously.
+  let want = scroll.offset || 0;
+  if (scroll.anchor) {
+    const idx = allCascadeRows.findIndex((r) => rowKey(r) === scroll.anchor);
+    if (idx >= 0) want = idx;
+  }
+  const lineBudget = Math.max(8, budget - used - sectionsBelow);
+  const win = cascadeWindow(allCascadeRows, want, lineBudget);
+  scroll.offset = win.offset;
+  scroll.anchor = win.offset > 0 ? rowKey(allCascadeRows[win.offset]) : null;
+  _cascadeLayout = win;
+  const visibleRows = allCascadeRows.slice(win.offset, win.offset + win.count);
 
   // ▲ indicator: rows above the current viewport
-  if (canScroll && effectiveOffset > 0) {
-    emit(
-      `  ${dim(`  ▲ ${effectiveOffset} row${effectiveOffset > 1 ? "s" : ""} above`)}`,
-    );
+  if (win.above > 0) {
+    emit(`  ${dim(`  ▲ ${win.above} row${win.above > 1 ? "s" : ""} above · ↑↓ scroll`)}`);
   }
 
-  // Render the visible slice — group by platform (emit a blank line between platforms)
+  // Render the visible slice — group by platform (blank line between groups)
   let lastPlatform = null;
   for (const row of visibleRows) {
     if (lastPlatform !== null && row.platform !== lastPlatform) {
@@ -1267,6 +1332,7 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
     renderRow(
       row.platform,
       (s) => {
+        if (row.combined) return row.winKey === combinedFirst ? bold(cyan(s)) : dim(s);
         const pc = platformColor(row.platform);
         return row.winKey === firstWin[row.platform] ? bold(pc(s)) : dim(s);
       },
@@ -1283,35 +1349,10 @@ function renderDashboard(data, status = "", scrollOffset = 0) {
   if (visibleRows.length > 0) emit();
 
   // ▼ indicator: rows below the current viewport
-  const rowsBelow = totalWanted - effectiveOffset - visibleRows.length;
-  if (canScroll && rowsBelow > 0) {
+  if (win.below > 0) {
     emit(
-      `  ${dim(`  ▼ ${rowsBelow} row${rowsBelow > 1 ? "s" : ""} below · ↑↓ scroll`)}${effectiveOffset > 0 ? dim(` · ${effectiveOffset}/${maxOffset}`) : ""}`,
+      `  ${dim(`  ▼ ${win.below} row${win.below > 1 ? "s" : ""} below · ↑↓ scroll`)}${win.offset > 0 ? dim(` · ${win.offset}/${win.maxOffset}`) : ""}`,
     );
-  }
-
-  // combined
-  if (active.length > 1 && used < budget - sectionsBelow) {
-    const lbl = active.map((d) => d.platform).join("+");
-    const hasEst = active.some((d) => d.estimated);
-    let fst = true;
-    for (const wk of WINS) {
-      const cp = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
-      let any = false;
-      for (const d of active) {
-        const wd = d.windows?.find((x) => x.window === wk);
-        if (!wd || wd.pillars.input + wd.pillars.output === 0) continue;
-        cp.input += wd.pillars.input ?? 0;
-        cp.output += wd.pillars.output ?? 0;
-        cp.cacheCreate += wd.pillars.cacheCreate ?? 0;
-        cp.cacheRead += wd.pillars.cacheRead ?? 0;
-        any = true;
-      }
-      if (!any) continue;
-      renderRow(lbl, (s) => (fst ? bold(cyan(s)) : dim(s)), wk, cp, hasEst);
-      fst = false;
-    }
-    emit();
   }
 
   // (Υ Trend moved to the dedicated Trends tab [2] — every metric, with sub-views.)
@@ -2735,7 +2776,14 @@ function renderSubmitPreview(dashData, id, page = 0) {
     return { pages: 0 };
   }
   const blocks = active.map((d) => ({ platform: d.platform, windows: d.windows }));
-  if (active.length >= 2) {
+  const failedReads = dashData?.failed ?? [];
+  if (failedReads.length) {
+    emit();
+    emit(
+      `  ${red("!")} ${dim(`could not read ${failedReads.map((f) => f.platform).join(", ")} — the combined total will NOT be submitted until it reads (press [R]; Devin: SIGRANK_DEVIN_TIMEOUT_MS)`)}`,
+    );
+  }
+  if (active.length >= 2 && !failedReads.length) {
     const multi = WINS.map((wk) => {
       const sum = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
       let messages = 0;
@@ -3104,7 +3152,7 @@ export async function runTui({
   let previewPages = 0;
   let boardYouOnly = false; // FIX I2: [Y] toggles the Board to "just me" (hybrid model)
   let boardUnique = false; // [U] Board: every submission (default, unchanged) ↔ best row per operator
-  let cascadeScroll = 0; // SCROLL-VIEW (2026-06-27): cascade-section scroll offset (Dashboard only)
+  const cascadeScroll = { offset: 0, anchor: null }; // cascade scroll state (Dashboard only); anchor = top row key, keeps the view put while rows load
   let ompEnabled = false; // Session-only Dashboard toggle; deliberately OFF on every launch.
 
   // ── Redraw (buffered: renders into memory, then paints as a locked frame)
@@ -3158,9 +3206,8 @@ export async function runTui({
       }
       // SCROLL-VIEW: show ↑↓ hint only when there are cascade rows to scroll
       const scrollHint =
-        dashData && Array.isArray(dashData.active) &&
-        cascadeScrollableCount(dashData.active) > maxCascadeRowsFor(dashData.active)
-          ? [{ k: "↑↓", label: "scroll cascade", pri: 2 }]
+        dashData && Array.isArray(dashData.active) && cascadeCanScroll()
+          ? [{ k: "↑↓/PgUp/PgDn", label: "scroll cascade", pri: 2 }]
           : [];
       const ompHint = !dashData?._ompAvailable
         ? []
@@ -3307,6 +3354,18 @@ export async function runTui({
     }
     if (activeTab === 2) await redraw();
   };
+
+  // Update notice: show the cached result at once (no network), refresh from the
+  // registry in the background (1.5s cap, silent offline, cached ~24h). Never awaited.
+  _updateNotice = cachedUpdateNotice({ current: VERSION });
+  checkForUpdate({ current: VERSION })
+    .then((n) => {
+      if (n && n !== _updateNotice) {
+        _updateNotice = n;
+        redraw().catch(() => {});
+      }
+    })
+    .catch(() => {});
 
   // ── Initial data load
   const loadAll = async () => {
@@ -3630,7 +3689,8 @@ export async function runTui({
           let totalVerified = 0,
             totalReceived = 0,
             hadFail = false,
-            didMulti = false;
+            didMulti = false,
+            multiAbort = null;
           for (const p of platforms) {
             try {
               const out = await callTool("submit_verified", { platform: p, confirm: true });
@@ -3655,6 +3715,10 @@ export async function runTui({
                 platform: "multi",
                 confirm: true,
               });
+              if (out.status === "error" && out.reason === "platform_read_failed") {
+                // A platform read failed: the combined total was NOT submitted.
+                multiAbort = (out.failed_platforms || []).map((f) => f.platform).join(", ") || "a platform";
+              }
               const ws = out.windows || [];
               const received = ws.filter((w) => w.status === "received");
               const verified = received.filter(
@@ -3669,7 +3733,9 @@ export async function runTui({
               hadFail = true;
             }
           }
-          if (totalReceived && !hadFail && totalVerified === totalReceived) {
+          if (multiAbort) {
+            submitMsg = `${red("✗")} combined total NOT submitted: could not read ${multiAbort} — per-platform windows${totalReceived ? " were" : " were not"} sent · press [R] and retry`;
+          } else if (totalReceived && !hadFail && totalVerified === totalReceived) {
             submitMsg = `${green("✓")} submitted · ${totalVerified} window${totalVerified > 1 ? "s" : ""} across ${platforms.length} platform${platforms.length > 1 ? "s" : ""}${didMulti ? " + combined" : ""} · verified`;
           } else if (hadFail && totalReceived) {
             submitMsg = `${red("✗")} device not verified — sign in again ([C])`;
@@ -3763,35 +3829,21 @@ export async function runTui({
       // SCROLL-VIEW (2026-06-27): ↑/↓ (or j/k) scroll the cascade section on the
       // Dashboard tab ONLY. The rest of the dashboard stays pinned. Only active
       // when there are more cascade rows than fit in the viewport.
-      if (activeTab === 0 && dashData && Array.isArray(dashData.active)) {
-        const total = cascadeScrollableCount(dashData.active);
-        const maxRows = maxCascadeRowsFor(dashData.active);
-        if (total > maxRows) {
-          const maxOff = total - maxRows;
-          if (key === "\x1b[A" || k === "k") {
-            // ↑ / k → scroll up
-            cascadeScroll = Math.max(0, cascadeScroll - 1);
-            await redraw();
-            return;
-          }
-          if (key === "\x1b[B" || k === "j") {
-            // ↓ / j → scroll down
-            cascadeScroll = Math.min(maxOff, cascadeScroll + 1);
-            await redraw();
-            return;
-          }
-          if (key === "\x1b[5~") {
-            // PageUp → scroll up by viewport
-            cascadeScroll = Math.max(0, cascadeScroll - maxRows);
-            await redraw();
-            return;
-          }
-          if (key === "\x1b[6~") {
-            // PageDown → scroll down by viewport
-            cascadeScroll = Math.min(maxOff, cascadeScroll + maxRows);
-            await redraw();
-            return;
-          }
+      if (activeTab === 0 && dashData && Array.isArray(dashData.active) && cascadeCanScroll()) {
+        const { maxOffset, count } = _cascadeLayout;
+        const cur = cascadeScroll.offset;
+        let next = null;
+        if (key === "\x1b[A" || k === "k") next = cur - 1; // ↑ / k
+        else if (key === "\x1b[B" || k === "j") next = cur + 1; // ↓ / j
+        else if (key === "\x1b[5~") next = cur - Math.max(1, count - 1); // PageUp
+        else if (key === "\x1b[6~") next = cur + Math.max(1, count - 1); // PageDown
+        else if (key === "\x1b[H" || key === "\x1b[1~" || key === "\x1bOH") next = 0; // Home
+        else if (key === "\x1b[F" || key === "\x1b[4~" || key === "\x1bOF") next = maxOffset; // End
+        if (next !== null) {
+          cascadeScroll.offset = Math.max(0, Math.min(maxOffset, next));
+          cascadeScroll.anchor = null; // user moved: re-derive the anchor on render
+          await redraw();
+          return;
         }
       }
 
@@ -3835,7 +3887,7 @@ export async function runTui({
       } // [C] → Connect from any read tab
 
       // SCROLL-VIEW: reset cascade scroll when leaving the Dashboard tab
-      if (switched && activeTab !== 0) cascadeScroll = 0;
+      if (switched && activeTab !== 0) { cascadeScroll.offset = 0; cascadeScroll.anchor = null; }
 
       // #9 (2026-06-27): Compare loads its FRESH verifier pull ON-DEMAND when the tab opens
       // (NOT on the Dashboard load path — that pull is a 5–60s scan). Paint the "pulling fresh
@@ -3962,7 +4014,8 @@ export async function runTui({
           return;
         }
         status = "refreshing…";
-        cascadeScroll = 0; // SCROLL-VIEW: reset scroll on refresh
+        cascadeScroll.offset = 0; // SCROLL-VIEW: reset scroll on refresh
+        cascadeScroll.anchor = null;
         // #9: on the Compare tab, [R] re-runs the FRESH verifier pull for the current platform
         // (loadAll no longer touches Compare). Clearing compareData shows the spinner first.
         if (activeTab === 2) {

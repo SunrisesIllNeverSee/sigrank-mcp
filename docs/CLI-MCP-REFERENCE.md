@@ -237,6 +237,8 @@ All adapters are token-only (no message content, no cost fields, no credentials)
 | `SIGRANK_API_BASE`      | `https://signalaf.com` | Override the board host (https required; http only for loopback) |
 | `SIGRANK_DEVICE_LABEL`  | `sigrank <version> · <platform>` | Optional device label sent at enroll |
 | `SIGRANK_FETCH_TIMEOUT` | `10000`                | Board API fetch timeout (ms) |
+| `SIGRANK_DEVIN_TIMEOUT_MS` | `300000`            | How long to wait for the Devin `sessions.db` read (ms). A timeout fails the Devin read loudly and blocks the combined (multi) submission instead of dropping Devin |
+| `SIGRANK_NO_UPDATE_CHECK` | unset                | Set to `1` to turn off the "update available" check (the only network call the CLI/TUI makes on start besides the board). `NO_UPDATE_NOTIFIER` and `CI` also disable it. The result is cached ~24h in `~/.sigrank-mcp/update-check.json` |
 
 ---
 
