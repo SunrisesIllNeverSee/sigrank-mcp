@@ -72,7 +72,7 @@ jobs:
         run: node scripts/check-version.mjs
 
       # Intra-repo contract tests (no cross-repo checkout needed)
-      - name: Intra-repo constants contract (adapter registry ↔ submit enum ↔ tokscale map)
+      - name: Platform sync failure classification regression\n        run: node --test __tests__/platform-sync.test.mjs\n\n      - name: Intra-repo constants contract (adapter registry ↔ submit enum ↔ tokscale map)
         run: node --test __tests__/contract/constants-contract.test.mjs
 
       - name: Intra-repo leaderboard-metric contract (no inline yield_ literals)

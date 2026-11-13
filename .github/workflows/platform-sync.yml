@@ -26,11 +26,16 @@ jobs:
         run: |
           npm install -g tokscale ccusage
       - name: Run platform sync check
+        id: sync
+        shell: bash
         run: |
+          set +e
           node scripts/sync-platforms.mjs --json > sync-report.json
+          result=$?
+          set -e
+          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
           cat sync-report.json
-          # Exit 1 if gaps found (script handles this)
-          node scripts/sync-platforms.mjs
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -38,17 +43,16 @@ jobs:
           name: platform-sync-report
           path: sync-report.json
           if-no-files-found: error
-      - name: Create issue if gaps found
-        if: failure()
+      - name: Create issue if confirmed gaps found
+        if: steps.sync.outputs.exit_code == '1'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             const fs = require('fs');
-            let report;
-            try {
-              report = JSON.parse(fs.readFileSync('sync-report.json', 'utf8'));
-            } catch {
-              report = { timestamp: new Date().toISOString(), gaps: { tokscale: {}, ccusage: {} }, upstream: { tokscale: { clients: [] }, ccusage: { clients: [] } } };
+            const report = JSON.parse(fs.readFileSync('sync-report.json', 'utf8'));
+            if (report.discoveryFailed || report.upstream?.tokscale?.error || report.upstream?.ccusage?.error) {
+              core.setFailed('Cannot open a gap issue when upstream discovery failed');
+              return;
             }
             const tsGaps = report.gaps?.tokscale?.clientsNotInMap || [];
             const tsAdapterGaps = report.gaps?.tokscale?.clientsWithMissingAdapter || [];
@@ -68,7 +72,7 @@ jobs:
               `- Upstream clients: ${report.upstream.ccusage.clients.length}`,
               '',
               '### Action needed',
-              'Run `node scripts/sync-platforms.mjs` locally to review, then update `adapters/index.mjs` and/or `tools/index.mjs`.',
+              'Run `node scripts/sync-platforms.mjs` locally to review; update `lib/constants.mjs` for unmapped clients or the adapter registry for missing adapters.',
               '',
               'Run: `node scripts/sync-platforms.mjs`'
             ].join('\n');
@@ -79,3 +83,10 @@ jobs:
               body,
               labels: ['maintenance', 'platform-sync']
             });
+      - name: Fail check on gaps or upstream errors
+        if: always() && steps.sync.outputs.exit_code != '0'
+        env:
+          SYNC_EXIT_CODE: ${{ steps.sync.outputs.exit_code }}
+        run: |
+          echo "Platform sync did not pass (exit code: ${SYNC_EXIT_CODE:-not-run})."
+          exit 1

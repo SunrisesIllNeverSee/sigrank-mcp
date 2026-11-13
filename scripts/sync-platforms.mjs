@@ -164,7 +164,10 @@ async function main() {
   const ourAdapters = readOurAdapters();
   const ourMap = readTokscaleMap();
 
+  const discoveryFailed = Boolean(tokscale.error || ccusage.error || tokscale.clients.length === 0 || ccusage.clients.length === 0);
+
   const report = {
+    discoveryFailed,
     timestamp: new Date().toISOString(),
     upstream: {
       tokscale: {
@@ -249,6 +252,13 @@ async function main() {
     report.gaps.tokscale.clientsNotInMap.length > 0 ||
     report.gaps.tokscale.clientsWithMissingAdapter.length > 0 ||
     report.gaps.ccusage.clientsNotInAdapters.length > 0;
+
+  // An incomplete upstream inventory cannot establish that platforms are in sync.
+  // Never mutate the map when discovery failed, even with --update.
+  if (discoveryFailed) {
+    if (!asJson) console.error("Platform sync unavailable: upstream discovery failed or returned no clients.");
+    process.exit(2);
+  }
 
   if (hasGaps && !doUpdate) {
     process.exit(1);
