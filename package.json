@@ -82,7 +82,7 @@
   ],
   "dependencies": {
     "token-cascade": "0.2.1",
-    "ccusage": "20.0.51",
+    "ccusage": "20.1.2",
     "tokscale": "4.18.0",
     "@modelcontextprotocol/server": "2.3.0"
   },
