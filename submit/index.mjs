@@ -188,14 +188,14 @@ export async function submitSignedWindow(
     return {
       status: "not_enrolled",
       reason: "not_enrolled",
-      detail: "Run `npx sigrank-mcp enroll` to bind this device first.",
+      detail: "Run `npx sigrank enroll` to bind this device first.",
     };
   }
   if (!identity?.private_key_pkcs8_b64) {
     return {
       status: "error",
       reason: "no_key",
-      detail: "No local signing key — re-run `npx sigrank-mcp enroll`.",
+      detail: "No local signing key — re-run `npx sigrank enroll`.",
     };
   }
 
