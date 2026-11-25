@@ -108,7 +108,7 @@ const CLIENT_LABELS = {
   antigravity: "Antigravity", "antigravity-cli": "Antigravity CLI",
   zed: "Zed", kiro: "Kiro", trae: "Trae", warp: "Warp", cline: "Cline",
   gjc: "GJC", grok: "Grok", jcode: "JCode", commandcode: "Command Code",
-  micode: "MiCode", junie: "Junie", zcode: "ZCode",
+  micode: "MiCode", junie: "Junie", zcode: "ZCode", dsh: "DeepSeek Harness",
   opencodereview: "OpenCode Review", codebuddy: "CodeBuddy",
   workbuddy: "WorkBuddy",
 };
