@@ -1200,6 +1200,7 @@ export const antigravityAdapter = makeCcusageAdapter("antigravity");
 export const grokAdapter = makeCcusageAdapter("grok");
 export const zcodeAdapter = makeCcusageAdapter("zcode");
 export const clineAdapter = makeCcusageAdapter("cline");
+export const dshAdapter = makeCcusageAdapter("dsh");
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 /** All non-Claude, non-Codex adapters keyed by platform ID. */
@@ -1225,6 +1226,7 @@ export const ADAPTERS = {
   grok: grokAdapter,
   zcode: zcodeAdapter,
   cline: clineAdapter,
+  dsh: dshAdapter,
 };
 
 export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);

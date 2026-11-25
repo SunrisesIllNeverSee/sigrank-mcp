@@ -558,8 +558,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  23,
-  `ALL_PLATFORMS has 23 entries, got ${ALL_PLATFORMS.length}`,
+  24,
+  `ALL_PLATFORMS has 24 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
@@ -758,7 +758,7 @@ await assert.rejects(
 // Use a mock adapter injected via tokenpull directly (tokenpullAny goes to registry;
 // test the registry routing by checking that the amp adapter is structurally wired).
 assert.strictEqual(ADAPTERS["amp"].platform, "amp", "ADAPTERS[amp] is wired");
-for (const p of ["antigravity", "grok", "zcode", "cline"]) {
+for (const p of ["antigravity", "grok", "zcode", "cline", "dsh"]) {
   assert.strictEqual(ADAPTERS[p].platform, p, `ADAPTERS[${p}] is wired`);
   assert.strictEqual(
     typeof ADAPTERS[p].messages,
