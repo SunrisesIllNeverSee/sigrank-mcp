@@ -1,6 +1,6 @@
 {
   "name": "sigrank",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "author": "SunrisesIllNeverSee (https://github.com/SunrisesIllNeverSee)",
   "description": "SigRank measures observable AI-operator token-cascade efficiency: Yield, Leverage, Velocity, 10xDEV.",
   "mcpName": "io.github.SunrisesIllNeverSee/sigrank-mcp",

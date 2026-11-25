@@ -3,14 +3,14 @@
   "name": "io.github.SunrisesIllNeverSee/sigrank-mcp",
   "description": "SigRank measures observable AI-operator token-cascade efficiency: Yield, Leverage, Velocity, 10xDEV.",
   "title": "SigRank SignalAF \u2014 AI Operator Cascade & Leaderboard",
-  "version": "1.0.50",
+  "version": "1.0.51",
   "websiteUrl": "https://signalaf.com",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "sigrank",
-      "version": "1.0.50",
+      "version": "1.0.51",
       "transport": {
         "type": "stdio"
       },
