@@ -538,6 +538,7 @@ assert.ok(
 assert.ok(ALL_PLATFORMS.includes("claude"), "ALL_PLATFORMS includes claude");
 assert.ok(ALL_PLATFORMS.includes("codex"), "ALL_PLATFORMS includes codex");
 assert.ok(ALL_PLATFORMS.includes("grok"), "ALL_PLATFORMS includes grok");
+assert.ok(ALL_PLATFORMS.includes("dsh"), "ALL_PLATFORMS includes dsh");
 for (const p of [
   "amp",
   "kimi",
@@ -558,8 +559,8 @@ for (const p of [
   assert.ok(ALL_PLATFORMS.includes(p), `ALL_PLATFORMS includes ${p}`);
 assert.strictEqual(
   ALL_PLATFORMS.length,
-  23,
-  `ALL_PLATFORMS has 23 entries, got ${ALL_PLATFORMS.length}`,
+  24,
+  `ALL_PLATFORMS has 24 entries, got ${ALL_PLATFORMS.length}`,
 );
 
 // Dashboard policy: expensive omp history is opt-in, but registration and
