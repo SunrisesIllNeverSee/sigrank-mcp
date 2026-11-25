@@ -29,7 +29,6 @@ export const DEFAULT_API_BASE =
 /** Allowed API hosts — prevents SSRF via SIGRANK_API_BASE override. */
 const ALLOWED_API_HOSTS = new Set([
   "signalaf.com",
-  "sigeconomy.com",
   "localhost",
   "127.0.0.1",
   "::1",
