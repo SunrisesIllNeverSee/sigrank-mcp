@@ -49,6 +49,8 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { cachedOmpScan, ompCacheEnabled } from "../omp-cache.mjs";
+import { dshAdapter } from "./dsh.mjs";
+export { dshAdapter };
 
 const execFileP = promisify(execFileCb);
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -1225,6 +1227,7 @@ export const ADAPTERS = {
   grok: grokAdapter,
   zcode: zcodeAdapter,
   cline: clineAdapter,
+  dsh: dshAdapter,
 };
 
 export const ALL_PLATFORMS = Object.keys(ADAPTERS).concat(["claude", "codex"]);
