@@ -126,7 +126,7 @@ export async function handleWatchTokenpull(args, ctx) {
     } else {
       auth_submit = {
         status: "not_enrolled",
-        detail: "Run `npx sigrank-mcp enroll` to auto-submit verified runs.",
+        detail: "Run `npx sigrank enroll` to auto-submit verified runs.",
       };
     }
   }

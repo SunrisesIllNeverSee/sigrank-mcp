@@ -13,7 +13,7 @@ import { _computeReportBlock } from "./_report.mjs";
 export const TOOL_DEF = {
   name: "submit_verified",
   description:
-    "Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank-mcp enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Publishing requires `confirm: true` (ask the user first); pass dry_run:true to inspect the exact signed payload without publishing and without confirm.",
+    "Publish your LOCAL token runs to the SigRank board as a VERIFIED operator — the enrolled, signed path. Reads your pillars (tokenpull), builds the canonical Schema 1.0 snapshot per window, ed25519-signs it with your device key, and POSTs to /api/v1/snapshots. Requires `npx sigrank enroll` first (a bound device). Only signed submissions from a trusted device rank on the board. Token-only; the private key never leaves your machine. Publishing requires `confirm: true` (ask the user first); pass dry_run:true to inspect the exact signed payload without publishing and without confirm.",
   annotations: {
     title: "Submit verified score",
     ...ANNOTATIONS.destructiveHint,
@@ -55,7 +55,7 @@ export async function handleSubmitVerified(args, ctx) {
   if (!id.codename || !id.operator_id) {
     return {
       status: "not_enrolled",
-      detail: "Run `npx sigrank-mcp enroll` to bind this device first.",
+      detail: "Run `npx sigrank enroll` to bind this device first.",
     };
   }
   if (!args?.dry_run && args?.confirm !== true) {

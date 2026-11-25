@@ -33,7 +33,7 @@ import { LEADERBOARD_METRIC } from "../lib/constants.mjs";
 export const TOOL_DEF = {
   name: "discover_peers",
   description:
-    "Discovers mentors, peers, and complementary operators for YOUR operator on the SigRank leaderboard. Uses your enrolled device identity — no codename needed. Finds operators you should learn from: (1) Mentors — 1-2 class tiers above you with similar cascade shapes, including the specific pillar delta that explains the yield gap (e.g. '12× your cache reads'). (2) Peers — same class tier, ranked by yield proximity. (3) Complementary — operators whose strength is your weakness. Use this after submit_verified to find who to learn from, then chain into self_improve with the mentor's pillar deltas as context. Requires enrollment (npx sigrank-mcp enroll). Intent: DISCOVER_PEERS.",
+    "Discovers mentors, peers, and complementary operators for YOUR operator on the SigRank leaderboard. Uses your enrolled device identity — no codename needed. Finds operators you should learn from: (1) Mentors — 1-2 class tiers above you with similar cascade shapes, including the specific pillar delta that explains the yield gap (e.g. '12× your cache reads'). (2) Peers — same class tier, ranked by yield proximity. (3) Complementary — operators whose strength is your weakness. Use this after submit_verified to find who to learn from, then chain into self_improve with the mentor's pillar deltas as context. Requires enrollment (npx sigrank enroll). Intent: DISCOVER_PEERS.",
   annotations: {
     title: "Discover peers and mentors",
     ...ANNOTATIONS.readOnlyHint,
@@ -99,7 +99,7 @@ export async function handleDiscoverPeers(args, ctx) {
     return {
       status: "not_enrolled",
       detail:
-        "Run `npx sigrank-mcp enroll` to bind this device first, then submit_verified to appear on the board.",
+        "Run `npx sigrank enroll` to bind this device first, then submit_verified to appear on the board.",
     };
   }
 
